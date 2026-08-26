@@ -97,6 +97,8 @@ class ForkedProfileRuntime implements ProfileRuntime {
         workspace: this.#profile.workspace,
         codexHome: this.#profile.codexHome,
         stateDirectory: this.#profile.stateDirectory,
+        secretsFile: this.#profile.secretsFile,
+        channelAccounts: this.#profile.channelAccounts,
         ...(this.#profile.codexExecutable
           ? { codexExecutable: this.#profile.codexExecutable }
           : {})

@@ -18,6 +18,7 @@
     "test:contract": "npm run build && node packages/codex-app-server/dist/protocol-contract.contract.js",
     "test:control-contract": "npm run build && node --test packages/control-plane/dist/control-plane.contract.js",
     "test:supervisor-contract": "npm run build && node packages/supervisor/dist/worker-process.contract.js",
+    "test:qq-live": "npm run build && node scripts/qq-live-contract.mjs",
     "test:smoke": "npm run build && node scripts/smoke-turn.mjs",
     "check": "npm run clean && npm run test"
   },

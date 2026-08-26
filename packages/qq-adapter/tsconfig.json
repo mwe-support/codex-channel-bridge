@@ -6,11 +6,5 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../config" },
-    { "path": "../core" },
-    { "path": "../codex-app-server" },
-    { "path": "../profile-store" },
-    { "path": "../qq-adapter" }
-  ]
+  "references": [{ "path": "../core" }]
 }

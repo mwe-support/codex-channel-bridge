@@ -304,6 +304,8 @@ function sameRestartConfiguration(
     left.workspace === right.workspace &&
     left.codexHome === right.codexHome &&
     left.stateDirectory === right.stateDirectory &&
+    left.secretsFile === right.secretsFile &&
+    JSON.stringify(left.channelAccounts) === JSON.stringify(right.channelAccounts) &&
     left.codexExecutable === right.codexExecutable
   );
 }

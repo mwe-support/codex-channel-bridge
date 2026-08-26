@@ -10,6 +10,13 @@ profiles:
     workspace: /srv/codex-channel-bridge/example-primary/workspace
     codexHome: /srv/codex-channel-bridge/example-primary/codex-home
     stateDirectory: /srv/codex-channel-bridge/example-primary/state
+    secretsFile: /srv/codex-channel-bridge/example-primary/state/secrets.env
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        epochId: initial
+        appId: env:QQ_BOT_APP_ID
+        appSecret: env:QQ_BOT_APP_SECRET
 
   example-secondary:
     enabled: false

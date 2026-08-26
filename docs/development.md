@@ -4,7 +4,8 @@
 
 The current runtime slices establish these explicit package boundaries:
 
-1. `@codex-channel-bridge/core` defines shared Profile health vocabulary.
+1. `@codex-channel-bridge/core` defines shared Profile health vocabulary and
+   the channel-neutral Adapter contract.
 2. `@codex-channel-bridge/codex-app-server` owns newline-delimited JSON
    framing, request correlation, generated-schema capability probes, and the
    supervised App Server child edge.
@@ -12,11 +13,12 @@ The current runtime slices establish these explicit package boundaries:
    readiness, Thread start or reuse, Turn start, and terminal result
    collection.
 4. `@codex-channel-bridge/config` owns strict YAML parsing, environment
-   overrides, complete static validation, and Configuration Revision hashing.
+   overrides, Secret Reference resolution, complete static validation, and
+   Configuration Revision hashing.
 5. `@codex-channel-bridge/profile-store` owns the Profile-exclusive WAL
    SQLite schema, provider-event deduplication, recent-message reads, and FTS5
-   lexical search. Its synchronous implementation must run outside a Channel
-   event loop.
+   lexical search. Its asynchronous interface dispatches synchronous SQLite
+   work to a dedicated Worker thread.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy.
@@ -24,6 +26,9 @@ The current runtime slices establish these explicit package boundaries:
    administration contract, platform endpoint edge, authorization hook, and
    two-phase configuration plan/apply protocol.
 8. `@codex-channel-bridge/cli` exposes host-local development commands.
+9. `@codex-channel-bridge/qq-adapter` pins Tencent's official QQ Bot SDK,
+   normalizes C2C and group events, and maps text delivery outcomes without
+   owning routing or Codex behavior.
 
 No package stores Codex Thread or Turn history. The Profile worker sends native
 App Server requests and consumes native item and Turn events.
@@ -61,6 +66,20 @@ Before a run, inspect the target's current Node.js, npm, Docker where relevant,
 and administrator-supplied Codex versions. Report a missing prerequisite as an
 environment gap. The Bridge and its validation workflow must not install or
 upgrade Codex on either host.
+
+### Verification snapshot: 2026-08-26
+
+| Target | Runtime | Result |
+| --- | --- | --- |
+| Native macOS | Node `22.23.1`, npm `10.9.8`, Codex `0.149.1` | 51 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and npm audit passed |
+| Native Linux (`marvel-mini-pc`) | Ubuntu kernel `6.8`, Node `22.22.1`, npm `10.9.4`, Codex `0.149.1` | Fresh `npm ci`, the same unit/control/Supervisor/Codex contracts, and npm audit passed |
+| Linux Docker (`marvel-mini-pc`) | `node:22-bookworm`, Node `22.23.2`, npm `10.9.8`, mounted read-only Codex `0.149.1`, fresh empty Codex home | Fresh `npm ci`, the same unit/control/Supervisor/Codex contracts, and npm audit passed |
+
+The Docker run did not mount the host Codex home or authentication state. The
+slim Node image could not build `better-sqlite3` because it lacks Python and a
+C/C++ toolchain; the full Bookworm image supplied the expected Build Stage and
+passed. This verifies runtime behavior, not a production multi-stage image,
+which is still future packaging work.
 
 ## Tested Codex matrix
 
@@ -103,6 +122,25 @@ npm run test:control-contract
 This verifies an owner-only socket, structured request/response framing,
 per-request authorization, denial behavior, and refusal to replace an active
 endpoint. It requires a host environment that permits Unix-domain sockets.
+
+## Optional real QQ contract
+
+The QQ live contract connects to the configured test robot, waits for one C2C
+or group event, and passively replies with a fixed marker. It never prints a
+message body, provider identity, credential, Secret Reference name, or provider
+message ID. It does send one real QQ reply, so run it only when that side effect
+is intended:
+
+```sh
+BRIDGE_QQ_LIVE_SECRETS_FILE=/absolute/path/to/secrets.env \
+npm run test:qq-live
+```
+
+The explicitly selected owner-only file may use one conventional QQ credential
+pair. Nonstandard dotenv names can be selected without passing values as
+arguments by setting `BRIDGE_QQ_APP_ID_REF` and
+`BRIDGE_QQ_APP_SECRET_REF` in the process environment. See
+`docs/qq-adapter.md` for the verified and still-open provider contracts.
 
 ## Optional end-to-end smoke Turn
 
@@ -157,7 +195,10 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - Profile drain currently stops the App Server because Channel admission,
   active-Turn tracking, Approval transport, queues, and the durable outbox are
   not present yet. Their eventual drain conditions remain defined by the ADRs.
-- The Profile Store implements persistence and lexical FTS5 foundations only.
-  The dedicated off-event-loop storage worker, complete local Hybrid Retrieval,
-  Archive MCP Server, Archive Purge, media persistence, and durable outbox are
-  not implemented yet.
+- The Profile Store implements persistence, an off-event-loop storage Worker,
+  and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
+  MCP Server, Archive Purge, media persistence, and durable outbox are not
+  implemented yet.
+- The QQ Adapter connects and archives normalized C2C/group events, but access
+  policy, Conversation-to-Thread routing, passive reply sequence persistence,
+  durable outbox retry, and Codex result delivery are not implemented yet.

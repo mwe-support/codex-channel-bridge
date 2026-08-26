@@ -28,11 +28,11 @@ Profile Worker 在启动时打开 `stateDirectory/bridge.sqlite`，并在 Drain 
 
 ## Event-loop 规则
 
-`better-sqlite3` 是同步引擎。Channel Adapter 不得从自身 Event Loop 调用 Store。当前 Profile Worker 只在启动阶段打开并验证数据库，在 Drain 时关闭。Channel Ingestion 连接到 `commitMessage`、`recentMessages` 或 `searchText` 前，将先增加专用 Storage Worker。
+`better-sqlite3` 是同步引擎。Channel Adapter 不得从自身 Event Loop 调用 Store。`ProfileStore` 现在只暴露异步 Operation，并在每个 Profile 专属的 Node.js Worker Thread 中运行同步 SQLite 实现。Profile Worker 在 Codex 之前打开该 Storage Worker，通过它提交规范化 QQ Event，并且只把新插入的 Event 交给后续 Routing Work。Storage Failure 会让 Profile 进入 Unavailable 并停止其 Channel Adapter；Bridge 绝不从未提交的 Event 启动 Codex Work。
 
 ## 验证
 
-Unit Suite 只创建临时 Profile Directory，并验证 WAL、Owner-only File Mode、持久 Reopen、Deduplication、Recent Ordering、FTS5、Profile Mismatch、显式拒绝 Migration 和拒绝 Symlink：
+Unit Suite 只创建临时 Profile Directory，除了 WAL、Owner-only File Mode、持久 Reopen、Deduplication、Recent Ordering、FTS5、Profile Mismatch、显式拒绝 Migration 和拒绝 Symlink外，还会验证异步 Worker Seam：
 
 ```sh
 npm test

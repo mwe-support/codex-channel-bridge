@@ -5,6 +5,7 @@
     { "path": "packages/config" },
     { "path": "packages/codex-app-server" },
     { "path": "packages/profile-store" },
+    { "path": "packages/qq-adapter" },
     { "path": "packages/profile-worker" },
     { "path": "packages/supervisor" },
     { "path": "packages/control-plane" },

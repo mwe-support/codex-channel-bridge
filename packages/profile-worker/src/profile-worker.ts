@@ -14,17 +14,33 @@ import {
   type TurnStartResponse,
   probeCodexProtocol
 } from "@codex-channel-bridge/codex-app-server";
-import type { ProfileHealth, ProfileReasonCode } from "@codex-channel-bridge/core";
 import {
-  SqliteProfileStore,
+  SecretResolver,
+  type ChannelAccountConfiguration
+} from "@codex-channel-bridge/config";
+import type {
+  ChannelAdapter,
+  InboundChannelEvent,
+  NormalizedChannelMessage,
+  ProfileHealth,
+  ProfileReasonCode
+} from "@codex-channel-bridge/core";
+import {
+  ProfileStore,
+  type ArchiveCommitResult,
   type OpenProfileStoreOptions
 } from "@codex-channel-bridge/profile-store";
+import { QQChannelAdapter, type QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
+
+const CHANNEL_ADAPTER_START_TIMEOUT_MS = 30_000;
 
 export interface ProfileWorkerConfig {
   readonly profileId: string;
   readonly workspace: string;
   readonly codexHome: string;
   readonly stateDirectory: string;
+  readonly secretsFile?: string;
+  readonly channelAccounts?: Readonly<Record<string, ChannelAccountConfiguration>>;
   readonly codexExecutable?: string;
 }
 
@@ -38,17 +54,26 @@ export interface TurnResult {
 export interface ProfileWorkerDependencies {
   readonly probe: (executable: string) => Promise<ProtocolProbeResult>;
   readonly createRuntime: (options: CodexAppServerOptions) => ManagedCodexRpcRuntime;
-  readonly createStore: (options: OpenProfileStoreOptions) => ProfileStoreRuntime;
+  readonly createStore: (options: OpenProfileStoreOptions) => Promise<ProfileStoreRuntime>;
+  readonly createSecretResolver: (secretsFile: string) => Promise<ProfileSecretResolver>;
+  readonly createQQAdapter: (options: QQChannelAdapterOptions) => ChannelAdapter;
 }
 
 export interface ProfileStoreRuntime {
-  close(): void;
+  commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
+  close(): Promise<void>;
+}
+
+export interface ProfileSecretResolver {
+  resolve(reference: string): Promise<string>;
 }
 
 const defaultDependencies: ProfileWorkerDependencies = {
   probe: (executable) => probeCodexProtocol(executable),
   createRuntime: (options) => new CodexAppServerProcess(options),
-  createStore: (options) => SqliteProfileStore.open(options)
+  createStore: (options) => ProfileStore.open(options),
+  createSecretResolver: (secretsFile) => SecretResolver.open({ secretsFile }),
+  createQQAdapter: (options) => new QQChannelAdapter(options)
 };
 
 export class ProfileUnavailableError extends Error {
@@ -63,6 +88,7 @@ export class ProfileWorker extends EventEmitter {
   readonly #dependencies: ProfileWorkerDependencies;
   #runtime?: ManagedCodexRpcRuntime;
   #store?: ProfileStoreRuntime;
+  readonly #channelAdapters = new Map<string, ChannelAdapter>();
   #health: ProfileHealth;
 
   public constructor(
@@ -89,7 +115,7 @@ export class ProfileWorker extends EventEmitter {
     }
     if (!this.#store) {
       try {
-        this.#store = this.#dependencies.createStore({
+        this.#store = await this.#dependencies.createStore({
           profileId: this.#config.profileId,
           databasePath: join(this.#config.stateDirectory, "bridge.sqlite")
         });
@@ -132,7 +158,12 @@ export class ProfileWorker extends EventEmitter {
       return this.#transition("unavailable", "codex_start_failed", probe);
     }
 
-    return this.#transition("ready", null, probe);
+    const adaptersReady = await this.#startChannelAdapters();
+    return this.#transition(
+      adaptersReady ? "ready" : "degraded",
+      adaptersReady ? null : "channel_adapter_unavailable",
+      probe
+    );
   }
 
   public async runTurn(text: string, existingThreadId?: string): Promise<TurnResult> {
@@ -198,13 +229,14 @@ export class ProfileWorker extends EventEmitter {
   }
 
   public async stop(): Promise<ProfileHealth> {
+    await this.#stopChannelAdapters();
     const runtime = this.#runtime;
     if (runtime) {
       this.#transition("draining", null);
       await runtime.stop();
       this.#runtime = undefined;
     }
-    this.#store?.close();
+    await this.#store?.close();
     this.#store = undefined;
     return this.#transition("stopped", null);
   }
@@ -217,7 +249,10 @@ export class ProfileWorker extends EventEmitter {
   }
 
   #requireReadyRuntime(): ManagedCodexRpcRuntime {
-    if (this.#health.readiness !== "ready" || !this.#runtime) {
+    if (
+      (this.#health.readiness !== "ready" && this.#health.readiness !== "degraded") ||
+      !this.#runtime
+    ) {
       throw new ProfileUnavailableError(this.health());
     }
     return this.#runtime;
@@ -238,8 +273,80 @@ export class ProfileWorker extends EventEmitter {
       this.#config.profileId.trim().length > 0 &&
       isAbsolute(this.#config.workspace) &&
       isAbsolute(this.#config.codexHome) &&
-      isAbsolute(this.#config.stateDirectory)
+      isAbsolute(this.#config.stateDirectory) &&
+      (this.#config.secretsFile === undefined || isAbsolute(this.#config.secretsFile))
     );
+  }
+
+  async #startChannelAdapters(): Promise<boolean> {
+    const accounts = Object.values(this.#config.channelAccounts ?? {}).filter(
+      (account) => account.enabled
+    );
+    if (accounts.length === 0) return true;
+
+    let resolver: ProfileSecretResolver;
+    try {
+      resolver = await this.#dependencies.createSecretResolver(
+        this.#config.secretsFile ?? join(this.#config.stateDirectory, "secrets.env")
+      );
+    } catch {
+      return false;
+    }
+
+    const starts = await Promise.allSettled(
+      accounts.map(async (account) => {
+        const adapter = await this.#createChannelAdapter(account, resolver);
+        this.#channelAdapters.set(account.id, adapter);
+        try {
+          await withRejectingTimeout(
+            adapter.start((event) => this.#commitChannelEvent(event)),
+            CHANNEL_ADAPTER_START_TIMEOUT_MS,
+            "Channel Adapter startup timed out"
+          );
+        } catch (error) {
+          this.#channelAdapters.delete(account.id);
+          await adapter.stop().catch(() => undefined);
+          throw error;
+        }
+      })
+    );
+    return starts.every((result) => result.status === "fulfilled");
+  }
+
+  async #createChannelAdapter(
+    account: ChannelAccountConfiguration,
+    resolver: ProfileSecretResolver
+  ): Promise<ChannelAdapter> {
+    const [appId, appSecret] = await Promise.all([
+      resolver.resolve(account.appId),
+      resolver.resolve(account.appSecret)
+    ]);
+    return this.#dependencies.createQQAdapter({
+      profileId: this.#config.profileId,
+      channelAccountId: account.id,
+      channelAccountEpochId: account.epochId,
+      appId,
+      appSecret
+    });
+  }
+
+  async #commitChannelEvent(event: InboundChannelEvent): Promise<void> {
+    const store = this.#store;
+    if (!store) throw new Error("Profile Store is unavailable");
+    try {
+      const result = await store.commitMessage(event.message);
+      if (result.inserted) this.emit("channelEvent", event);
+    } catch {
+      this.#transition("unavailable", "profile_store_unavailable");
+      void this.#stopChannelAdapters();
+      throw new Error("Unable to persist Channel event");
+    }
+  }
+
+  async #stopChannelAdapters(): Promise<void> {
+    const adapters = [...this.#channelAdapters.values()];
+    this.#channelAdapters.clear();
+    await Promise.allSettled(adapters.map((adapter) => adapter.stop()));
   }
 
   #transition(
@@ -282,5 +389,22 @@ async function withTimeout<T>(
     return await promise;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function withRejectingTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

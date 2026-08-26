@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
-import { isAbsolute, normalize, relative, sep } from "node:path";
+import { isAbsolute, join, normalize, relative, sep } from "node:path";
 
 import { parseDocument } from "yaml";
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+const CHANNEL_ACCOUNT_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+const CHANNEL_ACCOUNT_EPOCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TOP_LEVEL_KEYS = new Set(["schemaVersion", "supervisor", "profiles"]);
 const SUPERVISOR_KEYS = new Set(["drainTimeoutMs", "childExitTimeoutMs"]);
 const PROFILE_KEYS = new Set([
@@ -13,8 +16,28 @@ const PROFILE_KEYS = new Set([
   "workspace",
   "codexHome",
   "stateDirectory",
+  "secretsFile",
+  "channelAccounts",
   "codexExecutable"
 ]);
+const QQ_CHANNEL_ACCOUNT_KEYS = new Set([
+  "provider",
+  "enabled",
+  "epochId",
+  "appId",
+  "appSecret"
+]);
+
+export interface QQChannelAccountConfiguration {
+  readonly id: string;
+  readonly provider: "qq";
+  readonly enabled: boolean;
+  readonly epochId: string;
+  readonly appId: string;
+  readonly appSecret: string;
+}
+
+export type ChannelAccountConfiguration = QQChannelAccountConfiguration;
 
 export interface ProfileConfiguration {
   readonly id: string;
@@ -22,6 +45,8 @@ export interface ProfileConfiguration {
   readonly workspace: string;
   readonly codexHome: string;
   readonly stateDirectory: string;
+  readonly secretsFile: string;
+  readonly channelAccounts: Readonly<Record<string, ChannelAccountConfiguration>>;
   readonly codexExecutable?: string;
 }
 
@@ -190,6 +215,7 @@ function validateShape(raw: unknown): BridgeConfiguration {
   if (!isRecord(raw.profiles)) {
     issues.push("profiles must be a mapping keyed by Profile ID");
   } else {
+    rejectDuplicateDeclaredChannelAccountIds(raw.profiles, issues);
     for (const [id, value] of Object.entries(raw.profiles)) {
       if (!PROFILE_ID_PATTERN.test(id)) {
         issues.push(`profiles.${id} is not a valid Profile ID`);
@@ -209,18 +235,38 @@ function validateShape(raw: unknown): BridgeConfiguration {
         `profiles.${id}.stateDirectory`,
         issues
       );
+      const secretsFile =
+        value.secretsFile === undefined
+          ? stateDirectory
+            ? join(stateDirectory, "secrets.env")
+            : null
+          : absolutePath(value.secretsFile, `profiles.${id}.secretsFile`, issues);
+      const channelAccounts = validateChannelAccounts(
+        value.channelAccounts,
+        `profiles.${id}.channelAccounts`,
+        issues
+      );
       const codexExecutable = optionalExecutablePath(
         value.codexExecutable,
         `profiles.${id}.codexExecutable`,
         issues
       );
-      if (workspace && codexHome && stateDirectory && typeof enabled === "boolean") {
+      if (
+        workspace &&
+        codexHome &&
+        stateDirectory &&
+        secretsFile &&
+        channelAccounts &&
+        typeof enabled === "boolean"
+      ) {
         profiles[id] = {
           id,
           enabled,
           workspace,
           codexHome,
           stateDirectory,
+          secretsFile,
+          channelAccounts,
           ...(codexExecutable ? { codexExecutable } : {})
         };
       }
@@ -235,6 +281,79 @@ function validateShape(raw: unknown): BridgeConfiguration {
     supervisor: { drainTimeoutMs, childExitTimeoutMs },
     profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
   };
+}
+
+function validateChannelAccounts(
+  value: unknown,
+  path: string,
+  issues: string[]
+): Record<string, ChannelAccountConfiguration> | null {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    issues.push(`${path} must be a mapping keyed by Channel Account ID`);
+    return null;
+  }
+  const accounts: Record<string, ChannelAccountConfiguration> = {};
+  for (const [id, account] of Object.entries(value)) {
+    const accountPath = `${path}.${id}`;
+    if (!CHANNEL_ACCOUNT_ID_PATTERN.test(id)) {
+      issues.push(`${accountPath} is not a valid Channel Account ID`);
+      continue;
+    }
+    if (!isRecord(account)) {
+      issues.push(`${accountPath} must be a mapping`);
+      continue;
+    }
+    rejectUnknownKeys(account, QQ_CHANNEL_ACCOUNT_KEYS, accountPath, issues);
+    if (account.provider !== "qq") {
+      issues.push(`${accountPath}.provider must equal qq`);
+      continue;
+    }
+    const enabled = account.enabled === undefined ? true : account.enabled;
+    if (typeof enabled !== "boolean") issues.push(`${accountPath}.enabled must be boolean`);
+    const epochId =
+      typeof account.epochId === "string" && CHANNEL_ACCOUNT_EPOCH_PATTERN.test(account.epochId)
+        ? account.epochId
+        : null;
+    if (!epochId) issues.push(`${accountPath}.epochId is invalid`);
+    const appId = secretReference(account.appId, `${accountPath}.appId`, issues);
+    const appSecret = secretReference(account.appSecret, `${accountPath}.appSecret`, issues);
+    if (typeof enabled === "boolean" && epochId && appId && appSecret) {
+      accounts[id] = { id, provider: "qq", enabled, epochId, appId, appSecret };
+    }
+  }
+  return Object.fromEntries(Object.entries(accounts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function secretReference(value: unknown, path: string, issues: string[]): string | null {
+  if (typeof value !== "string") {
+    issues.push(`${path} must be a Secret Reference`);
+    return null;
+  }
+  if (value.startsWith("env:") && ENVIRONMENT_NAME.test(value.slice(4))) return value;
+  if (value.startsWith("file:") && isAbsolute(value.slice(5))) return value;
+  issues.push(`${path} must be an env:NAME or file:/absolute/path Secret Reference`);
+  return null;
+}
+
+function rejectDuplicateDeclaredChannelAccountIds(
+  profiles: Record<string, unknown>,
+  issues: string[]
+): void {
+  const owners = new Map<string, string>();
+  for (const [profileId, profile] of Object.entries(profiles)) {
+    if (!isRecord(profile) || !isRecord(profile.channelAccounts)) continue;
+    for (const accountId of Object.keys(profile.channelAccounts)) {
+      const previous = owners.get(accountId);
+      if (previous) {
+        issues.push(
+          `profiles.${profileId}.channelAccounts.${accountId} duplicates Profile ${previous}`
+        );
+      } else {
+        owners.set(accountId, profileId);
+      }
+    }
+  }
 }
 
 function rejectUnknownKeys(

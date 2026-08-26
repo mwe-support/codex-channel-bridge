@@ -4,16 +4,18 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository now contains the first four development slices: a typed stdio
+This repository now contains the first five development slices: a typed stdio
 JSONL Codex client, a foreground multi-Profile Supervisor, a structured
 host-local administration control plane, and Profile-local Message Archive
-persistence. The Supervisor loads a strictly validated configuration and owns
+persistence, plus a first-party QQ SDK adapter baseline. The Supervisor loads a strictly validated configuration and owns
 one Worker child per enabled Profile; each Worker owns its exclusive App Server
-child and Profile-local WAL SQLite state.
+child, Profile-local WAL SQLite state, and independently supervised QQ Channel
+Adapters. Inbound QQ events are normalized and durably deduplicated before they
+are exposed to later Bridge routing work.
 The control plane supports status and explicitly confirmed runtime
-configuration changes without TCP or HTTP. QQ, WhatsApp, durable delivery, and
-production packaging are not implemented yet, so the Bridge is not ready for
-deployment.
+configuration changes without TCP or HTTP. QQ-to-Codex routing, access policy,
+durable outbox delivery, WhatsApp, and production packaging are not implemented
+yet, so the Bridge is not ready for deployment.
 
 ## First-release direction
 
@@ -31,9 +33,11 @@ deployment.
 - [Architecture decisions](docs/adr/)
 - [Codex-native history and compaction research](docs/research/codex-native-thread-history-retrieval-and-compaction.md)
 - [Open-source implementation landscape](docs/research/github-codex-channel-bridge-landscape.md)
+- [Tencent QQ SDK contract research](docs/research/qq-official-sdk-contract.md)
 - [Development and Codex protocol verification](docs/development.md)
 - [Configuration and Supervisor operation](docs/configuration.md)
 - [Message Archive persistence baseline](docs/message-archive.md)
+- [QQ adapter baseline](docs/qq-adapter.md)
 
 The inherited Hermes worktree was used only as research context. Its runtime plugins, deployment files, history, and remote are not part of this repository.
 

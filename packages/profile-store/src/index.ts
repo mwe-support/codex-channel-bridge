@@ -1,4 +1,7 @@
 export {
+  ProfileStore
+} from "./async-profile-store.js";
+export {
   ProfileStoreError,
   SqliteProfileStore
 } from "./profile-store.js";

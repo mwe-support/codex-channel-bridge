@@ -4,7 +4,7 @@
 
 当前开发版 Supervisor 读取一个由管理员选择的绝对 `config.yaml` 路径。它绝不在仓库、Workspace、当前目录或 Profile 目录中搜索配置文件或 dotenv 文件。
 
-使用 `config.example.yaml` 作为不含 Secret 的结构参考。配置只能包含 Bridge 设置。本阶段尚未包含 Credential 和 Secret Reference 字段，未知字段会导致验证失败。
+使用 `config.example.yaml` 作为不含 Secret 的结构参考。配置只能包含 Bridge 设置和 Secret Reference。Credential Value 绝不是合法配置字段，未知字段会导致验证失败。
 
 ## Schema
 
@@ -21,10 +21,24 @@ profiles:
     workspace: /absolute/path/to/workspace
     codexHome: /absolute/path/to/codex-home
     stateDirectory: /absolute/path/to/bridge-state
+    secretsFile: /absolute/path/to/bridge-state/secrets.env
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        enabled: true
+        epochId: initial
+        appId: env:QQ_BOT_APP_ID
+        appSecret: file:/run/secrets/qq-bot-app-secret
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
 Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace`、`codexHome` 和 `stateDirectory` 都必须是现有绝对目录；在完整 Candidate 中，任何一个 Owned Root 都不能与另一个相同，也不能包含另一个或被另一个包含。在 macOS 和 Linux 上，`stateDirectory` 必须是真实目录、由 Service User 所有且 Mode 为 `0700`；Worker 在其中创建 Mode 为 `0600` 的 `bridge.sqlite`。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
+
+`secretsFile` 默认是 `stateDirectory/secrets.env`。覆盖时必须显式提供绝对路径；Bridge 绝不搜索 Dotenv File。`channelAccounts` 以整个 Deployment 范围内唯一的 Channel Account ID 为 Key。当前阶段只接受 QQ Account。每个 Account 都有 Operator 选择的 Epoch ID，用于 Durable Deduplication。即使某个 Account 的其他字段无效，同一 Channel Account ID 也不能出现在两个 Profile 中。
+
+`appId` 和 `appSecret` 只接受 `env:NAME` 或 `file:/absolute/path` Secret Reference。`env:` Reference 先从真实 Service Process Environment 解析，再回退到该 Profile 配置的 `secretsFile`。`file:` Reference 从一个绝对路径文件读取单个 Secret。在 macOS 和 Linux 上，这两类文件都必须是普通、非 Symlink、由 Service User 所有且 Mode 严格为 `0600` 的文件。缺失、空、Malformed 或 Insecure Input 会让受影响 Adapter 保持 Unavailable，且不披露名称或值。
+
+Dotenv Parser 接受普通 `KEY=VALUE` Record 和使用单引号或双引号包裹的 Literal Value。它不执行 Shell Syntax、不展开 Variable、不进行 Command Substitution，也不包含其他文件。不要提交真实 `secrets.env`；普通 Secret File Name 和 `test-channel.env*` 已被本仓库忽略。
 
 移除 Profile 或设置 `enabled: false` 会停止其 Worker，但不会删除 Workspace、Codex home、Bridge Data 或未来的 Channel Authentication State。永久 Purge 仍是独立的未来 Host-local Operation。
 
@@ -38,7 +52,7 @@ BRIDGE_CONFIG_OVERRIDES_JSON='{"profiles":{"primary":{"enabled":false}}}'
 
 Object 按 Key 递归合并，因此 Profile ID 保持稳定，也不需要 Array Index 约定。完整合并后的 Candidate 会作为整体进行验证。空值、格式错误、未知或不完整的 Override Data 会拒绝该 Candidate，并且不会生成 Configuration Revision。
 
-此变量只用于不含 Secret 的配置。实现 Channel Account 后，Channel Credential 将使用另行规定的 Secret Reference 与 Profile `secrets.env` 机制。
+此变量只用于不含 Secret 的配置与 Secret Reference。真实 Credential Value 仍必须位于 Process Environment、显式 Profile `secretsFile` 或 Owner-only `file:` Target 中。
 
 ## 只读验证
 
@@ -97,6 +111,6 @@ node packages/cli/dist/main.js config apply \
   --endpoint /absolute/path/control.sock
 ```
 
-第二次调用重新读取并验证完整 Candidate，拒绝不同的 Revision，并向 Supervisor 发送一个短生命周期、只能使用一次的 Plan Token 和完整 Revision。如果这期间已经接受另一个 Configuration Revision，Stale Plan 会被拒绝。配置接受后，受影响的 Profile 独立 Transition；更改 `stateDirectory` 需要重启该 Profile，未变化的 Profile 不会重启。
+第二次调用重新读取并验证完整 Candidate，拒绝不同的 Revision，并向 Supervisor 发送一个短生命周期、只能使用一次的 Plan Token 和完整 Revision。如果这期间已经接受另一个 Configuration Revision，Stale Plan 会被拒绝。配置接受后，受影响的 Profile 独立 Transition；更改 `stateDirectory`、`secretsFile` 或任何 Channel Account 只会重启该 Profile，未变化的 Profile 不会重启。Plan 与 Apply Output 绝不包含解析后的 Secret Name 或 Value。
 
 进程绝不监视 `config.yaml`、不把 SIGHUP 当作 Reload，也不接受第二个进程直接修改 Supervisor State。

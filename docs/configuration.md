@@ -7,8 +7,8 @@ The current development Supervisor reads one administrator-selected absolute
 directory, or Profile directories for configuration or dotenv files.
 
 Use `config.example.yaml` as the non-secret shape reference. Configuration may
-contain only Bridge settings. Credentials and Secret Reference fields are not
-part of this slice and unknown fields fail validation.
+contain only Bridge settings and Secret References. Credential values are never
+valid configuration fields, and unknown fields fail validation.
 
 ## Schema
 
@@ -25,6 +25,14 @@ profiles:
     workspace: /absolute/path/to/workspace
     codexHome: /absolute/path/to/codex-home
     stateDirectory: /absolute/path/to/bridge-state
+    secretsFile: /absolute/path/to/bridge-state/secrets.env
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        enabled: true
+        epochId: initial
+        appId: env:QQ_BOT_APP_ID
+        appSecret: file:/run/secrets/qq-bot-app-secret
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
@@ -37,6 +45,28 @@ another owned root in the complete candidate. On macOS and Linux,
 the Worker creates its `bridge.sqlite` database there with mode `0600`.
 `codexExecutable` is optional; when omitted, the Worker resolves `codex` from
 its service environment. The Bridge does not install or upgrade it.
+
+`secretsFile` defaults to `stateDirectory/secrets.env`. It must be an explicit
+absolute path when overridden; the Bridge never searches for dotenv files.
+`channelAccounts` is keyed by a deployment-wide unique Channel Account ID. The
+current slice accepts QQ accounts only. Every account has an operator-selected
+Epoch ID for durable deduplication. The same Channel Account ID cannot appear
+in two Profiles, including when another field in one account is invalid.
+
+`appId` and `appSecret` accept only `env:NAME` or
+`file:/absolute/path` Secret References. An `env:` reference resolves first
+from the actual service process environment, then from that Profile's
+configured `secretsFile`. A `file:` reference reads one secret from one
+absolute file. On macOS and Linux, both kinds of files must be regular,
+non-symlink files owned by the service user with mode exactly `0600`. Missing,
+empty, malformed, or insecure inputs keep the affected adapter unavailable
+without revealing a name or value.
+
+The dotenv parser accepts ordinary `KEY=VALUE` records and literal single- or
+double-quoted values. It does not execute shell syntax, expand variables,
+perform command substitution, or include other files. Do not commit a real
+`secrets.env`; ordinary secret-file names and `test-channel.env*` are ignored
+by this repository.
 
 Removing a Profile or setting `enabled: false` stops its Worker. It does not
 delete its Workspace, Codex home, Bridge data, or future Channel authentication
@@ -55,9 +85,9 @@ index convention is needed. The fully merged candidate is then validated as a
 whole. Empty, malformed, unknown, or incomplete override data rejects the
 candidate and does not produce a Configuration Revision.
 
-This variable is for non-secret configuration only. Channel credentials will
-use the separately specified Secret Reference and Profile `secrets.env`
-mechanism when Channel Accounts are implemented.
+This variable is for non-secret configuration and Secret References only. A
+real credential value still belongs in the process environment, the explicit
+Profile `secretsFile`, or an owner-only `file:` target.
 
 ## Read-only validation
 
@@ -143,8 +173,10 @@ The second invocation rereads and validates the entire candidate, rejects a
 different revision, and sends a short-lived single-use plan token plus the full
 revision to the Supervisor. A stale plan is rejected if another Configuration
 Revision was accepted in the meantime. After acceptance, affected Profiles
-transition independently; changing `stateDirectory` requires that Profile to
-restart, while an unchanged Profile is not restarted.
+transition independently; changing `stateDirectory`, `secretsFile`, or any
+Channel Account restarts only that Profile, while an unchanged Profile is not
+restarted. Plan and apply output never includes resolved Secret names or
+values.
 
 The process never watches `config.yaml`, treats SIGHUP as reload, or accepts a
 direct second-process mutation of Supervisor state.

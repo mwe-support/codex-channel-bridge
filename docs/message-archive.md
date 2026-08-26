@@ -46,16 +46,20 @@ local persistence interface; provider Adapters may impose tighter limits.
 ## Event-loop rule
 
 `better-sqlite3` is synchronous. Channel Adapters must not call the store from
-their event loop. The current Profile Worker opens and validates the database
-only during startup and closes it during drain. A dedicated storage worker will
-be added before Channel ingestion is connected to `commitMessage`,
-`recentMessages`, or `searchText`.
+their event loop. `ProfileStore` now exposes only asynchronous operations and
+runs the synchronous SQLite implementation in one dedicated Node.js Worker
+thread per Profile. The Profile Worker opens that storage Worker before Codex,
+commits normalized QQ events through it, and emits only newly inserted events
+to later routing work. A storage failure makes the Profile unavailable and
+stops its Channel Adapters; it never starts Codex work from an uncommitted
+event.
 
 ## Verification
 
-The unit suite creates only temporary Profile directories and verifies WAL,
-owner-only file mode, persistent reopen, deduplication, recent ordering, FTS5,
-Profile mismatch, explicit migration refusal, and symlink refusal:
+The unit suite creates only temporary Profile directories and verifies the
+asynchronous Worker seam in addition to WAL, owner-only file mode, persistent
+reopen, deduplication, recent ordering, FTS5, Profile mismatch, explicit
+migration refusal, and symlink refusal:
 
 ```sh
 npm test

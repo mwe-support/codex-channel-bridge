@@ -28,8 +28,70 @@ test("parses a complete candidate and applies defaults", () => {
   const candidate = parseConfiguration(baseline);
   assert.equal(candidate.configuration.profiles.alpha?.enabled, true);
   assert.equal(candidate.configuration.profiles.beta?.enabled, false);
+  assert.equal(candidate.configuration.profiles.alpha?.secretsFile, "/srv/alpha/state/secrets.env");
+  assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts, {});
   assert.equal(candidate.configuration.supervisor.drainTimeoutMs, 300_000);
   assert.match(candidate.revision, /^[a-f0-9]{64}$/);
+});
+
+test("parses QQ Channel Accounts using Secret References only", () => {
+  const candidate = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    secretsFile: /srv/alpha/private/secrets.env
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        epochId: epoch-1
+        appId: env:TEST_APP_ID
+        appSecret: file:/run/secrets/test-app-secret
+`);
+  assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts["qq-primary"], {
+    id: "qq-primary",
+    provider: "qq",
+    enabled: true,
+    epochId: "epoch-1",
+    appId: "env:TEST_APP_ID",
+    appSecret: "file:/run/secrets/test-app-secret"
+  });
+});
+
+test("rejects plaintext QQ credentials and duplicate cross-Profile Channel Account IDs", () => {
+  assert.throws(
+    () =>
+      parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    channelAccounts:
+      shared-qq:
+        provider: qq
+        epochId: epoch-1
+        appId: plaintext
+        appSecret: env:TEST_SECRET
+  beta:
+    workspace: /srv/beta/workspace
+    codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
+    channelAccounts:
+      shared-qq:
+        provider: qq
+        epochId: epoch-2
+        appId: env:OTHER_APP_ID
+        appSecret: env:OTHER_SECRET
+`),
+    (error: unknown) =>
+      error instanceof ConfigurationValidationError &&
+      error.issues.some((issue) => issue.includes("Secret Reference")) &&
+      error.issues.some((issue) => issue.includes("duplicates Profile"))
+  );
 });
 
 test("environment JSON overrides YAML by Profile ID", () => {
