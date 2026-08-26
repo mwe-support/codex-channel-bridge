@@ -483,6 +483,18 @@ Native macOS, native Linux, native Windows, and Linux Docker are first-class
 targets. Core domain behavior and acceptance tests must remain equivalent; put
 service-manager and filesystem differences behind platform-specific edges.
 
+Prioritize implementation and acceptance in the environments that can be
+verified now: native macOS first, then native Linux and Linux Docker. Validate
+native macOS on the local development machine. Validate both Linux targets on
+the remote host identified by the SSH alias `marvel-mini-pc`; local macOS
+emulation is not evidence for either Linux target. Windows remains a
+first-release target, but its platform implementation and acceptance follow
+these three targets once a real Windows verification host is designated. For
+every platform claim, run the relevant contract and lifecycle tests on the
+named target and retain the exact command result. A missing host dependency is
+an environment gap, not authorization for the Bridge or an agent to install or
+upgrade Codex.
+
 Install one Bridge Supervisor service per deployment, not one operating-system
 service per Profile. The Supervisor owns the configured Profile-worker child
 processes, and each worker owns its App Server child; adding or removing a

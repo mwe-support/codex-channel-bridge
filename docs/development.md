@@ -38,6 +38,26 @@ npm install
 npm test
 ```
 
+## Platform verification priority
+
+Implement and accept platform behavior in this order:
+
+1. Native macOS on the local development machine.
+2. Native Linux on the remote host addressed by SSH alias
+   `marvel-mini-pc`.
+3. Linux Docker on `marvel-mini-pc` using that host's Docker engine.
+
+Run each platform-specific contract, process-lifecycle, filesystem-permission,
+signal/drain, and packaging test on its actual target. A macOS result does not
+validate either Linux target, and a native Linux result does not validate the
+container image. Windows remains a first-release target but is deferred until
+these three targets pass and a real Windows verification host is designated.
+
+Before a run, inspect the target's current Node.js, npm, Docker where relevant,
+and administrator-supplied Codex versions. Report a missing prerequisite as an
+environment gap. The Bridge and its validation workflow must not install or
+upgrade Codex on either host.
+
 ## Tested Codex matrix
 
 | Codex CLI | Stable v2 schema SHA-256 | Status |
