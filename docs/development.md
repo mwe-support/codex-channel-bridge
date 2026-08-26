@@ -1,8 +1,8 @@
 # Development baseline
 
-## Current implementation slice
+## Current implementation slices
 
-The first runtime slice establishes only the Codex-facing path:
+The current runtime slices establish these explicit package boundaries:
 
 1. `@codex-channel-bridge/core` defines shared Profile health vocabulary.
 2. `@codex-channel-bridge/codex-app-server` owns newline-delimited JSON
@@ -14,9 +14,12 @@ The first runtime slice establishes only the Codex-facing path:
 4. `@codex-channel-bridge/config` owns strict YAML parsing, environment
    overrides, complete static validation, and Configuration Revision hashing.
 5. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
-   accepted desired configuration, multi-Profile transitions, and the Worker
-   child-process Adapter.
-6. `@codex-channel-bridge/cli` exposes host-local development commands.
+   accepted desired configuration, multi-Profile transitions, and bounded
+   Worker child-process restart policy.
+6. `@codex-channel-bridge/control-plane` owns the versioned local JSONL
+   administration contract, platform endpoint edge, authorization hook, and
+   two-phase configuration plan/apply protocol.
+7. `@codex-channel-bridge/cli` exposes host-local development commands.
 
 No package stores Codex Thread or Turn history. The Profile worker sends native
 App Server requests and consumes native item and Turn events.
@@ -67,6 +70,16 @@ verifies that the Supervisor remains live, the healthy Worker reaches `ready`,
 the unavailable sibling fails closed, and both Worker processes stop without
 creating a Turn.
 
+Run the real Unix control-plane contract test:
+
+```sh
+npm run test:control-contract
+```
+
+This verifies an owner-only socket, structured request/response framing,
+per-request authorization, denial behavior, and refusal to replace an active
+endpoint. It requires a host environment that permits Unix-domain sockets.
+
 ## Optional end-to-end smoke Turn
 
 The smoke test uses the operator's supplied Codex home and consumes a real
@@ -104,11 +117,18 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 
 ## Current development limits
 
-- Configuration is accepted on explicit foreground Supervisor start. Runtime
-  `config apply` awaits the authenticated host-local IPC control plane; the
-  process does not watch `config.yaml` or reload on signals.
-- Worker process crashes are reported as Profile-local `unavailable`; bounded
-  automatic Worker restart policy is not implemented yet.
+- Runtime `config apply` is available only through the host-local control plane
+  and complete-revision confirmation. The process does not watch `config.yaml`
+  or reload on signals.
+- A crashed Worker is restarted Profile-locally after bounded delays of one,
+  two, and five seconds within a sixty-second window. A further crash opens the
+  Profile-local stop condition `worker_restart_exhausted`; the Supervisor and
+  sibling Profiles remain live. Administrator reset and cooldown-based recovery
+  are not implemented yet.
+- Unix access currently relies on verified service-user ownership and modes
+  because Node.js does not expose peer credentials. The Windows named-pipe path
+  is present, but strict ACL setup and verification remain untested platform
+  work. No Web Administration Console is implemented.
 - Profile drain currently stops the App Server because Channel admission,
   active-Turn tracking, Approval transport, queues, and the durable outbox are
   not present yet. Their eventual drain conditions remain defined by the ADRs.

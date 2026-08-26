@@ -6,12 +6,14 @@ const paths = [
   "packages/codex-app-server/dist",
   "packages/profile-worker/dist",
   "packages/supervisor/dist",
+  "packages/control-plane/dist",
   "packages/cli/dist",
   "packages/core/tsconfig.tsbuildinfo",
   "packages/config/tsconfig.tsbuildinfo",
   "packages/codex-app-server/tsconfig.tsbuildinfo",
   "packages/profile-worker/tsconfig.tsbuildinfo",
   "packages/supervisor/tsconfig.tsbuildinfo",
+  "packages/control-plane/tsconfig.tsbuildinfo",
   "packages/cli/tsconfig.tsbuildinfo"
 ];
 

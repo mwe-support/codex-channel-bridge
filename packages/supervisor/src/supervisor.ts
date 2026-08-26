@@ -33,18 +33,56 @@ export interface SupervisorStatus {
   readonly profiles: readonly ProfileHealth[];
 }
 
+export interface ConfigurationPreview {
+  readonly previousRevision: string | null;
+  readonly candidateRevision: string;
+  readonly entries: readonly ConfigurationApplyEntry[];
+}
+
+export interface WorkerRestartPolicy {
+  readonly delaysMs: readonly number[];
+  readonly windowMs: number;
+}
+
+export interface SupervisorClock {
+  now(): number;
+  sleep(delayMs: number): Promise<void>;
+}
+
+const defaultRestartPolicy: WorkerRestartPolicy = {
+  delaysMs: [1_000, 2_000, 5_000],
+  windowMs: 60_000
+};
+
+const defaultClock: SupervisorClock = {
+  now: () => Date.now(),
+  sleep: (delayMs) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref();
+  })
+};
+
 export class Supervisor extends EventEmitter {
   readonly #factory: ProfileRuntimeFactory;
+  readonly #restartPolicy: WorkerRestartPolicy;
+  readonly #clock: SupervisorClock;
   readonly #runtimes = new Map<string, ProfileRuntime>();
   readonly #health = new Map<string, ProfileHealth>();
   readonly #unsubscribers = new Map<string, () => void>();
+  readonly #workerCrashes = new Map<string, number[]>();
   #candidate?: ConfigurationCandidate;
   #liveness: SupervisorLiveness = "starting";
   #operation: Promise<unknown> = Promise.resolve();
 
-  public constructor(factory: ProfileRuntimeFactory = new ForkedProfileRuntimeFactory()) {
+  public constructor(
+    factory: ProfileRuntimeFactory = new ForkedProfileRuntimeFactory(),
+    restartPolicy: WorkerRestartPolicy = defaultRestartPolicy,
+    clock: SupervisorClock = defaultClock
+  ) {
     super();
     this.#factory = factory;
+    this.#restartPolicy = restartPolicy;
+    this.#clock = clock;
   }
 
   public status(): SupervisorStatus {
@@ -61,6 +99,14 @@ export class Supervisor extends EventEmitter {
     const operation = this.#operation.then(() => this.#apply(candidate));
     this.#operation = operation.catch(() => undefined);
     return operation;
+  }
+
+  public preview(candidate: ConfigurationCandidate): ConfigurationPreview {
+    return {
+      previousRevision: this.#candidate?.revision ?? null,
+      candidateRevision: candidate.revision,
+      entries: planConfiguration(this.#candidate, candidate)
+    };
   }
 
   public stop(): Promise<SupervisorStatus> {
@@ -80,6 +126,9 @@ export class Supervisor extends EventEmitter {
     // complete candidate has been parsed and assigned a Configuration Revision.
     this.#candidate = candidate;
     this.#liveness = "live";
+    for (const entry of entries) {
+      if (entry.action !== "unchanged") this.#workerCrashes.delete(entry.profileId);
+    }
 
     const stopEntries = entries.filter((entry) => entry.action === "stop" || entry.action === "restart");
     await Promise.all(stopEntries.map((entry) => this.#stopProfile(entry.profileId)));
@@ -123,7 +172,9 @@ export class Supervisor extends EventEmitter {
     try {
       const runtime = this.#factory.create(profile, candidate.configuration.supervisor);
       this.#runtimes.set(profile.id, runtime);
-      const unsubscribe = runtime.subscribe((health) => this.#setHealth(health));
+      const unsubscribe = runtime.subscribe((health) =>
+        this.#handleRuntimeHealth(profile.id, runtime, health)
+      );
       this.#unsubscribers.set(profile.id, unsubscribe);
       this.#setHealth(await runtime.start());
     } catch {
@@ -157,6 +208,58 @@ export class Supervisor extends EventEmitter {
     if (previous && sameHealth(previous, health)) return;
     this.#health.set(health.profileId, { ...health });
     this.emit("health", { ...health });
+  }
+
+  #handleRuntimeHealth(
+    profileId: string,
+    runtime: ProfileRuntime,
+    health: ProfileHealth
+  ): void {
+    if (this.#runtimes.get(profileId) !== runtime) return;
+    this.#setHealth(health);
+    if (
+      this.#liveness === "live" &&
+      health.readiness === "unavailable" &&
+      health.reason === "worker_process_exit"
+    ) {
+      this.#scheduleWorkerRestart(profileId, runtime);
+    }
+  }
+
+  #scheduleWorkerRestart(profileId: string, runtime: ProfileRuntime): void {
+    const now = this.#clock.now();
+    const crashes = (this.#workerCrashes.get(profileId) ?? []).filter(
+      (timestamp) => now - timestamp <= this.#restartPolicy.windowMs
+    );
+    crashes.push(now);
+    this.#workerCrashes.set(profileId, crashes);
+    const delayMs = this.#restartPolicy.delaysMs[crashes.length - 1];
+    if (delayMs === undefined) {
+      this.#setHealth({
+        ...runtime.health(),
+        readiness: "unavailable",
+        reason: "worker_restart_exhausted"
+      });
+      return;
+    }
+
+    void this.#clock.sleep(delayMs).then(() => {
+      const operation = this.#operation.then(() =>
+        this.#restartCrashedProfile(profileId, runtime)
+      );
+      this.#operation = operation.catch(() => undefined);
+    });
+  }
+
+  async #restartCrashedProfile(profileId: string, crashedRuntime: ProfileRuntime): Promise<void> {
+    if (this.#liveness !== "live" || this.#runtimes.get(profileId) !== crashedRuntime) return;
+    const candidate = this.#candidate;
+    const profile = candidate?.configuration.profiles[profileId];
+    if (!candidate || !profile?.enabled) return;
+    this.#unsubscribers.get(profileId)?.();
+    this.#unsubscribers.delete(profileId);
+    this.#runtimes.delete(profileId);
+    await this.#startProfile(profile, candidate);
   }
 }
 

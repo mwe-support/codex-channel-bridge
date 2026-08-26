@@ -14,6 +14,7 @@ export type ProfileReasonCode =
   | "invalid_profile_configuration"
   | "protocol_fault"
   | "worker_process_exit"
+  | "worker_restart_exhausted"
   | "worker_start_failed"
   | "worker_stop_timeout"
   | null;

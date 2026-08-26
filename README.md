@@ -4,11 +4,13 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository now contains the first two development slices: a typed stdio
-JSONL Codex client and a foreground multi-Profile Supervisor. The Supervisor
-loads a strictly validated configuration and owns one Worker child per enabled
-Profile; each Worker owns its exclusive App Server child. QQ, WhatsApp, durable
-delivery, administration IPC, and production packaging are not implemented
+This repository now contains the first three development slices: a typed stdio
+JSONL Codex client, a foreground multi-Profile Supervisor, and a structured
+host-local administration control plane. The Supervisor loads a strictly
+validated configuration and owns one Worker child per enabled Profile; each
+Worker owns its exclusive App Server child. The control plane supports status
+and explicitly confirmed runtime configuration changes without TCP or HTTP.
+QQ, WhatsApp, durable delivery, and production packaging are not implemented
 yet, so the Bridge is not ready for deployment.
 
 ## First-release direction
@@ -42,6 +44,7 @@ npm install
 npm test
 npm run test:contract
 npm run test:supervisor-contract
+npm run test:control-contract
 ```
 
 `test:contract` is read-only with respect to Codex Threads: it regenerates the
@@ -62,6 +65,22 @@ Start the current development Supervisor in the foreground:
 node packages/cli/dist/main.js supervisor run \
   --config /absolute/path/config.yaml
 ```
+
+Query that running Supervisor and apply a candidate in two explicit steps:
+
+```sh
+node packages/cli/dist/main.js status
+node packages/cli/dist/main.js config apply \
+  --config /absolute/path/config.yaml
+node packages/cli/dist/main.js config apply \
+  --config /absolute/path/config.yaml \
+  --confirm FULL_CANDIDATE_REVISION
+```
+
+The first apply command only returns a redacted plan. The second rereads and
+validates the candidate, then requires its complete revision before changing
+runtime state. See [Configuration and Supervisor operation](docs/configuration.md)
+for endpoint and platform limits.
 
 ## License
 

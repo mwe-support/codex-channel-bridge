@@ -9,7 +9,11 @@ import {
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 
 import type { ProfileRuntime, ProfileRuntimeFactory } from "./profile-runtime.js";
-import { Supervisor, planConfiguration } from "./supervisor.js";
+import {
+  Supervisor,
+  planConfiguration,
+  type SupervisorClock
+} from "./supervisor.js";
 
 class FakeRuntime implements ProfileRuntime {
   readonly #listeners = new Set<(health: ProfileHealth) => void>();
@@ -45,6 +49,14 @@ class FakeRuntime implements ProfileRuntime {
   subscribe(listener: (health: ProfileHealth) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  crash(): void {
+    this.#transition({
+      ...this.#health,
+      readiness: "unavailable",
+      reason: "worker_process_exit"
+    });
   }
 
   #transition(health: ProfileHealth): ProfileHealth {
@@ -157,3 +169,36 @@ profiles:
   assert.equal(result.profiles.some((profile) => profile.profileId === "beta"), false);
   await supervisor.stop();
 });
+
+test("restarts a crashed Worker with a bounded Profile-local budget", async () => {
+  const factory = new FakeFactory();
+  const clock: SupervisorClock = { now: () => 1_000, sleep: async () => undefined };
+  const supervisor = new Supervisor(
+    factory,
+    { delaysMs: [0, 0], windowMs: 60_000 },
+    clock
+  );
+  await supervisor.apply(candidate("/srv/alpha/workspace", false));
+
+  factory.created.at(-1)!.crash();
+  await eventually(() => factory.created.length === 2);
+  factory.created.at(-1)!.crash();
+  await eventually(() => factory.created.length === 3);
+  factory.created.at(-1)!.crash();
+  await eventually(
+    () =>
+      supervisor.status().profiles.find((profile) => profile.profileId === "alpha")?.reason ===
+      "worker_restart_exhausted"
+  );
+  assert.equal(factory.created.length, 3);
+  assert.equal(supervisor.status().liveness, "live");
+  await supervisor.stop();
+});
+
+async function eventually(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.fail("condition did not become true");
+}

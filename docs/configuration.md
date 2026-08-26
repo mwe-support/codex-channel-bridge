@@ -75,7 +75,8 @@ Start the development Supervisor explicitly:
 
 ```sh
 node packages/cli/dist/main.js supervisor run \
-  --config /absolute/path/config.yaml
+  --config /absolute/path/config.yaml \
+  --endpoint /absolute/path/control.sock
 ```
 
 The command accepts the validated candidate as the initial Configuration
@@ -88,7 +89,57 @@ fail or stop healthy siblings.
 stop request, then the Supervisor uses the configured drain and child-exit
 timeouts before forced termination.
 
-The first release will expose runtime `config apply` only through the
-authenticated host-local administration IPC. That control plane is not part of
-this development slice, so `supervisor run` does not watch files, treat SIGHUP
-as reload, or offer an unsafe second-process apply workaround.
+## Host-local control plane
+
+The running Supervisor exposes a versioned JSONL administration protocol over
+one host-local endpoint. It does not listen on TCP or HTTP. On macOS and Linux,
+including Docker, the default endpoint is an owner-only Unix socket below the
+platform temporary directory. Its containing directory must be owned by the
+service user with mode `0700`, and the socket must be owned by that user with
+mode `0600`. A pre-existing active endpoint is never replaced.
+
+Pass the same explicit endpoint to the Supervisor and CLI, or set
+`BRIDGE_CONTROL_ENDPOINT` in both process environments:
+
+```sh
+node packages/cli/dist/main.js status \
+  --endpoint /absolute/path/control.sock
+```
+
+The current Node.js runtime does not expose Unix peer credentials. This slice
+therefore treats successful access through the verified owner-only directory
+and socket as the local System Administrator identity, while still running the
+authorization hook for every request. Native peer-credential verification is
+a remaining platform edge before release. A Windows named-pipe endpoint shape
+exists, but strict ACL provisioning and verification have not yet been tested
+on Windows and are not claimed complete.
+
+## Explicit runtime configuration apply
+
+Runtime configuration changes use two CLI invocations. The first rereads the
+candidate inside the running Supervisor process, applies its environment, and
+returns a redacted transition plan without changing runtime state:
+
+```sh
+node packages/cli/dist/main.js config apply \
+  --config /absolute/path/config.yaml \
+  --endpoint /absolute/path/control.sock
+```
+
+Copy the complete `confirmationRequired` revision into a second invocation:
+
+```sh
+node packages/cli/dist/main.js config apply \
+  --config /absolute/path/config.yaml \
+  --confirm FULL_CANDIDATE_REVISION \
+  --endpoint /absolute/path/control.sock
+```
+
+The second invocation rereads and validates the entire candidate, rejects a
+different revision, and sends a short-lived single-use plan token plus the full
+revision to the Supervisor. A stale plan is rejected if another Configuration
+Revision was accepted in the meantime. After acceptance, affected Profiles
+transition independently; an unchanged Profile is not restarted.
+
+The process never watches `config.yaml`, treats SIGHUP as reload, or accepts a
+direct second-process mutation of Supervisor state.

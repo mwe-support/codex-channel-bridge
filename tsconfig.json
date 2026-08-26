@@ -6,6 +6,7 @@
     { "path": "packages/codex-app-server" },
     { "path": "packages/profile-worker" },
     { "path": "packages/supervisor" },
+    { "path": "packages/control-plane" },
     { "path": "packages/cli" }
   ]
 }

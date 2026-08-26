@@ -6,13 +6,25 @@ import {
   ConfigurationValidationError,
   loadConfiguration
 } from "@codex-channel-bridge/config";
+import {
+  AdministrationResponseError,
+  ControlPlaneClient,
+  ControlPlaneServer,
+  SupervisorAdministration
+} from "@codex-channel-bridge/control-plane";
 import { ProfileWorker } from "@codex-channel-bridge/profile-worker";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
 
-const [area, action, ...args] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const [area, action, ...args] = argv;
 
 try {
-  if (area === "config" && action === "check") {
+  if (area === "status") {
+    const options = parseOptions(argv.slice(1));
+    rejectUnknownOptions(options, ["endpoint"]);
+    const client = new ControlPlaneClient(options.endpoint);
+    stdout.write(`${JSON.stringify(await client.request("status/get"), null, 2)}\n`);
+  } else if (area === "config" && action === "check") {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config"]);
     const candidate = await loadConfiguration(required(options, "config"));
@@ -31,21 +43,58 @@ try {
         2
       )}\n`
     );
+  } else if (area === "config" && action === "apply") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["config", "confirm", "endpoint"]);
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("config/plan", {
+      configPath: required(options, "config")
+    });
+    if (!options.confirm) {
+      stdout.write(
+        `${JSON.stringify(
+          {
+            applied: false,
+            confirmationRequired: plan.candidateRevision,
+            previousRevision: plan.previousRevision,
+            entries: plan.entries,
+            expiresAt: plan.expiresAt
+          },
+          null,
+          2
+        )}\n`
+      );
+    } else {
+      if (options.confirm !== plan.candidateRevision) {
+        throw new Error("--confirm must equal the complete candidate revision");
+      }
+      const result = await client.request("config/apply", {
+        planToken: plan.planToken,
+        confirmRevision: options.confirm
+      });
+      stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+    }
   } else if (area === "supervisor" && action === "run") {
     const options = parseOptions(args);
-    rejectUnknownOptions(options, ["config"]);
+    rejectUnknownOptions(options, ["config", "endpoint"]);
     const candidate = await loadConfiguration(required(options, "config"));
     const supervisor = new Supervisor();
+    const controlPlane = new ControlPlaneServer({
+      endpoint: options.endpoint,
+      handler: new SupervisorAdministration(supervisor)
+    });
     supervisor.on("health", (health) => {
       stdout.write(`${JSON.stringify({ event: "profile_health", ...health })}\n`);
     });
     try {
       const applied = await supervisor.apply(candidate);
+      await controlPlane.start();
       stdout.write(
         `${JSON.stringify({ event: "supervisor_live", revision: applied.acceptedRevision })}\n`
       );
       await waitForStopSignal();
     } finally {
+      await controlPlane.stop().catch(() => undefined);
       const status = await supervisor.stop();
       stdout.write(`${JSON.stringify({ event: "supervisor_stopped", liveness: status.liveness })}\n`);
     }
@@ -84,6 +133,8 @@ try {
 } catch (error) {
   if (error instanceof ConfigurationValidationError) {
     process.stderr.write(`${error.message}\n${error.issues.map((issue) => `- ${issue}`).join("\n")}\n`);
+  } else if (error instanceof AdministrationResponseError) {
+    process.stderr.write(`${error.code}: ${error.message}\n`);
   } else {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   }
@@ -137,8 +188,10 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
+      "  bridge status [--endpoint /absolute/path/control.sock]",
       "  bridge config check --config /absolute/path/config.yaml",
-      "  bridge supervisor run --config /absolute/path/config.yaml",
+      "  bridge config apply --config /absolute/path/config.yaml [--confirm FULL_REVISION] [--endpoint PATH]",
+      "  bridge supervisor run --config /absolute/path/config.yaml [--endpoint PATH]",
       "  bridge codex probe [--codex /absolute/path/to/codex]",
       "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path [--thread ID] [--codex PATH]"
     ].join("\n")
