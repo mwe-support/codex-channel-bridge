@@ -526,6 +526,14 @@ second core runtime without an accepted ADR demonstrating the need.
 
 ## Documentation and Completion
 
+- Every human-authored document under `docs/` must have a Chinese counterpart
+  under `docs/zh/` with the same relative path. For example,
+  `docs/adr/0001-example.md` maps to `docs/zh/adr/0001-example.md`. Files already
+  under `docs/zh/` are the counterparts and do not require another mirror.
+  Keep both versions semantically equivalent in the same change: creation,
+  modification, rename, or deletion of either version requires the matching
+  operation on the other. A documentation change is incomplete while either
+  counterpart is missing or stale.
 - Use `CONTEXT.md` as the canonical glossary; do not use `session`, `project`,
   `account`, or similar overloaded terms without resolving them to that model.
 - Record hard-to-reverse boundary decisions in `docs/adr/`.
