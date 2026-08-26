@@ -1,0 +1,13 @@
+{
+  "name": "@codex-channel-bridge/cli",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "bridge": "./dist/main.js"
+  },
+  "dependencies": {
+    "@codex-channel-bridge/codex-app-server": "0.1.0-dev",
+    "@codex-channel-bridge/profile-worker": "0.1.0-dev"
+  }
+}

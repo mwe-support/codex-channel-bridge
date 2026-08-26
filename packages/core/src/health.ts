@@ -1,0 +1,26 @@
+export type ProfileReadiness =
+  | "starting"
+  | "ready"
+  | "degraded"
+  | "unavailable"
+  | "draining"
+  | "stopped";
+
+export type ProfileReasonCode =
+  | "codex_not_found"
+  | "codex_start_failed"
+  | "incompatible_codex_protocol"
+  | "unsupported_codex_version"
+  | "invalid_profile_configuration"
+  | "protocol_fault"
+  | null;
+
+export type CodexVerification = "tested" | "unverified";
+
+export interface ProfileHealth {
+  readonly profileId: string;
+  readonly readiness: ProfileReadiness;
+  readonly reason: ProfileReasonCode;
+  readonly codexVersion?: string;
+  readonly codexVerification?: CodexVerification;
+}

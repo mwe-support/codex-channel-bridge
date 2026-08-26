@@ -4,7 +4,11 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository is an architecture and research baseline. The Bridge runtime has not been implemented yet and is not ready for deployment.
+This repository now contains the first development vertical slice: a typed
+stdio JSONL client, Codex protocol capability probe, one-Profile App Server
+worker, and a host-local CLI smoke path. QQ, WhatsApp, durable delivery,
+administration IPC, and production packaging are not implemented yet, so the
+Bridge is not ready for deployment.
 
 ## First-release direction
 
@@ -22,8 +26,25 @@ This repository is an architecture and research baseline. The Bridge runtime has
 - [Architecture decisions](docs/adr/)
 - [Codex-native history and compaction research](docs/research/codex-native-thread-history-retrieval-and-compaction.md)
 - [Open-source implementation landscape](docs/research/github-codex-channel-bridge-landscape.md)
+- [Development and Codex protocol verification](docs/development.md)
 
 The inherited Hermes worktree was used only as research context. Its runtime plugins, deployment files, history, and remote are not part of this repository.
+
+## Development
+
+The first slice requires Node.js 22 or newer and an administrator-supplied
+Codex CLI. The Bridge never installs or upgrades Codex.
+
+```sh
+npm install
+npm test
+npm run test:contract
+```
+
+`test:contract` is read-only with respect to Codex Threads: it regenerates the
+stable App Server schema, checks the pinned hash, initializes a real stdio App
+Server, and calls `model/list`. See `docs/development.md` before running the
+separate smoke Turn.
 
 ## License
 

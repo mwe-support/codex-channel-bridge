@@ -1,0 +1,18 @@
+{
+  "name": "@codex-channel-bridge/profile-worker",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@codex-channel-bridge/codex-app-server": "0.1.0-dev",
+    "@codex-channel-bridge/core": "0.1.0-dev"
+  }
+}

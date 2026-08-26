@@ -1,0 +1,19 @@
+{
+  "codexCliVersion": "0.149.1",
+  "generatedAt": "2026-08-26",
+  "generatorCommand": "codex app-server generate-json-schema --out <temporary-directory>",
+  "stableV2Bundle": "codex_app_server_protocol.v2.schemas.json",
+  "stableV2Sha256": "9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9",
+  "experimentalApi": false,
+  "requiredMethods": [
+    "initialize",
+    "thread/start",
+    "thread/resume",
+    "thread/read",
+    "thread/compact/start",
+    "turn/start",
+    "turn/steer",
+    "turn/interrupt",
+    "model/list"
+  ]
+}
