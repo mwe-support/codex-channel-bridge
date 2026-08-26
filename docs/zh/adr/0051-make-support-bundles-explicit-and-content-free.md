@@ -1,0 +1,3 @@
+# 让 Support Bundle 显式创建且不含内容
+
+`bridge doctor` 保持只读；只有已授权的 Host-local Administrator 在预览所选 Profile、时间范围、Allowlisted Field、大小和显式 Owner-only Output Path 后，才能创建 Support Bundle。Bundle 只包含 Version、Schema、Capability、Reason Code、State Transition、Count、Duration、Migration、SQLite Integrity 和脱敏 Configuration Shape Metadata，以及 Manifest 和 File Digest；绝不包含 Channel 或 Codex Content、Reasoning、Codex home、Workspace Content、Media、Authentication、Secret Reference Name 或 Value、Pairing Material、原始 Provider Identity、Signed URL 或完整 Local Path，首版也不提供 Content Override。Bridge 以不含内容的方式审计创建操作，绝不自动上传 Bundle、不配置 Vendor Endpoint，也不宣称其具备 Tamper Resistance。

@@ -1,0 +1,3 @@
+# 通过 Channel Presentation Policy 投射 Codex Event
+
+Bridge 将依据可配置的 Channel Presentation Policy 渲染 Codex App Server Event，而不是把原始 Event Stream 直接当作 Channel Output。Approval Request 和 User-input Request 立即发送，每个完成或失败的 Turn 恰好产生一个 Logical Result。展示级别包括：`compact`，仅展示终态和交互请求；`progress`，额外展示经节流的 Commentary 和 Plan；`detailed`，再额外展示已完成的 Tool、Command 和 Diff 摘要。Raw Output 仅在明确请求时提供。Profile Administrator 设置最高级别，Private Participant 可以在范围内选择，群聊则使用一个 Conversation 级选择。Secret 和 Raw Reasoning 绝不主动发送；仅当策略允许时才可展示原生 Reasoning Summary。超大的 Logical Result 尽可能使用简明摘要加 Markdown 附件，否则使用带稳定 Segment Identity 的有序分段，绝不静默截断。展示过程不得修改 Codex State，也不得把未完成的 Commentary 表述为最终结果。

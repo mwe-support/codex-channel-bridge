@@ -1,0 +1,3 @@
+# 保持角色管理位于本地并限制 Thread Discovery 范围
+
+System 与 Profile 管理角色及 Capability 只能通过主机本地配置或 CLI 操作分配；任何 Channel Participant 都不能通过 Channel Command 提升自身权限。Profile Administrator 可以管理该 Profile 的 Participant，但不能授予 System Administrator 权限。`/attach` 的 Thread Discovery 仅限当前 Profile、其 Workspace 和显式允许的来源：普通 Participant 只能看到获准控制的 Thread，Profile Administrator 则可看到整个 Profile 的 Thread。在 Private Binding 或 Participant-scoped Group Binding 中，Participant 可以管理自己的 Binding；更改 Conversation-scoped Group Binding、Model 或 Reasoning Setting，需要 Profile Administrator 权限或显式的 `thread_binding.manage` Capability。禁止跨 Profile 和跨 Workspace 发现。

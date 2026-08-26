@@ -1,0 +1,3 @@
+# 暂存并验证 Channel Reauthentication
+
+QQ Credential 只能通过 System Administrator 控制的 Secret Reference 配置；已授权的 Profile Administrator 可以通过经过认证的 Host-local IPC 发起 WhatsApp Pairing，并且 Expiring QR Code 或 Pairing Code 只返回给发起操作的 Interactive CLI。Baileys State 单独暂存，只有成功连接证明其 Provider Identity 与现有 Channel Account 相同后，才原子替换 Active Authentication；Identity Mismatch、Timeout、Interruption 或 Validation Failure 都会丢弃 Staged State 并保留最后一个有效 State，不同 Provider Identity 则必须创建新的 Channel Account。Reauthentication 只重启受影响的 Adapter；Log、Persistence、Diagnostic 和不含正文的 Audit Record 绝不包含 Pairing Material、Secret Value、Secret Reference Value 或原始 Provider Identity。

@@ -1,0 +1,3 @@
+# 区分 Disconnect 与 Authentication Revocation
+
+`disconnect` 可逆，只停止 Adapter 并保留其 Binding 和 Authentication；`logout` 或 `revoke` 则是破坏性的 Profile Administrator 操作，只有 Account 已 Drain 且没有 Active Turn、Pending Approval Request 或 Outbox Delivery 时才能执行。只有 Provider 明确确认 Logout 后，才删除 WhatsApp 本地 Baileys State；结果不确定时以 `auth_revoke_uncertain` 原因停止重连，直至重试或执行已明确警告的 `forget-local`，后者不能证明远端已失效。QQ 支持 Disconnect，但 Developer Credential 的撤销或轮换必须在腾讯官方 Console 完成，然后由 System Administrator 更新 Secret Reference。这些操作保留 Archive、Media、Binding、Codex Thread 和 Workspace Data；Audit Record 只包含内部 Reference、Result 和 Remote-confirmation Status。

@@ -1,0 +1,3 @@
+# 重新绑定 Channel Account 而不迁移 Profile History
+
+首版允许 System Administrator 重新分配由一个 Profile 独占的 Channel Account，但源 Profile 必须已禁用，且没有 Active Turn、Pending Approval Request 或 Pending Outbox Delivery。重新分配会在有记录的 Cutover Boundary 创建新的 Channel Account Epoch；目标只处理 Cutover 后的 Provider Event，使旧 Epoch 的重放事件无法启动 Codex Work。该操作不转移 Message Archive、Media、Access Policy、Conversation 或 Thread Binding、Codex History、Credential 或 Baileys Authentication State；目标必须提供新的 Secret Reference，并重新配对 WhatsApp。两个 Profile 都生成不含正文的 Audit Record；源 Profile 保留历史 Epoch 但不再有收发权限；Cutover 失败时 Account 保持 Unbound，而不是静默回滚。完整的 History 与 Credential Migration 需要未来 ADR 和安全审查。
