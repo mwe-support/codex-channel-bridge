@@ -13,6 +13,9 @@ export type ProfileReasonCode =
   | "unsupported_codex_version"
   | "invalid_profile_configuration"
   | "protocol_fault"
+  | "worker_process_exit"
+  | "worker_start_failed"
+  | "worker_stop_timeout"
   | null;
 
 export type CodexVerification = "tested" | "unverified";

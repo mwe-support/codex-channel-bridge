@@ -2,8 +2,10 @@
   "files": [],
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/config" },
     { "path": "packages/codex-app-server" },
     { "path": "packages/profile-worker" },
+    { "path": "packages/supervisor" },
     { "path": "packages/cli" }
   ]
 }

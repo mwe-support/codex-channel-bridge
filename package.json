@@ -16,6 +16,7 @@
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --test packages/*/dist/*.test.js",
     "test:contract": "npm run build && node packages/codex-app-server/dist/protocol-contract.contract.js",
+    "test:supervisor-contract": "npm run build && node packages/supervisor/dist/worker-process.contract.js",
     "test:smoke": "npm run build && node scripts/smoke-turn.mjs",
     "check": "npm run clean && npm run test"
   },

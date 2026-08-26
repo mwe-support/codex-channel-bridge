@@ -4,11 +4,12 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository now contains the first development vertical slice: a typed
-stdio JSONL client, Codex protocol capability probe, one-Profile App Server
-worker, and a host-local CLI smoke path. QQ, WhatsApp, durable delivery,
-administration IPC, and production packaging are not implemented yet, so the
-Bridge is not ready for deployment.
+This repository now contains the first two development slices: a typed stdio
+JSONL Codex client and a foreground multi-Profile Supervisor. The Supervisor
+loads a strictly validated configuration and owns one Worker child per enabled
+Profile; each Worker owns its exclusive App Server child. QQ, WhatsApp, durable
+delivery, administration IPC, and production packaging are not implemented
+yet, so the Bridge is not ready for deployment.
 
 ## First-release direction
 
@@ -27,6 +28,7 @@ Bridge is not ready for deployment.
 - [Codex-native history and compaction research](docs/research/codex-native-thread-history-retrieval-and-compaction.md)
 - [Open-source implementation landscape](docs/research/github-codex-channel-bridge-landscape.md)
 - [Development and Codex protocol verification](docs/development.md)
+- [Configuration and Supervisor operation](docs/configuration.md)
 
 The inherited Hermes worktree was used only as research context. Its runtime plugins, deployment files, history, and remote are not part of this repository.
 
@@ -39,12 +41,27 @@ Codex CLI. The Bridge never installs or upgrades Codex.
 npm install
 npm test
 npm run test:contract
+npm run test:supervisor-contract
 ```
 
 `test:contract` is read-only with respect to Codex Threads: it regenerates the
 stable App Server schema, checks the pinned hash, initializes a real stdio App
 Server, and calls `model/list`. See `docs/development.md` before running the
 separate smoke Turn.
+
+Validate a configuration without changing runtime state:
+
+```sh
+node packages/cli/dist/main.js config check \
+  --config /absolute/path/config.yaml
+```
+
+Start the current development Supervisor in the foreground:
+
+```sh
+node packages/cli/dist/main.js supervisor run \
+  --config /absolute/path/config.yaml
+```
 
 ## License
 

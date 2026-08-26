@@ -1,0 +1,16 @@
+schemaVersion: 1
+
+supervisor:
+  drainTimeoutMs: 300000
+  childExitTimeoutMs: 10000
+
+profiles:
+  example-primary:
+    enabled: true
+    workspace: /srv/codex-channel-bridge/example-primary/workspace
+    codexHome: /srv/codex-channel-bridge/example-primary/codex-home
+
+  example-secondary:
+    enabled: false
+    workspace: /srv/codex-channel-bridge/example-secondary/workspace
+    codexHome: /srv/codex-channel-bridge/example-secondary/codex-home

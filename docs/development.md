@@ -11,7 +11,12 @@ The first runtime slice establishes only the Codex-facing path:
 3. `@codex-channel-bridge/profile-worker` owns one Profile-exclusive child,
    readiness, Thread start or reuse, Turn start, and terminal result
    collection.
-4. `@codex-channel-bridge/cli` exposes host-local development commands.
+4. `@codex-channel-bridge/config` owns strict YAML parsing, environment
+   overrides, complete static validation, and Configuration Revision hashing.
+5. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
+   accepted desired configuration, multi-Profile transitions, and the Worker
+   child-process Adapter.
+6. `@codex-channel-bridge/cli` exposes host-local development commands.
 
 No package stores Codex Thread or Turn history. The Profile worker sends native
 App Server requests and consumes native item and Turn events.
@@ -51,6 +56,17 @@ npm run test:contract
 This performs `initialize`, sends `initialized`, and calls `model/list`. It does
 not create a Codex Thread or Turn.
 
+Run the real process-tree contract test:
+
+```sh
+npm run test:supervisor-contract
+```
+
+This starts one healthy Profile and one deliberately unavailable Profile. It
+verifies that the Supervisor remains live, the healthy Worker reaches `ready`,
+the unavailable sibling fails closed, and both Worker processes stop without
+creating a Turn.
+
 ## Optional end-to-end smoke Turn
 
 The smoke test uses the operator's supplied Codex home and consumes a real
@@ -85,3 +101,14 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   approval transport is implemented.
 - Model selection, reasoning, Reviewer policy, sandboxing, compaction, and
   Thread persistence remain Codex-owned.
+
+## Current development limits
+
+- Configuration is accepted on explicit foreground Supervisor start. Runtime
+  `config apply` awaits the authenticated host-local IPC control plane; the
+  process does not watch `config.yaml` or reload on signals.
+- Worker process crashes are reported as Profile-local `unavailable`; bounded
+  automatic Worker restart policy is not implemented yet.
+- Profile drain currently stops the App Server because Channel admission,
+  active-Turn tracking, Approval transport, queues, and the durable outbox are
+  not present yet. Their eventual drain conditions remain defined by the ADRs.

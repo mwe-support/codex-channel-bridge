@@ -1,0 +1,216 @@
+import { EventEmitter } from "node:events";
+
+import type {
+  ConfigurationCandidate,
+  ProfileConfiguration
+} from "@codex-channel-bridge/config";
+import type { ProfileHealth } from "@codex-channel-bridge/core";
+
+import {
+  ForkedProfileRuntimeFactory,
+  type ProfileRuntime,
+  type ProfileRuntimeFactory
+} from "./profile-runtime.js";
+
+export type SupervisorLiveness = "starting" | "live" | "stopping" | "stopped";
+export type ProfileApplyAction = "start" | "stop" | "restart" | "unchanged";
+
+export interface ConfigurationApplyEntry {
+  readonly profileId: string;
+  readonly action: ProfileApplyAction;
+}
+
+export interface ConfigurationApplyResult {
+  readonly previousRevision: string | null;
+  readonly acceptedRevision: string;
+  readonly entries: readonly ConfigurationApplyEntry[];
+  readonly profiles: readonly ProfileHealth[];
+}
+
+export interface SupervisorStatus {
+  readonly liveness: SupervisorLiveness;
+  readonly configurationRevision: string | null;
+  readonly profiles: readonly ProfileHealth[];
+}
+
+export class Supervisor extends EventEmitter {
+  readonly #factory: ProfileRuntimeFactory;
+  readonly #runtimes = new Map<string, ProfileRuntime>();
+  readonly #health = new Map<string, ProfileHealth>();
+  readonly #unsubscribers = new Map<string, () => void>();
+  #candidate?: ConfigurationCandidate;
+  #liveness: SupervisorLiveness = "starting";
+  #operation: Promise<unknown> = Promise.resolve();
+
+  public constructor(factory: ProfileRuntimeFactory = new ForkedProfileRuntimeFactory()) {
+    super();
+    this.#factory = factory;
+  }
+
+  public status(): SupervisorStatus {
+    return {
+      liveness: this.#liveness,
+      configurationRevision: this.#candidate?.revision ?? null,
+      profiles: [...this.#health.values()].sort((left, right) =>
+        left.profileId.localeCompare(right.profileId)
+      )
+    };
+  }
+
+  public apply(candidate: ConfigurationCandidate): Promise<ConfigurationApplyResult> {
+    const operation = this.#operation.then(() => this.#apply(candidate));
+    this.#operation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  public stop(): Promise<SupervisorStatus> {
+    const operation = this.#operation.then(() => this.#stop());
+    this.#operation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  async #apply(candidate: ConfigurationCandidate): Promise<ConfigurationApplyResult> {
+    if (this.#liveness === "stopping" || this.#liveness === "stopped") {
+      throw new Error("Supervisor is stopping or stopped");
+    }
+    const previous = this.#candidate;
+    const entries = planConfiguration(previous, candidate);
+
+    // Acceptance is transactional: no runtime transition begins before the
+    // complete candidate has been parsed and assigned a Configuration Revision.
+    this.#candidate = candidate;
+    this.#liveness = "live";
+
+    const stopEntries = entries.filter((entry) => entry.action === "stop" || entry.action === "restart");
+    await Promise.all(stopEntries.map((entry) => this.#stopProfile(entry.profileId)));
+
+    for (const entry of entries) {
+      const profile = candidate.configuration.profiles[entry.profileId];
+      if (entry.action === "start" || entry.action === "restart") {
+        if (profile?.enabled) void this.#startProfile(profile, candidate);
+      } else if (entry.action === "unchanged" && profile && !profile.enabled) {
+        this.#setHealth({ profileId: profile.id, readiness: "stopped", reason: null });
+      }
+    }
+
+    await Promise.all(
+      entries
+        .filter((entry) => entry.action === "start" || entry.action === "restart")
+        .map(async (entry) => {
+          const runtime = this.#runtimes.get(entry.profileId);
+          if (runtime) await waitUntilSettled(runtime);
+        })
+    );
+
+    for (const entry of entries) {
+      if (!candidate.configuration.profiles[entry.profileId]) {
+        this.#health.delete(entry.profileId);
+      }
+    }
+
+    return {
+      previousRevision: previous?.revision ?? null,
+      acceptedRevision: candidate.revision,
+      entries,
+      profiles: this.status().profiles
+    };
+  }
+
+  async #startProfile(
+    profile: ProfileConfiguration,
+    candidate: ConfigurationCandidate
+  ): Promise<void> {
+    try {
+      const runtime = this.#factory.create(profile, candidate.configuration.supervisor);
+      this.#runtimes.set(profile.id, runtime);
+      const unsubscribe = runtime.subscribe((health) => this.#setHealth(health));
+      this.#unsubscribers.set(profile.id, unsubscribe);
+      this.#setHealth(await runtime.start());
+    } catch {
+      this.#setHealth({ profileId: profile.id, readiness: "unavailable", reason: "worker_start_failed" });
+    }
+  }
+
+  async #stopProfile(profileId: string): Promise<void> {
+    const runtime = this.#runtimes.get(profileId);
+    if (!runtime) return;
+    try {
+      this.#setHealth(await runtime.stop());
+    } catch {
+      this.#setHealth({ profileId, readiness: "stopped", reason: "worker_stop_timeout" });
+    }
+    this.#unsubscribers.get(profileId)?.();
+    this.#unsubscribers.delete(profileId);
+    this.#runtimes.delete(profileId);
+  }
+
+  async #stop(): Promise<SupervisorStatus> {
+    if (this.#liveness === "stopped") return this.status();
+    this.#liveness = "stopping";
+    await Promise.all([...this.#runtimes.keys()].map((profileId) => this.#stopProfile(profileId)));
+    this.#liveness = "stopped";
+    return this.status();
+  }
+
+  #setHealth(health: ProfileHealth): void {
+    const previous = this.#health.get(health.profileId);
+    if (previous && sameHealth(previous, health)) return;
+    this.#health.set(health.profileId, { ...health });
+    this.emit("health", { ...health });
+  }
+}
+
+function sameHealth(left: ProfileHealth, right: ProfileHealth): boolean {
+  return (
+    left.profileId === right.profileId &&
+    left.readiness === right.readiness &&
+    left.reason === right.reason &&
+    left.codexVersion === right.codexVersion &&
+    left.codexVerification === right.codexVerification
+  );
+}
+
+export function planConfiguration(
+  previous: ConfigurationCandidate | undefined,
+  next: ConfigurationCandidate
+): readonly ConfigurationApplyEntry[] {
+  const previousProfiles = previous?.configuration.profiles ?? {};
+  const nextProfiles = next.configuration.profiles;
+  const ids = new Set([...Object.keys(previousProfiles), ...Object.keys(nextProfiles)]);
+  return [...ids]
+    .sort()
+    .map((profileId): ConfigurationApplyEntry => {
+      const before = previousProfiles[profileId];
+      const after = nextProfiles[profileId];
+      if (!after || !after.enabled) {
+        return { profileId, action: before?.enabled ? "stop" : "unchanged" };
+      }
+      if (!before || !before.enabled) return { profileId, action: "start" };
+      return {
+        profileId,
+        action: sameRestartConfiguration(before, after) ? "unchanged" : "restart"
+      };
+    });
+}
+
+function sameRestartConfiguration(
+  left: ProfileConfiguration,
+  right: ProfileConfiguration
+): boolean {
+  return (
+    left.workspace === right.workspace &&
+    left.codexHome === right.codexHome &&
+    left.codexExecutable === right.codexExecutable
+  );
+}
+
+async function waitUntilSettled(runtime: ProfileRuntime): Promise<void> {
+  if (["ready", "degraded", "unavailable"].includes(runtime.health().readiness)) return;
+  await new Promise<void>((resolve) => {
+    const unsubscribe = runtime.subscribe((health) => {
+      if (!["ready", "degraded", "unavailable"].includes(health.readiness)) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+}

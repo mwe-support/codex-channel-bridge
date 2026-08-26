@@ -7,3 +7,11 @@ export type {
   ProfileWorkerDependencies,
   TurnResult
 } from "./profile-worker.js";
+export {
+  isSupervisorToWorkerMessage,
+  isWorkerToSupervisorMessage
+} from "./worker-ipc.js";
+export type {
+  SupervisorToWorkerMessage,
+  WorkerToSupervisorMessage
+} from "./worker-ipc.js";

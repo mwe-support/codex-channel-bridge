@@ -1,0 +1,159 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  parseConfiguration,
+  type ProfileConfiguration,
+  type SupervisorConfiguration
+} from "@codex-channel-bridge/config";
+import type { ProfileHealth } from "@codex-channel-bridge/core";
+
+import type { ProfileRuntime, ProfileRuntimeFactory } from "./profile-runtime.js";
+import { Supervisor, planConfiguration } from "./supervisor.js";
+
+class FakeRuntime implements ProfileRuntime {
+  readonly #listeners = new Set<(health: ProfileHealth) => void>();
+  #health: ProfileHealth;
+  starts = 0;
+  stops = 0;
+
+  public constructor(
+    readonly profile: ProfileConfiguration,
+    private readonly startReadiness: "ready" | "unavailable" = "ready"
+  ) {
+    this.#health = { profileId: profile.id, readiness: "stopped", reason: null };
+  }
+
+  async start(): Promise<ProfileHealth> {
+    this.starts += 1;
+    return this.#transition({
+      profileId: this.profile.id,
+      readiness: this.startReadiness,
+      reason: this.startReadiness === "ready" ? null : "worker_start_failed"
+    });
+  }
+
+  async stop(): Promise<ProfileHealth> {
+    this.stops += 1;
+    return this.#transition({ profileId: this.profile.id, readiness: "stopped", reason: null });
+  }
+
+  health(): ProfileHealth {
+    return { ...this.#health };
+  }
+
+  subscribe(listener: (health: ProfileHealth) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  #transition(health: ProfileHealth): ProfileHealth {
+    this.#health = health;
+    for (const listener of this.#listeners) listener(this.health());
+    return this.health();
+  }
+}
+
+class FakeFactory implements ProfileRuntimeFactory {
+  readonly created: FakeRuntime[] = [];
+  readonly unavailable = new Set<string>();
+
+  create(profile: ProfileConfiguration, _supervisor: SupervisorConfiguration): ProfileRuntime {
+    const runtime = new FakeRuntime(
+      profile,
+      this.unavailable.has(profile.id) ? "unavailable" : "ready"
+    );
+    this.created.push(runtime);
+    return runtime;
+  }
+}
+
+function candidate(alphaWorkspace = "/srv/alpha/workspace", betaEnabled = true) {
+  return parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: ${alphaWorkspace}
+    codexHome: /srv/alpha/codex
+  beta:
+    enabled: ${betaEnabled}
+    workspace: /srv/beta/workspace
+    codexHome: /srv/beta/codex
+`);
+}
+
+test("keeps Supervisor live when one Profile is unavailable", async () => {
+  const factory = new FakeFactory();
+  factory.unavailable.add("beta");
+  const supervisor = new Supervisor(factory);
+  const result = await supervisor.apply(candidate());
+  assert.equal(supervisor.status().liveness, "live");
+  assert.deepEqual(
+    result.profiles.map((profile) => [profile.profileId, profile.readiness]),
+    [
+      ["alpha", "ready"],
+      ["beta", "unavailable"]
+    ]
+  );
+  await supervisor.stop();
+});
+
+test("restarts only a Profile whose restart-owned configuration changed", async () => {
+  const factory = new FakeFactory();
+  const supervisor = new Supervisor(factory);
+  const first = candidate();
+  await supervisor.apply(first);
+  const alphaFirst = factory.created.find((runtime) => runtime.profile.id === "alpha")!;
+  const betaFirst = factory.created.find((runtime) => runtime.profile.id === "beta")!;
+
+  const second = candidate("/srv/alpha/new-workspace");
+  const result = await supervisor.apply(second);
+  assert.deepEqual(result.entries, [
+    { profileId: "alpha", action: "restart" },
+    { profileId: "beta", action: "unchanged" }
+  ]);
+  assert.equal(alphaFirst.stops, 1);
+  assert.equal(betaFirst.stops, 0);
+  assert.equal(factory.created.filter((runtime) => runtime.profile.id === "alpha").length, 2);
+  await supervisor.stop();
+});
+
+test("disabling a Profile stops it without deleting its configuration", async () => {
+  const factory = new FakeFactory();
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(candidate());
+  const beta = factory.created.find((runtime) => runtime.profile.id === "beta")!;
+  const result = await supervisor.apply(candidate("/srv/alpha/workspace", false));
+  assert(result.entries.some((entry) => entry.profileId === "beta" && entry.action === "stop"));
+  assert.equal(beta.stops, 1);
+  assert.equal(
+    result.profiles.find((profile) => profile.profileId === "beta")?.readiness,
+    "stopped"
+  );
+  await supervisor.stop();
+});
+
+test("configuration planning has no runtime side effects", () => {
+  const first = candidate();
+  const next = candidate("/srv/alpha/new-workspace", false);
+  assert.deepEqual(planConfiguration(first, next), [
+    { profileId: "alpha", action: "restart" },
+    { profileId: "beta", action: "stop" }
+  ]);
+});
+
+test("removing an already disabled Profile removes only its runtime status", async () => {
+  const factory = new FakeFactory();
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(candidate("/srv/alpha/workspace", false));
+  const withoutBeta = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+`);
+  const result = await supervisor.apply(withoutBeta);
+  assert.equal(result.profiles.some((profile) => profile.profileId === "beta"), false);
+  await supervisor.stop();
+});
