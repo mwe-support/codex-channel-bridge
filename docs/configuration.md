@@ -24,15 +24,19 @@ profiles:
     enabled: true
     workspace: /absolute/path/to/workspace
     codexHome: /absolute/path/to/codex-home
+    stateDirectory: /absolute/path/to/bridge-state
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
 The Profile mapping key is the Profile ID. IDs use lowercase ASCII letters,
 digits, and hyphens, start with a letter, and are at most 63 characters.
-`workspace` and `codexHome` must be existing absolute directories and must be
-exclusive across the complete candidate. `codexExecutable` is optional; when
-omitted, the Worker resolves `codex` from its service environment. The Bridge
-does not install or upgrade it.
+`workspace`, `codexHome`, and `stateDirectory` must be existing absolute
+directories. None of these owned roots may equal, contain, or be contained by
+another owned root in the complete candidate. On macOS and Linux,
+`stateDirectory` must be a real, service-user-owned directory with mode `0700`;
+the Worker creates its `bridge.sqlite` database there with mode `0600`.
+`codexExecutable` is optional; when omitted, the Worker resolves `codex` from
+its service environment. The Bridge does not install or upgrade it.
 
 Removing a Profile or setting `enabled: false` stops its Worker. It does not
 delete its Workspace, Codex home, Bridge data, or future Channel authentication
@@ -139,7 +143,8 @@ The second invocation rereads and validates the entire candidate, rejects a
 different revision, and sends a short-lived single-use plan token plus the full
 revision to the Supervisor. A stale plan is rejected if another Configuration
 Revision was accepted in the meantime. After acceptance, affected Profiles
-transition independently; an unchanged Profile is not restarted.
+transition independently; changing `stateDirectory` requires that Profile to
+restart, while an unchanged Profile is not restarted.
 
 The process never watches `config.yaml`, treats SIGHUP as reload, or accepts a
 direct second-process mutation of Supervisor state.

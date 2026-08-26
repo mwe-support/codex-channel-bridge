@@ -9,8 +9,10 @@ profiles:
     enabled: true
     workspace: /srv/codex-channel-bridge/example-primary/workspace
     codexHome: /srv/codex-channel-bridge/example-primary/codex-home
+    stateDirectory: /srv/codex-channel-bridge/example-primary/state
 
   example-secondary:
     enabled: false
     workspace: /srv/codex-channel-bridge/example-secondary/workspace
     codexHome: /srv/codex-channel-bridge/example-secondary/codex-home
+    stateDirectory: /srv/codex-channel-bridge/example-secondary/state

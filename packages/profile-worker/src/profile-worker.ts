@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import {
   CodexAppServerProcess,
@@ -15,11 +15,16 @@ import {
   probeCodexProtocol
 } from "@codex-channel-bridge/codex-app-server";
 import type { ProfileHealth, ProfileReasonCode } from "@codex-channel-bridge/core";
+import {
+  SqliteProfileStore,
+  type OpenProfileStoreOptions
+} from "@codex-channel-bridge/profile-store";
 
 export interface ProfileWorkerConfig {
   readonly profileId: string;
   readonly workspace: string;
   readonly codexHome: string;
+  readonly stateDirectory: string;
   readonly codexExecutable?: string;
 }
 
@@ -33,11 +38,17 @@ export interface TurnResult {
 export interface ProfileWorkerDependencies {
   readonly probe: (executable: string) => Promise<ProtocolProbeResult>;
   readonly createRuntime: (options: CodexAppServerOptions) => ManagedCodexRpcRuntime;
+  readonly createStore: (options: OpenProfileStoreOptions) => ProfileStoreRuntime;
+}
+
+export interface ProfileStoreRuntime {
+  close(): void;
 }
 
 const defaultDependencies: ProfileWorkerDependencies = {
   probe: (executable) => probeCodexProtocol(executable),
-  createRuntime: (options) => new CodexAppServerProcess(options)
+  createRuntime: (options) => new CodexAppServerProcess(options),
+  createStore: (options) => SqliteProfileStore.open(options)
 };
 
 export class ProfileUnavailableError extends Error {
@@ -51,6 +62,7 @@ export class ProfileWorker extends EventEmitter {
   readonly #config: ProfileWorkerConfig;
   readonly #dependencies: ProfileWorkerDependencies;
   #runtime?: ManagedCodexRpcRuntime;
+  #store?: ProfileStoreRuntime;
   #health: ProfileHealth;
 
   public constructor(
@@ -74,6 +86,16 @@ export class ProfileWorker extends EventEmitter {
   public async start(): Promise<ProfileHealth> {
     if (!this.#isValidConfiguration()) {
       return this.#transition("unavailable", "invalid_profile_configuration");
+    }
+    if (!this.#store) {
+      try {
+        this.#store = this.#dependencies.createStore({
+          profileId: this.#config.profileId,
+          databasePath: join(this.#config.stateDirectory, "bridge.sqlite")
+        });
+      } catch {
+        return this.#transition("unavailable", "profile_store_unavailable");
+      }
     }
     if (this.#runtime) return this.health();
     this.#transition("starting", null);
@@ -177,10 +199,13 @@ export class ProfileWorker extends EventEmitter {
 
   public async stop(): Promise<ProfileHealth> {
     const runtime = this.#runtime;
-    if (!runtime) return this.#transition("stopped", null);
-    this.#transition("draining", null);
-    await runtime.stop();
-    this.#runtime = undefined;
+    if (runtime) {
+      this.#transition("draining", null);
+      await runtime.stop();
+      this.#runtime = undefined;
+    }
+    this.#store?.close();
+    this.#store = undefined;
     return this.#transition("stopped", null);
   }
 
@@ -212,7 +237,8 @@ export class ProfileWorker extends EventEmitter {
     return (
       this.#config.profileId.trim().length > 0 &&
       isAbsolute(this.#config.workspace) &&
-      isAbsolute(this.#config.codexHome)
+      isAbsolute(this.#config.codexHome) &&
+      isAbsolute(this.#config.stateDirectory)
     );
   }
 

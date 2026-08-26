@@ -15,6 +15,7 @@ coverage/
 .env
 .env.*
 !.env.example
+test-channel.env*
 **/secrets.env
 local-secrets/
 secrets/

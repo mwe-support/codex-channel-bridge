@@ -13,9 +13,17 @@ const executableLine = process.env.CODEX_EXECUTABLE
   ? `\n    codexExecutable: ${JSON.stringify(process.env.CODEX_EXECUTABLE)}`
   : "";
 const brokenRoot = await mkdtemp(join(tmpdir(), "bridge-broken-profile-"));
+const contractRoot = await mkdtemp(join(tmpdir(), "bridge-contract-profile-"));
 const brokenWorkspace = join(brokenRoot, "workspace");
 const brokenCodexHome = join(brokenRoot, "codex-home");
-await Promise.all([mkdir(brokenWorkspace), mkdir(brokenCodexHome)]);
+const brokenState = join(brokenRoot, "state");
+const contractState = join(contractRoot, "state");
+await Promise.all([
+  mkdir(brokenWorkspace),
+  mkdir(brokenCodexHome),
+  mkdir(brokenState, { mode: 0o700 }),
+  mkdir(contractState, { mode: 0o700 })
+]);
 const candidate = parseConfiguration(`
 schemaVersion: 1
 supervisor:
@@ -25,10 +33,12 @@ profiles:
   broken:
     workspace: ${JSON.stringify(brokenWorkspace)}
     codexHome: ${JSON.stringify(brokenCodexHome)}
+    stateDirectory: ${JSON.stringify(brokenState)}
     codexExecutable: ${JSON.stringify(join(brokenRoot, "missing-codex"))}
   contract:
     workspace: ${JSON.stringify(workspace)}
-    codexHome: ${JSON.stringify(codexHome)}${executableLine}
+    codexHome: ${JSON.stringify(codexHome)}
+    stateDirectory: ${JSON.stringify(contractState)}${executableLine}
 `);
 
 const supervisor = new Supervisor();
@@ -53,5 +63,8 @@ try {
   );
 } finally {
   await supervisor.stop();
-  await rm(brokenRoot, { force: true, recursive: true });
+  await Promise.all([
+    rm(brokenRoot, { force: true, recursive: true }),
+    rm(contractRoot, { force: true, recursive: true })
+  ]);
 }

@@ -303,6 +303,7 @@ function sameRestartConfiguration(
   return (
     left.workspace === right.workspace &&
     left.codexHome === right.codexHome &&
+    left.stateDirectory === right.stateDirectory &&
     left.codexExecutable === right.codexExecutable
   );
 }

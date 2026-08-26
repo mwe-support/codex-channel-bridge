@@ -9,8 +9,11 @@ import type {
   ManagedCodexRpcRuntime,
   ProtocolProbeResult
 } from "@codex-channel-bridge/codex-app-server";
-
-import { ProfileWorker, type ProfileWorkerDependencies } from "./profile-worker.js";
+import {
+  ProfileWorker,
+  type ProfileStoreRuntime,
+  type ProfileWorkerDependencies
+} from "./profile-worker.js";
 
 const testedProbe: ProtocolProbeResult = {
   cliVersion: "0.149.1",
@@ -64,10 +67,19 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
   }
 }
 
-function dependencies(runtime: FakeRuntime): ProfileWorkerDependencies {
+class FakeStore implements ProfileStoreRuntime {
+  closed = false;
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
+function dependencies(runtime: FakeRuntime, store = new FakeStore()): ProfileWorkerDependencies {
   return {
     probe: async () => testedProbe,
-    createRuntime: (_options: CodexAppServerOptions) => runtime
+    createRuntime: (_options: CodexAppServerOptions) => runtime,
+    createStore: () => store
   };
 }
 
@@ -77,7 +89,8 @@ test("starts a Profile only after schema and live model probes pass", async () =
     {
       profileId: "profile-a",
       workspace: "/tmp/workspace",
-      codexHome: "/tmp/codex-home"
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
     },
     dependencies(runtime)
   );
@@ -100,7 +113,8 @@ test("runs a minimal Thread and Turn without storing Codex history", async () =>
     {
       profileId: "profile-a",
       workspace: "/tmp/workspace",
-      codexHome: "/tmp/codex-home"
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
     },
     dependencies(runtime)
   );
@@ -125,11 +139,52 @@ test("fails closed on a relative Workspace path", async () => {
     {
       profileId: "profile-a",
       workspace: "relative",
-      codexHome: "/tmp/codex-home"
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
     },
     dependencies(runtime)
   );
   const health = await worker.start();
   assert.equal(health.readiness, "unavailable");
   assert.equal(health.reason, "invalid_profile_configuration");
+});
+
+test("opens and closes Profile storage with the Worker lifecycle", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
+    },
+    dependencies(runtime, store)
+  );
+  await worker.start();
+  await worker.stop();
+  assert.equal(store.closed, true);
+});
+
+test("fails closed before starting Codex when Profile storage cannot open", async () => {
+  const runtime = new FakeRuntime();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
+    },
+    {
+      probe: async () => testedProbe,
+      createRuntime: () => runtime,
+      createStore: () => {
+        throw new Error("store unavailable");
+      }
+    }
+  );
+  const health = await worker.start();
+  assert.equal(health.readiness, "unavailable");
+  assert.equal(health.reason, "profile_store_unavailable");
+  assert.equal(runtime.requests.length, 0);
 });

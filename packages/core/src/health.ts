@@ -13,6 +13,7 @@ export type ProfileReasonCode =
   | "unsupported_codex_version"
   | "invalid_profile_configuration"
   | "protocol_fault"
+  | "profile_store_unavailable"
   | "worker_process_exit"
   | "worker_restart_exhausted"
   | "worker_start_failed"

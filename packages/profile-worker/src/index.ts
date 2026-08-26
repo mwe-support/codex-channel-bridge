@@ -5,6 +5,7 @@ export {
 export type {
   ProfileWorkerConfig,
   ProfileWorkerDependencies,
+  ProfileStoreRuntime,
   TurnResult
 } from "./profile-worker.js";
 export {

@@ -4,14 +4,16 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository now contains the first three development slices: a typed stdio
-JSONL Codex client, a foreground multi-Profile Supervisor, and a structured
-host-local administration control plane. The Supervisor loads a strictly
-validated configuration and owns one Worker child per enabled Profile; each
-Worker owns its exclusive App Server child. The control plane supports status
-and explicitly confirmed runtime configuration changes without TCP or HTTP.
-QQ, WhatsApp, durable delivery, and production packaging are not implemented
-yet, so the Bridge is not ready for deployment.
+This repository now contains the first four development slices: a typed stdio
+JSONL Codex client, a foreground multi-Profile Supervisor, a structured
+host-local administration control plane, and Profile-local Message Archive
+persistence. The Supervisor loads a strictly validated configuration and owns
+one Worker child per enabled Profile; each Worker owns its exclusive App Server
+child and Profile-local WAL SQLite state.
+The control plane supports status and explicitly confirmed runtime
+configuration changes without TCP or HTTP. QQ, WhatsApp, durable delivery, and
+production packaging are not implemented yet, so the Bridge is not ready for
+deployment.
 
 ## First-release direction
 
@@ -31,6 +33,7 @@ yet, so the Bridge is not ready for deployment.
 - [Open-source implementation landscape](docs/research/github-codex-channel-bridge-landscape.md)
 - [Development and Codex protocol verification](docs/development.md)
 - [Configuration and Supervisor operation](docs/configuration.md)
+- [Message Archive persistence baseline](docs/message-archive.md)
 
 The inherited Hermes worktree was used only as research context. Its runtime plugins, deployment files, history, and remote are not part of this repository.
 

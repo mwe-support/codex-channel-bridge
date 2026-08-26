@@ -8,9 +8,10 @@
 2. `@codex-channel-bridge/codex-app-server` 负责 Newline-delimited JSON Framing、Request Correlation、Generated-schema Capability Probe 和受监督的 App Server Child Edge。
 3. `@codex-channel-bridge/profile-worker` 负责一个 Profile 专属子进程、Readiness、Thread 启动或复用、Turn 启动和终态结果收集。
 4. `@codex-channel-bridge/config` 负责严格 YAML 解析、Environment Override、完整静态验证和 Configuration Revision Hash。
-5. `@codex-channel-bridge/supervisor` 负责前台 Deployment Process、已接受的 Desired Configuration、Multi-profile Transition 和有界 Worker Child-process Restart Policy。
-6. `@codex-channel-bridge/control-plane` 负责版本化 Local JSONL Administration Contract、Platform Endpoint Edge、Authorization Hook 和两阶段 Configuration Plan/Apply Protocol。
-7. `@codex-channel-bridge/cli` 暴露 Host-local Development Command。
+5. `@codex-channel-bridge/profile-store` 负责 Profile 专属 WAL SQLite Schema、Provider-event Deduplication、Recent-message Read 和 FTS5 Lexical Search。其同步实现必须在 Channel Event Loop 之外运行。
+6. `@codex-channel-bridge/supervisor` 负责前台 Deployment Process、已接受的 Desired Configuration、Multi-profile Transition 和有界 Worker Child-process Restart Policy。
+7. `@codex-channel-bridge/control-plane` 负责版本化 Local JSONL Administration Contract、Platform Endpoint Edge、Authorization Hook 和两阶段 Configuration Plan/Apply Protocol。
+8. `@codex-channel-bridge/cli` 暴露 Host-local Development Command。
 
 任何 Package 都不存储 Codex Thread 或 Turn History。Profile Worker 发送原生 App Server Request，并消费原生 Item 和 Turn Event。
 
@@ -88,7 +89,8 @@ npm run test:smoke
 printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   --profile local-dev \
   --workspace /absolute/workspace \
-  --codex-home /absolute/codex/home
+  --codex-home /absolute/codex/home \
+  --state-directory /absolute/bridge/state
 ```
 
 ## 协议行为
@@ -105,3 +107,4 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - 崩溃的 Worker 会在 60 秒窗口内以 1、2、5 秒的有界延迟在 Profile 本地重启。再次崩溃会打开 Profile-local Stop Condition `worker_restart_exhausted`；Supervisor 与 Sibling Profile 保持 Live。Administrator Reset 和基于 Cooldown 的恢复尚未实现。
 - 因为 Node.js 不暴露 Peer Credential，Unix 访问目前依赖验证过的 Service-user Ownership 和 Mode。Windows Named-pipe Path 已存在，但严格 ACL 的设置和验证仍是未经测试的平台工作。尚未实现 Web Administration Console。
 - 当前 Profile Drain 会停止 App Server，因为 Channel Admission、Active-turn Tracking、Approval Transport、Queue 和 Durable Outbox 尚不存在。它们最终的 Drain Condition 仍由 ADR 定义。
+- Profile Store 当前只实现持久化与 FTS5 词法检索基础。专用的 Event-loop 外 Storage Worker、完整本地 Hybrid Retrieval、Archive MCP Server、Archive Purge、Media Persistence 和 Durable Outbox 尚未实现。

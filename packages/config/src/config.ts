@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
-import { isAbsolute, normalize } from "node:path";
+import { isAbsolute, normalize, relative, sep } from "node:path";
 
 import { parseDocument } from "yaml";
 
@@ -8,13 +8,20 @@ const MAX_CONFIG_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 const TOP_LEVEL_KEYS = new Set(["schemaVersion", "supervisor", "profiles"]);
 const SUPERVISOR_KEYS = new Set(["drainTimeoutMs", "childExitTimeoutMs"]);
-const PROFILE_KEYS = new Set(["enabled", "workspace", "codexHome", "codexExecutable"]);
+const PROFILE_KEYS = new Set([
+  "enabled",
+  "workspace",
+  "codexHome",
+  "stateDirectory",
+  "codexExecutable"
+]);
 
 export interface ProfileConfiguration {
   readonly id: string;
   readonly enabled: boolean;
   readonly workspace: string;
   readonly codexHome: string;
+  readonly stateDirectory: string;
   readonly codexExecutable?: string;
 }
 
@@ -130,12 +137,21 @@ async function validateProfileDirectories(configuration: BridgeConfiguration): P
   const issues: string[] = [];
   await Promise.all(
     Object.values(configuration.profiles).map(async (profile) => {
-      const [workspace, codexHome] = await Promise.all([
+      const [workspace, codexHome, stateDirectory] = await Promise.all([
         stat(profile.workspace).catch(() => null),
-        stat(profile.codexHome).catch(() => null)
+        stat(profile.codexHome).catch(() => null),
+        lstat(profile.stateDirectory).catch(() => null)
       ]);
       if (!workspace?.isDirectory()) issues.push(`profiles.${profile.id}.workspace must exist as a directory`);
       if (!codexHome?.isDirectory()) issues.push(`profiles.${profile.id}.codexHome must exist as a directory`);
+      if (!stateDirectory?.isDirectory() || stateDirectory.isSymbolicLink()) {
+        issues.push(`profiles.${profile.id}.stateDirectory must exist as a real directory`);
+      } else if (
+        process.platform !== "win32" &&
+        (stateDirectory.uid !== process.getuid?.() || (stateDirectory.mode & 0o777) !== 0o700)
+      ) {
+        issues.push(`profiles.${profile.id}.stateDirectory must be owned by the service user with mode 0700`);
+      }
     })
   );
   if (issues.length > 0) throw new ConfigurationValidationError(issues.sort());
@@ -188,25 +204,30 @@ function validateShape(raw: unknown): BridgeConfiguration {
       if (typeof enabled !== "boolean") issues.push(`profiles.${id}.enabled must be boolean`);
       const workspace = absolutePath(value.workspace, `profiles.${id}.workspace`, issues);
       const codexHome = absolutePath(value.codexHome, `profiles.${id}.codexHome`, issues);
+      const stateDirectory = absolutePath(
+        value.stateDirectory,
+        `profiles.${id}.stateDirectory`,
+        issues
+      );
       const codexExecutable = optionalExecutablePath(
         value.codexExecutable,
         `profiles.${id}.codexExecutable`,
         issues
       );
-      if (workspace && codexHome && typeof enabled === "boolean") {
+      if (workspace && codexHome && stateDirectory && typeof enabled === "boolean") {
         profiles[id] = {
           id,
           enabled,
           workspace,
           codexHome,
+          stateDirectory,
           ...(codexExecutable ? { codexExecutable } : {})
         };
       }
     }
   }
 
-  rejectDuplicatePaths(profiles, "workspace", issues);
-  rejectDuplicatePaths(profiles, "codexHome", issues);
+  rejectOverlappingOwnedPaths(profiles, issues);
   if (issues.length > 0) throw new ConfigurationValidationError(issues.sort());
 
   return {
@@ -260,17 +281,34 @@ function integerWithin(
   return value;
 }
 
-function rejectDuplicatePaths(
+function rejectOverlappingOwnedPaths(
   profiles: Record<string, ProfileConfiguration>,
-  field: "workspace" | "codexHome",
   issues: string[]
 ): void {
-  const owners = new Map<string, string>();
-  for (const profile of Object.values(profiles)) {
-    const previous = owners.get(profile[field]);
-    if (previous) issues.push(`profiles.${profile.id}.${field} duplicates Profile ${previous}`);
-    else owners.set(profile[field], profile.id);
+  const fields = ["workspace", "codexHome", "stateDirectory"] as const;
+  const paths = Object.values(profiles).flatMap((profile) =>
+    fields.map((field) => ({ profileId: profile.id, field, path: profile[field] }))
+  );
+  for (let leftIndex = 0; leftIndex < paths.length; leftIndex += 1) {
+    const left = paths[leftIndex];
+    if (!left) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < paths.length; rightIndex += 1) {
+      const right = paths[rightIndex];
+      if (!right || !pathsOverlap(left.path, right.path)) continue;
+      issues.push(
+        `profiles.${left.profileId}.${left.field} overlaps profiles.${right.profileId}.${right.field}`
+      );
+    }
   }
+}
+
+function pathsOverlap(left: string, right: string): boolean {
+  return pathContains(left, right) || pathContains(right, left);
+}
+
+function pathContains(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return path === "" || (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`));
 }
 
 function deepMerge(base: unknown, override: Record<string, unknown>): unknown {

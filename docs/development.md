@@ -13,13 +13,17 @@ The current runtime slices establish these explicit package boundaries:
    collection.
 4. `@codex-channel-bridge/config` owns strict YAML parsing, environment
    overrides, complete static validation, and Configuration Revision hashing.
-5. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
+5. `@codex-channel-bridge/profile-store` owns the Profile-exclusive WAL
+   SQLite schema, provider-event deduplication, recent-message reads, and FTS5
+   lexical search. Its synchronous implementation must run outside a Channel
+   event loop.
+6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy.
-6. `@codex-channel-bridge/control-plane` owns the versioned local JSONL
+7. `@codex-channel-bridge/control-plane` owns the versioned local JSONL
    administration contract, platform endpoint edge, authorization hook, and
    two-phase configuration plan/apply protocol.
-7. `@codex-channel-bridge/cli` exposes host-local development commands.
+8. `@codex-channel-bridge/cli` exposes host-local development commands.
 
 No package stores Codex Thread or Turn history. The Profile worker sends native
 App Server requests and consumes native item and Turn events.
@@ -119,7 +123,8 @@ command-line argument:
 printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   --profile local-dev \
   --workspace /absolute/workspace \
-  --codex-home /absolute/codex/home
+  --codex-home /absolute/codex/home \
+  --state-directory /absolute/bridge/state
 ```
 
 ## Protocol behavior
@@ -152,3 +157,7 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - Profile drain currently stops the App Server because Channel admission,
   active-Turn tracking, Approval transport, queues, and the durable outbox are
   not present yet. Their eventual drain conditions remain defined by the ADRs.
+- The Profile Store implements persistence and lexical FTS5 foundations only.
+  The dedicated off-event-loop storage worker, complete local Hybrid Retrieval,
+  Archive MCP Server, Archive Purge, media persistence, and durable outbox are
+  not implemented yet.

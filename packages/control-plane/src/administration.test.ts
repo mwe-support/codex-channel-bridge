@@ -60,6 +60,7 @@ profiles:
   alpha:
     workspace: ${workspace}
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
 `);
 }
 

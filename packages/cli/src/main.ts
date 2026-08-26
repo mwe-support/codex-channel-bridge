@@ -105,16 +105,25 @@ try {
     stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
   } else if (area === "codex" && action === "turn") {
     const options = parseOptions(args);
-    rejectUnknownOptions(options, ["profile", "workspace", "codex-home", "thread", "codex"]);
+    rejectUnknownOptions(options, [
+      "profile",
+      "workspace",
+      "codex-home",
+      "state-directory",
+      "thread",
+      "codex"
+    ]);
     const profileId = required(options, "profile");
     const workspace = required(options, "workspace");
     const codexHome = required(options, "codex-home");
+    const stateDirectory = required(options, "state-directory");
     const prompt = (await readStdin()).trim();
     if (!prompt) throw new Error("Codex input must be supplied on stdin");
     const worker = new ProfileWorker({
       profileId,
       workspace,
       codexHome,
+      stateDirectory,
       codexExecutable: options.codex
     });
     try {
@@ -193,7 +202,7 @@ function usage(): never {
       "  bridge config apply --config /absolute/path/config.yaml [--confirm FULL_REVISION] [--endpoint PATH]",
       "  bridge supervisor run --config /absolute/path/config.yaml [--endpoint PATH]",
       "  bridge codex probe [--codex /absolute/path/to/codex]",
-      "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path [--thread ID] [--codex PATH]"
+      "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path --state-directory /absolute/path [--thread ID] [--codex PATH]"
     ].join("\n")
   );
 }

@@ -4,3 +4,8 @@ export type {
   ProfileReadiness,
   ProfileReasonCode
 } from "./health.js";
+export type {
+  ChannelConversationKind,
+  ChannelProvider,
+  NormalizedChannelMessage
+} from "./channel-event.js";

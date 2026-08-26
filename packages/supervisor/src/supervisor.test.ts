@@ -87,10 +87,12 @@ profiles:
   alpha:
     workspace: ${alphaWorkspace}
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
   beta:
     enabled: ${betaEnabled}
     workspace: /srv/beta/workspace
     codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
 `);
 }
 
@@ -164,6 +166,7 @@ profiles:
   alpha:
     workspace: /srv/alpha/workspace
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
 `);
   const result = await supervisor.apply(withoutBeta);
   assert.equal(result.profiles.some((profile) => profile.profileId === "beta"), false);

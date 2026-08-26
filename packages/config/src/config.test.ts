@@ -16,10 +16,12 @@ profiles:
   alpha:
     workspace: /srv/alpha/workspace
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
   beta:
     enabled: false
     workspace: /srv/beta/workspace
     codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
 `;
 
 test("parses a complete candidate and applies defaults", () => {
@@ -45,10 +47,12 @@ test("produces the same revision for equivalent key order", () => {
 profiles:
   beta:
     codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
     workspace: /srv/beta/workspace
     enabled: false
   alpha:
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
     workspace: /srv/alpha/workspace
 schemaVersion: 1
 `);
@@ -75,11 +79,30 @@ profiles:
   alpha:
     workspace: /srv/shared
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
   beta:
     workspace: /srv/shared
     codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
 `),
     ConfigurationValidationError
+  );
+});
+
+test("rejects a Bridge state directory that overlaps Codex-owned data", () => {
+  assert.throws(
+    () =>
+      parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/codex/bridge-state
+`),
+    (error: unknown) =>
+      error instanceof ConfigurationValidationError &&
+      error.issues.some((issue) => issue.includes("stateDirectory"))
   );
 });
 
@@ -92,6 +115,7 @@ profiles:
   alpha: &profile
     workspace: /srv/alpha/workspace
     codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
   beta: *profile
 `),
     ConfigurationValidationError
@@ -107,11 +131,12 @@ test("loadConfiguration validates Profile directories without changing them", as
   const root = await mkdtemp(join(tmpdir(), "bridge-config-test-"));
   const workspace = join(root, "workspace");
   const codexHome = join(root, "codex-home");
+  const stateDirectory = join(root, "state");
   const path = join(root, "config.yaml");
-  await Promise.all([mkdir(workspace), mkdir(codexHome)]);
+  await Promise.all([mkdir(workspace), mkdir(codexHome), mkdir(stateDirectory, { mode: 0o700 })]);
   await writeFile(
     path,
-    `schemaVersion: 1\nprofiles:\n  alpha:\n    workspace: ${workspace}\n    codexHome: ${codexHome}\n`,
+    `schemaVersion: 1\nprofiles:\n  alpha:\n    workspace: ${workspace}\n    codexHome: ${codexHome}\n    stateDirectory: ${stateDirectory}\n`,
     { mode: 0o600 }
   );
   try {
@@ -127,7 +152,7 @@ test("loadConfiguration fails closed when a configured directory is absent", asy
   const path = join(root, "config.yaml");
   await writeFile(
     path,
-    `schemaVersion: 1\nprofiles:\n  alpha:\n    workspace: ${join(root, "missing")}\n    codexHome: ${root}\n`,
+    `schemaVersion: 1\nprofiles:\n  alpha:\n    workspace: ${join(root, "missing")}\n    codexHome: ${join(root, "codex-home")}\n    stateDirectory: ${join(root, "state")}\n`,
     { mode: 0o600 }
   );
   try {

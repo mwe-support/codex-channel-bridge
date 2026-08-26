@@ -20,10 +20,11 @@ profiles:
     enabled: true
     workspace: /absolute/path/to/workspace
     codexHome: /absolute/path/to/codex-home
+    stateDirectory: /absolute/path/to/bridge-state
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
-Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace` 和 `codexHome` 必须是现有绝对目录，并且在完整 Candidate 中分别由一个 Profile 独占。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
+Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace`、`codexHome` 和 `stateDirectory` 都必须是现有绝对目录；在完整 Candidate 中，任何一个 Owned Root 都不能与另一个相同，也不能包含另一个或被另一个包含。在 macOS 和 Linux 上，`stateDirectory` 必须是真实目录、由 Service User 所有且 Mode 为 `0700`；Worker 在其中创建 Mode 为 `0600` 的 `bridge.sqlite`。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
 
 移除 Profile 或设置 `enabled: false` 会停止其 Worker，但不会删除 Workspace、Codex home、Bridge Data 或未来的 Channel Authentication State。永久 Purge 仍是独立的未来 Host-local Operation。
 
@@ -96,6 +97,6 @@ node packages/cli/dist/main.js config apply \
   --endpoint /absolute/path/control.sock
 ```
 
-第二次调用重新读取并验证完整 Candidate，拒绝不同的 Revision，并向 Supervisor 发送一个短生命周期、只能使用一次的 Plan Token 和完整 Revision。如果这期间已经接受另一个 Configuration Revision，Stale Plan 会被拒绝。配置接受后，受影响的 Profile 独立 Transition；未变化的 Profile 不会重启。
+第二次调用重新读取并验证完整 Candidate，拒绝不同的 Revision，并向 Supervisor 发送一个短生命周期、只能使用一次的 Plan Token 和完整 Revision。如果这期间已经接受另一个 Configuration Revision，Stale Plan 会被拒绝。配置接受后，受影响的 Profile 独立 Transition；更改 `stateDirectory` 需要重启该 Profile，未变化的 Profile 不会重启。
 
 进程绝不监视 `config.yaml`、不把 SIGHUP 当作 Reload，也不接受第二个进程直接修改 Supervisor State。

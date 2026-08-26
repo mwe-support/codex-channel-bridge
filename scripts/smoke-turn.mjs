@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
+import { mkdtemp, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { ProfileWorker } from "../packages/profile-worker/dist/index.js";
 
 const marker = "CODEX_CHANNEL_BRIDGE_SMOKE_OK";
+const stateDirectory = await mkdtemp(join(tmpdir(), "bridge-smoke-state-"));
 const worker = new ProfileWorker({
   profileId: "local-smoke",
   workspace: resolve(process.env.BRIDGE_SMOKE_WORKSPACE ?? process.cwd()),
   codexHome: resolve(process.env.CODEX_HOME ?? join(homedir(), ".codex")),
+  stateDirectory,
   codexExecutable: process.env.CODEX_EXECUTABLE
 });
 
@@ -23,4 +26,5 @@ try {
   );
 } finally {
   await worker.stop();
+  await rm(stateDirectory, { force: true, recursive: true });
 }
