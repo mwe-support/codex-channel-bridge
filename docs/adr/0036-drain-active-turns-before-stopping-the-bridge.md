@@ -1,0 +1,3 @@
+# Drain active Turns before stopping the Bridge
+
+An intentional Bridge stop, restart, or upgrade will enter a bounded drain state: reject new Turn, steer, and queue input, but continue Approval and user-input responses needed by existing Turns and allow their terminal outbox records to commit. At the administrator-configured deadline, the worker invokes native `turn/interrupt`, then gracefully terminates App Server and escalates to forced child termination only after a separate timeout. Bridge state is flushed, while any unresolved Turn remains uncertain and must be reconciled after restart rather than being assumed complete or failed.

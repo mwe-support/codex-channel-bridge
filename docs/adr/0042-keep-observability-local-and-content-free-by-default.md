@@ -1,0 +1,3 @@
+# Keep observability local and content-free by default
+
+The Supervisor will emit structured JSON operational logs for the platform service manager to collect and rotate, using internal correlation IDs, event codes, states, durations, counts, and version or capability facts. Logs and captured App Server stderr must exclude Channel bodies, Codex input/output/reasoning, media, signed URLs, credentials, auth state, and raw provider identities. No telemetry leaves a self-hosted deployment by default; future OpenTelemetry export requires explicit opt-in, a documented destination, Profile isolation, and an allowlisted content-free schema, with no implicit analytics or crash reporting.

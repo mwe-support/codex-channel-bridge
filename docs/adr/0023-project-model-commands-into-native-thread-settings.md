@@ -1,0 +1,3 @@
+# Project model commands into native Thread settings
+
+`/model` and `/reasoning` will be projections into Codex App Server rather than Bridge-owned settings. Against the first tested Codex version, `model/list` supplies the model catalog and each model's ordered `supportedReasoningEfforts`; experimental `thread/settings/update` changes the loaded Thread without creating a Turn, and Codex persists the result for `thread/resume`. An update during an active Turn affects only subsequent Turns. The Bridge will declare the required experimental capability, maintain a tested Codex compatibility matrix and generated-schema contract tests, and report the commands as unsupported when the native method is absent instead of emulating it or modifying `config.toml`.

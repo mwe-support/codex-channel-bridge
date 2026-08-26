@@ -1,0 +1,3 @@
+# Keep Codex installation and upgrades operator-owned
+
+The Bridge will treat the host Codex CLI as an administrator-supplied external dependency and will never install, upgrade, downgrade, or repair it through a native installer or running service. Native deployments accept an explicit executable path or service environment and fail the affected Profile closed with an actionable diagnostic when Codex is absent or incompatible. A Linux Docker image may pin a tested Codex CLI during image construction, but a running container never self-updates; changing that version requires building or pulling a new image.

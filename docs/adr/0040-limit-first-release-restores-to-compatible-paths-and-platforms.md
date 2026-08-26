@@ -1,0 +1,3 @@
+# Limit first-release restores to compatible paths and platforms
+
+The first release will not promise cross-operating-system or arbitrary-path backup portability. A supported restore preserves the Profile ID, operating-system family, Codex home and Workspace absolute paths, compatible Codex version, ownership, permissions, and external credentials; migration to another same-platform host is allowed only when those invariants are recreated, while Docker must preserve the same in-container paths. The Bridge will never rewrite Codex rollout JSONL, private SQLite tables, Thread IDs, or persisted cwd values to fabricate portability; broader migration requires an official Codex mechanism and a later ADR.

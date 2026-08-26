@@ -1,0 +1,3 @@
+# Negotiate Codex capabilities against a tested version matrix
+
+The Bridge will declare a minimum Codex CLI version and publish an explicit matrix of versions verified against generated-schema and behavioral contract tests, while probing the actual App Server capabilities at each Profile-worker startup instead of inferring them from version numbers. A missing stable capability required for correctness keeps that Profile unavailable; a missing experimental capability disables only its enhancement and reports the degradation. Versions newer than the tested matrix may run only when required stable probes pass and remain visibly unverified, avoiding both latest-only lock-in and false compatibility claims.

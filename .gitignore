@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+.DS_Store
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+**/secrets.env
+local-secrets/
+secrets/
+
+# Runtime Profile data
+data/
+state/
+media/
+profiles/
+*.sqlite
+*.sqlite-*
+
+# Tool caches
+.cache/
+.pnpm-store/

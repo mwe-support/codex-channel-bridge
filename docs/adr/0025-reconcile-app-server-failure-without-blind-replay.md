@@ -1,0 +1,3 @@
+# Reconcile App Server failure without blind replay
+
+When a Profile's App Server fails, its worker will restart the child, use `thread/resume` without model or reasoning overrides, and reconcile the bound Thread and Turn state before deciding what to deliver. An input whose outcome remains uncertain is not replayed automatically; the Channel receives an explicit unknown-state result and may retry or continue deliberately. Server requests from the failed process, including pending approvals, are closed as failed because their identifiers cannot be reused, while already committed durable-outbox records remain eligible for delivery.

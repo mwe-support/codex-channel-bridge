@@ -1,0 +1,3 @@
+# Use stdio JSONL for App Server transport
+
+Each Profile worker will communicate with its supervised App Server child exclusively through local newline-delimited JSON over stdio in the first release. Stdout is protocol-only and any non-protocol output is treated as a fault, while stderr is captured separately as bounded and redacted diagnostics. This provides the same private child-process transport on macOS, Linux, Windows, and Docker without listeners, transport authentication, socket cleanup, or platform-specific endpoint management; Unix sockets, named pipes, and WebSockets require a future ADR.

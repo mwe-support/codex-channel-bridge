@@ -1,0 +1,3 @@
+# Bound App Server restarts with a Profile circuit breaker
+
+An App Server exit, startup failure, or corrupted stdio protocol will trigger Profile-local automatic restart with bounded exponential backoff and jitter. Repeated failures open a circuit breaker rather than causing an infinite hot restart loop; recovery follows a configured cooldown plus successful capability negotiation or an administrator action. While open, the Profile rejects new Codex Turn work but keeps Channel status available and delivers already committed outbox records; pending process-scoped requests fail, and restart recovery resumes and reconciles Codex state without blindly replaying uncertain input.

@@ -1,0 +1,3 @@
+# Keep a permanent Message Archive with bounded context
+
+Each Profile will permanently retain the QQ and WhatsApp events observable to its Channel Accounts until explicit deletion, following the proven snapshot-store boundary rather than equating recent prompt context with durable history. A Codex Turn receives a bounded Context Projection containing only recent Passive Context Events not already present in its Codex Thread; older records remain available through explicit commands or Codex-invoked structured and lexical hybrid retrieval, rather than automatic full-archive search on every Turn. Codex remains solely responsible for Thread history and compaction.

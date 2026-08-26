@@ -1,0 +1,12 @@
+Codex Channel Bridge
+Copyright 2026 Codex Channel Bridge contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+The initial design baseline contains no copied runtime source from the legacy
+Hermes compatibility worktree. Any future reuse of third-party source must be
+reviewed and attributed here as required by its license.
+
+Codex and OpenAI are trademarks of OpenAI. QQ is a trademark of Tencent.
+WhatsApp is a trademark of Meta Platforms, Inc. This project is independent and
+is not endorsed by or affiliated with those trademark owners.

@@ -1,0 +1,3 @@
+# Divide state ownership between Bridge and App Server
+
+Codex App Server is authoritative for Codex Threads, Turns, execution history, and agent state, while the Codex Channel Bridge is authoritative for Profiles, Channel identities, Thread Bindings, inbound deduplication, approval routing, outbox records, and provider delivery state. Each Profile keeps its Bridge State in an independent database, but never stores Codex Thread bodies. Channels are interaction surfaces rather than sources of work state, preventing the Bridge from creating a competing copy of Codex conversation history while still letting it provide reliable delivery and recovery.

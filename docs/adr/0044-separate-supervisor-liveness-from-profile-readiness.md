@@ -1,0 +1,3 @@
+# Separate Supervisor liveness from Profile readiness
+
+The Bridge will expose Supervisor liveness separately from each Profile's readiness so one unavailable Profile does not cause a platform service manager or Docker to restart healthy siblings. Default platform health checks cover only the main process, control plane, and event loop, while Profile checks report `starting`, `ready`, `degraded`, `unavailable`, `draining`, or `stopped` with stable reason codes; administrative and deployment gates may target one Profile or explicitly require all Profiles to be ready. Only a fatal Supervisor, configuration-loading, or control-plane failure marks the whole service unhealthy.
