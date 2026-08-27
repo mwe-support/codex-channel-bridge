@@ -266,12 +266,21 @@ quoted replies. Source: [official group-send response](https://bot.q.qq.com/wiki
 
 ### Reply windows and frequency hints
 
-Current official limits are:
+The current official summary limits are:
 
 | Scope | Passive reply window | Replies per inbound message |
 | --- | --- | --- |
-| C2C | 60 minutes | 4 |
+| C2C | 60 minutes in the overview and page summary | 4 |
 | Group | 5 minutes | 5 |
+
+The current C2C request-field description on that same page instead says that
+`msg_id` is valid for five minutes, and the pinned SDK streaming guide also
+requires an inbound message from the preceding five minutes. The first release
+must therefore treat five minutes as the conservative operating boundary until
+the real-robot tests in
+[`qq-long-running-delivery-limits.md`](qq-long-running-delivery-limits.md)
+resolve the provider behavior. Neither value is a proven maximum stream
+lifetime.
 
 For proactive messages, the official overview currently lists C2C Bot limits
 of 10 QPS for authenticated bots and 5 QPS plus 30 QPM for unverified bots,

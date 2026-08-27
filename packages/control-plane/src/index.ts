@@ -26,5 +26,6 @@ export type {
   AdministrationRequest,
   AdministrationResponse,
   AdministrationResults,
-  ConfigurationPlanResult
+  ConfigurationPlanResult,
+  MigrationPlanResult
 } from "./protocol.js";

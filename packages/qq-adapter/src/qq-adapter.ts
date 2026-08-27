@@ -4,9 +4,10 @@ import { ApiError } from "@tencent-connect/qqbot-nodejs/protocol";
 import {
   ChannelDeliveryError,
   type ChannelAdapter,
+  type ChannelAdapterReadiness,
   type ChannelDeliveryReceipt,
   type ChannelTextDelivery,
-  type InboundChannelEvent
+  type ProviderInboundEvent
 } from "@codex-channel-bridge/core";
 
 const GROUP_AND_C2C_INTENT = 1 << 25;
@@ -19,14 +20,12 @@ const CONTENT_FREE_LOGGER = {
 };
 
 export interface QQChannelAdapterOptions {
-  readonly profileId: string;
   readonly channelAccountId: string;
-  readonly channelAccountEpochId: string;
   readonly appId: string;
   readonly appSecret: string;
 }
 
-export type QQAdapterReadiness = "stopped" | "starting" | "ready" | "degraded";
+export type QQAdapterReadiness = ChannelAdapterReadiness;
 
 interface QQMessageContext {
   readonly receivedAt: number;
@@ -43,6 +42,7 @@ interface QQBotClient {
   ): this;
   start(signal?: AbortSignal): Promise<void>;
   stop(): void;
+  send(options: Parameters<QQBot["send"]>[0]): ReturnType<QQBot["send"]>;
   sendText(
     target: { scope: "c2c" | "group"; targetId: string; msgId?: string },
     content: string
@@ -57,6 +57,7 @@ export class QQChannelAdapter implements ChannelAdapter {
   #readiness: QQAdapterReadiness = "stopped";
   #run?: Promise<void>;
   #stopping = false;
+  readonly #readinessListeners = new Set<(readiness: ChannelAdapterReadiness) => void>();
 
   public constructor(
     options: QQChannelAdapterOptions,
@@ -80,11 +81,18 @@ export class QQChannelAdapter implements ChannelAdapter {
     return this.#readiness;
   }
 
-  public async start(onEvent: (event: InboundChannelEvent) => Promise<void>): Promise<void> {
+  public subscribeReadiness(
+    listener: (readiness: ChannelAdapterReadiness) => void
+  ): () => void {
+    this.#readinessListeners.add(listener);
+    return () => this.#readinessListeners.delete(listener);
+  }
+
+  public async start(onEvent: (event: ProviderInboundEvent) => Promise<void>): Promise<void> {
     if (this.#readiness !== "stopped" || this.#run) {
       throw new Error("QQ Channel Adapter is already started");
     }
-    this.#readiness = "starting";
+    this.#setReadiness("starting");
     let resolveReady!: () => void;
     let rejectReady!: (error: Error) => void;
     let readySettled = false;
@@ -94,7 +102,7 @@ export class QQChannelAdapter implements ChannelAdapter {
     });
 
     const markReady = (): void => {
-      this.#readiness = "ready";
+      this.#setReadiness("ready");
       if (!readySettled) {
         readySettled = true;
         resolveReady();
@@ -108,19 +116,19 @@ export class QQChannelAdapter implements ChannelAdapter {
         rejectReady(new Error("QQ Channel Adapter failed before ready"));
         this.#bot.stop();
       } else if (!this.#stopping) {
-        this.#readiness = "degraded";
+        this.#setReadiness("degraded");
       }
       void error;
     });
     this.#bot.on("message", async (context, message) => {
-      const normalized = normalizeQQMessage(this.#options, context.receivedAt, message);
+      const normalized = normalizeQQMessage(context.receivedAt, message);
       if (normalized) await onEvent(normalized);
     });
 
     this.#run = this.#bot.start().then(
       () => {
         if (this.#stopping) return;
-        this.#readiness = "degraded";
+        this.#setReadiness("degraded");
         if (!readySettled) {
           readySettled = true;
           rejectReady(new Error("QQ Channel Adapter stopped before ready"));
@@ -131,7 +139,7 @@ export class QQChannelAdapter implements ChannelAdapter {
           readySettled = true;
           rejectReady(new Error("QQ Channel Adapter failed before ready"));
         }
-        if (!this.#stopping) this.#readiness = "degraded";
+        if (!this.#stopping) this.#setReadiness("degraded");
       }
     );
     await ready;
@@ -139,20 +147,30 @@ export class QQChannelAdapter implements ChannelAdapter {
 
   public async sendText(delivery: ChannelTextDelivery): Promise<ChannelDeliveryReceipt> {
     if (this.#readiness !== "ready") {
-      throw new ChannelDeliveryError("rejected", "QQ Channel Adapter is not ready");
+      throw new ChannelDeliveryError("deferred", "QQ Channel Adapter is not ready");
     }
     validateDelivery(delivery);
+    const scope = delivery.target.conversationKind === "private" ? "c2c" : "group";
+    const targetId = delivery.target.providerConversationId;
     try {
-      const response = await this.#bot.sendText(
-        {
-          scope: delivery.target.conversationKind === "private" ? "c2c" : "group",
-          targetId: delivery.target.providerConversationId,
-          ...(delivery.target.providerReplyEventId
-            ? { msgId: delivery.target.providerReplyEventId }
-            : {})
-        },
-        delivery.text
-      );
+      let response;
+      try {
+        response = delivery.target.providerReplyEventId
+          ? await this.#bot.send({
+              target: {
+                scope,
+                targetId,
+                msgId: delivery.target.providerReplyEventId
+              },
+              msgType: 0,
+              content: delivery.text,
+              extra: { msg_seq: delivery.providerReplySequence }
+            })
+          : await this.#bot.sendText({ scope, targetId }, delivery.text);
+      } catch (error) {
+        if (!delivery.target.providerReplyEventId || !isExpiredReplyAnchor(error)) throw error;
+        response = await this.#bot.sendText({ scope, targetId }, delivery.text);
+      }
       const acceptedAtMs = parseProviderTime(response.timestamp) ?? Date.now();
       return {
         logicalResultId: delivery.logicalResultId,
@@ -162,54 +180,46 @@ export class QQChannelAdapter implements ChannelAdapter {
         acceptedAtMs
       };
     } catch (error) {
-      if (error instanceof ChannelDeliveryError) throw error;
-      if (error instanceof ApiError && error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 429) {
-        throw new ChannelDeliveryError("rejected", "QQ rejected the message delivery");
-      }
-      throw new ChannelDeliveryError("ambiguous", "QQ message delivery outcome is ambiguous");
+      throw mapDeliveryError(error);
     }
   }
 
   public async stop(): Promise<void> {
     if (!this.#run) {
-      this.#readiness = "stopped";
+      this.#setReadiness("stopped");
       return;
     }
     this.#stopping = true;
     this.#bot.stop();
     await this.#run.catch(() => undefined);
     this.#run = undefined;
-    this.#readiness = "stopped";
+    this.#setReadiness("stopped");
     this.#stopping = false;
+  }
+
+  #setReadiness(readiness: ChannelAdapterReadiness): void {
+    if (this.#readiness === readiness) return;
+    this.#readiness = readiness;
+    for (const listener of this.#readinessListeners) listener(readiness);
   }
 }
 
 function normalizeQQMessage(
-  options: QQChannelAdapterOptions,
   receivedAt: number,
   message: QQBotInboundMessage
-): InboundChannelEvent | null {
+): ProviderInboundEvent | null {
   if (message.kind !== "c2c" && message.kind !== "group") return null;
   const conversationKind = message.kind === "c2c" ? "private" : "group";
   const providerConversationId =
     message.kind === "c2c" ? message.senderId : message.groupOpenid;
   if (!providerConversationId || !message.messageId || !message.senderId) return null;
   const observedAtMs = parseProviderTime(message.timestamp) ?? receivedAt;
-  const conversationKey = [
-    "qq",
-    encodeURIComponent(options.channelAccountId),
-    conversationKind,
-    encodeURIComponent(providerConversationId)
-  ].join(":");
   return {
     message: {
-      profileId: options.profileId,
       provider: "qq",
-      channelAccountId: options.channelAccountId,
-      channelAccountEpochId: options.channelAccountEpochId,
       providerEventId: JSON.stringify([message.messageId, message.msgIdx ?? null]),
-      conversationKey,
       conversationKind,
+      providerConversationId,
       providerIdentity: message.senderId,
       observedAtMs,
       text: message.content
@@ -221,7 +231,6 @@ function normalizeQQMessage(
           ? "mention"
           : "passive",
     replyTarget: {
-      conversationKey,
       conversationKind,
       providerConversationId,
       providerReplyEventId: message.messageId
@@ -231,9 +240,7 @@ function normalizeQQMessage(
 
 function validateOptions(options: QQChannelAdapterOptions): void {
   if (
-    !options.profileId.trim() ||
     !options.channelAccountId.trim() ||
-    !options.channelAccountEpochId.trim() ||
     !options.appId.trim() ||
     !options.appSecret.trim()
   ) {
@@ -242,16 +249,44 @@ function validateOptions(options: QQChannelAdapterOptions): void {
 }
 
 function validateDelivery(delivery: ChannelTextDelivery): void {
+  const hasReplyAnchor = delivery.target.providerReplyEventId !== undefined;
   if (
     !delivery.logicalResultId.trim() ||
     !Number.isSafeInteger(delivery.segmentIndex) ||
     delivery.segmentIndex < 0 ||
     !delivery.target.providerConversationId.trim() ||
+    (hasReplyAnchor && !delivery.target.providerReplyEventId?.trim()) ||
     !delivery.text ||
-    delivery.text.length > MAX_CHANNEL_TEXT_CHARACTERS
+    delivery.text.length > MAX_CHANNEL_TEXT_CHARACTERS ||
+    (hasReplyAnchor
+      ? !Number.isSafeInteger(delivery.providerReplySequence) || delivery.providerReplySequence! < 1
+      : delivery.providerReplySequence !== undefined)
   ) {
     throw new ChannelDeliveryError("rejected", "QQ message delivery is invalid");
   }
+}
+
+const EXPIRED_REPLY_CODES = new Set([304103, 40034005]);
+
+function isExpiredReplyAnchor(error: unknown): boolean {
+  return error instanceof ApiError &&
+    error.httpStatus >= 400 &&
+    error.httpStatus < 500 &&
+    error.bizCode !== undefined &&
+    EXPIRED_REPLY_CODES.has(error.bizCode);
+}
+
+function mapDeliveryError(error: unknown): ChannelDeliveryError {
+  if (error instanceof ChannelDeliveryError) return error;
+  if (
+    error instanceof ApiError &&
+    error.httpStatus >= 400 &&
+    error.httpStatus < 500 &&
+    error.httpStatus !== 429
+  ) {
+    return new ChannelDeliveryError("rejected", "QQ rejected the message delivery");
+  }
+  return new ChannelDeliveryError("ambiguous", "QQ message delivery outcome is ambiguous");
 }
 
 function parseProviderTime(value: string | number): number | null {

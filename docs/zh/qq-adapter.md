@@ -30,7 +30,7 @@ Readiness。
 ## 入站规范化
 
 Adapter 只接受 C2C 与 QQ 群消息 Event。它先应用官方 SDK Content Sanitizer，
-再生成一个 Channel-neutral Event：
+再生成一个只包含 Provider Fact 的 Channel-neutral Provider Event：
 
 - C2C 消息使用 `user_openid` 同时作为稳定 Participant 与 Provider Conversation
   Identity，并标记为 `direct`。
@@ -38,8 +38,11 @@ Adapter 只接受 C2C 与 QQ 群消息 Event。它先应用官方 SDK Content Sa
   Participant。`GROUP_AT_MESSAGE_CREATE` 标记为 `mention`，全量群消息 Event
   标记为 `passive`。
 - Durable Provider-event Key 编码 Provider Message ID，并在存在时同时编码
-  `msg_idx`。Profile Store 在把 Event 交给后续 Routing Work 前，先在 Channel
-  Account Epoch 内持久去重。
+  `msg_idx`。
+- 该 Event 无法声明自身的 Profile、Channel Account、Account Epoch 或 Bridge
+  Conversation Key。所属 Profile Worker 把这些 Trusted Context 注入唯一的
+  Inbound Pipeline；Pipeline 派生 Conversation Key，在把新 Event 暴露给后续
+  Routing Work 前先提交 Message Archive，并且不再次暴露 Duplicate Event。
 - Provider Identifier 始终是内部数据。Operational Output 不得记录这些标识或
   Message Body。
 
@@ -55,17 +58,24 @@ API。
 4xx Failure 归类为 `rejected`；Rate Limit、Transport Failure 及其他不确定结果
 归类为 `ambiguous`。
 
-该方法目前只足以支持受控 Live Contract。官方 SDK 每次调用被动回复 Helper 都会
-新建 `msg_seq`。生产级 Durable Delivery 必须先持久化选定的
-`msg_id + msg_seq` Pair，再使用 Raw Provider Send API。Outbox 实现这一规则前，
-Bridge 不宣称 QQ Result Delivery 达到 Effectively-once。
+被动投递必须携带 Outbox 分配的 `providerReplySequence`。Adapter 通过 SDK 的显式
+`send`/Raw Path 传递已持久化的 `msg_id + msg_seq`，因此 Ambiguous Outbox Retry 不会
+消耗新的回复次数。缺少 Durable Sequence 的被动投递会在本地被拒绝。
+
+只有 QQ 使用文档化 Business Code `304103` 或 `40034005` 明确拒绝过期 Anchor 时，
+Adapter 才会去掉 `msg_id` 重试一次。其他 Error 不会触发主动降级。用户可能已关闭主动
+消息，所以降级被拒仍是 Delivery Failure，不能表述成 Codex Result 成功送达。Response
+丢失仍无法通过 Provider Lookup API 对账，Bridge 不宣称 Strict Exactly-once Result
+Delivery。
 
 ## 验证
 
-Unit Contract 覆盖精确 Intent 与 Transport、C2C/Group Normalization、Mention 与
-Passive Attention、Accepted/Rejected/Ambiguous Delivery Mapping 以及启动失败。
-Profile Worker Contract 覆盖 Secret Resolution、Archive-before-routing、Adapter
-独立失败和 Drain。
+Unit Contract 覆盖精确 Intent 与 Transport、C2C/Group Provider-fact
+Normalization、Mention 与 Passive Attention、Accepted/Rejected/Ambiguous Delivery
+Mapping、稳定被动序号传递、窄范围过期 Anchor 降级、无关错误拒绝以及启动失败。
+Inbound Pipeline 与 Profile Worker Contract 覆盖 Trusted
+Authority Injection、Archive-before-routing、Deduplication、Provider Mismatch
+Isolation、Adapter 独立失败和 Drain。
 
 可选真实测试会连接已配置 Robot，等待一条 Inbound Event，并发送一条固定的被动
 回复：
@@ -84,3 +94,7 @@ Permission、Duplicate Behavior 和 Provider Receipt Semantics。
 在 QQ Desktop Client 中独立可见。测试 Output 没有写入 Credential、Provider
 Identity、Provider Message ID 或 User Message Body。C2C、仅 Mention 的 Group
 Delivery、Resume、Rate Limit 与 Duplicate/Reconciliation Behavior 仍未验证。
+
+2026-08-27，更新后的 Durable-sequence C2C Contract 到达 Gateway `ready`，但在 300 秒
+窗口内没有收到新的 C2C Event，因此没有发送消息，并以 `live_contract_timeout` 结束。
+这是未完成的外部交互，不能作为 Raw-send Path 通过或失败的证据。

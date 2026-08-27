@@ -5,11 +5,33 @@ export {
   ProfileStoreError,
   SqliteProfileStore
 } from "./profile-store.js";
+export {
+  ProfileMigrationError,
+  applyProfileStoreMigration,
+  planProfileStoreMigration
+} from "./migration.js";
+export type {
+  ApplyProfileMigrationOptions,
+  ProfileMigrationPlan,
+  ProfileMigrationReason,
+  ProfileMigrationResult,
+  ProfileMigrationTarget
+} from "./migration.js";
 export type {
   ArchiveCommitResult,
   ArchivedChannelMessage,
   ArchiveTextSearch,
   ArchiveTextSearchHit,
+  ClaimOutboxOptions,
+  CodexInputCommitResult,
+  CodexInputTransition,
+  CreateThreadBindingInput,
+  LogicalResultCommitResult,
   OpenProfileStoreOptions,
-  ProfileStoreReason
+  OutboxCounts,
+  OutboxDeliveryLease,
+  OutboxSettlement,
+  OutboxSettlementResult,
+  ProfileStoreReason,
+  ThreadBindingCommitResult
 } from "./profile-store.js";

@@ -11,12 +11,48 @@ profiles:
     codexHome: /srv/codex-channel-bridge/example-primary/codex-home
     stateDirectory: /srv/codex-channel-bridge/example-primary/state
     secretsFile: /srv/codex-channel-bridge/example-primary/state/secrets.env
+    admission:
+      mode: steer
+      maximumActiveTurns: 1
+      queueCapacity: 16
+      maximumQueueAgeMs: 300000
+      accountRateLimit: 30
+      accountRateWindowMs: 60000
+    approval:
+      timeoutMs: 300000
+      detail: minimal
     channelAccounts:
       qq-primary:
         provider: qq
         epochId: initial
         appId: env:QQ_BOT_APP_ID
         appSecret: env:QQ_BOT_APP_SECRET
+        groupThreadScope: conversation
+        accessPolicy:
+          privateChats:
+            mode: allowlist
+            allow:
+              - provider-private-identity
+          groupChats:
+            mode: allowlist
+            allow:
+              - provider-group-conversation-id
+          groupParticipants:
+            mode: allowlist
+            allow:
+              - provider-group-participant-id
+      wa-primary:
+        provider: whatsapp
+        enabled: false
+        epochId: initial
+        groupThreadScope: conversation
+        accessPolicy:
+          privateChats:
+            mode: deny
+          groupChats:
+            mode: deny
+          groupParticipants:
+            mode: deny
 
   example-secondary:
     enabled: false

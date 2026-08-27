@@ -8,6 +8,7 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../config" },
+    { "path": "../profile-store" },
     { "path": "../supervisor" }
   ]
 }

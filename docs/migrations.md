@@ -1,0 +1,73 @@
+# Explicit Profile schema migration
+
+Normal Supervisor startup never changes an existing Profile database schema.
+An older database keeps only that Profile `unavailable: migration_required`;
+the Supervisor and sibling Profiles remain live.
+
+The current binary supports exactly one migration span: Bridge Profile schema
+version 3 to version 4. Unknown versions and inconsistent schema shapes fail
+closed. Version 3 to 4 adds the durable QQ passive reply sequence column,
+deterministically backfills existing QQ Outbox rows, creates the per-anchor next
+sequence table, and verifies Profile ownership, the resulting schema, and
+SQLite `quick_check`.
+
+## Plan
+
+Planning is read-only and is available only through the owner-only host-local
+control plane:
+
+```sh
+bridge migrate plan --profile alpha
+```
+
+The result reports the version span, exact operations, irreversible steps,
+source bytes, a conservative additional-disk estimate, a source digest, and a
+complete plan digest. The source digest covers the SQLite database and its WAL
+when present. A plan expires after five minutes and becomes stale if the
+Configuration Revision or SQLite source set changes.
+
+## Snapshot evidence and apply
+
+The Bridge coordinates migration but does not create or upload the operator's
+backup. After externally snapshotting the prepared Profile data, create an
+owner-only, regular, non-symlink JSON file with exactly this shape, using the
+`sourceDigest` returned by the plan:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "codex-channel-bridge-profile-snapshot",
+  "profileId": "alpha",
+  "sourceDigest": "FULL_SOURCE_DIGEST",
+  "completedAtMs": 1787792400000
+}
+```
+
+On macOS and Linux the manifest must belong to the service user and have mode
+`0600`. Apply requires both the full plan digest and a separate affirmative
+snapshot confirmation:
+
+```sh
+bridge migrate apply \
+  --profile alpha \
+  --backup-manifest /absolute/path/alpha-snapshot-manifest.json \
+  --confirm FULL_PLAN_DIGEST \
+  --snapshot-confirmed yes
+```
+
+The Profile must already be disabled/stopped or unavailable specifically with
+`migration_required`. The Supervisor serializes maintenance, stops the affected
+worker, rechecks the source and manifest, runs one SQLite transaction, verifies
+the result, and restarts that Profile when it remains enabled. It does not stop
+or roll back sibling Profiles.
+
+Migration emits body-free `started`, `succeeded`, or `failed` records to the
+owner-only Profile-local `migration-audit.jsonl`. Records contain only an
+internal correlation ID, Profile ID, action, result, version span, and time.
+They contain no message bodies, provider identities, credentials, Codex data,
+Workspace contents, or paths.
+
+There is no automatic down migration. Rollback means stopping the new binary,
+restoring the operator snapshot, and starting the old binary. The current
+command does not migrate Codex home, Codex history, Workspace files, Channel
+authentication, or any other Codex-owned state.

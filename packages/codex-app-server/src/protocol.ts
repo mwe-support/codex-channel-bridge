@@ -44,12 +44,20 @@ export interface ThreadStartResponse {
   readonly cwd: string;
 }
 
+export type ThreadResumeResponse = ThreadStartResponse;
+
 export interface TurnStartResponse {
   readonly turn: {
     readonly id: string;
     readonly status: string;
   };
 }
+
+export interface TurnSteerResponse {
+  readonly turnId: string;
+}
+
+export type TurnInterruptResponse = Record<string, never>;
 
 export interface AgentMessageItem {
   readonly type: "agentMessage";

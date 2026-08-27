@@ -26,6 +26,16 @@ profiles:
     codexHome: /absolute/path/to/codex-home
     stateDirectory: /absolute/path/to/bridge-state
     secretsFile: /absolute/path/to/bridge-state/secrets.env
+    admission:
+      mode: steer
+      maximumActiveTurns: 1
+      queueCapacity: 16
+      maximumQueueAgeMs: 300000
+      accountRateLimit: 30
+      accountRateWindowMs: 60000
+    approval:
+      timeoutMs: 300000
+      detail: minimal
     channelAccounts:
       qq-primary:
         provider: qq
@@ -33,6 +43,17 @@ profiles:
         epochId: initial
         appId: env:QQ_BOT_APP_ID
         appSecret: file:/run/secrets/qq-bot-app-secret
+        groupThreadScope: conversation
+        accessPolicy:
+          privateChats:
+            mode: allowlist
+            allow: [provider-private-identity]
+          groupChats:
+            mode: allowlist
+            allow: [provider-group-conversation-id]
+          groupParticipants:
+            mode: allowlist
+            allow: [provider-group-participant-id]
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
@@ -49,9 +70,12 @@ its service environment. The Bridge does not install or upgrade it.
 `secretsFile` defaults to `stateDirectory/secrets.env`. It must be an explicit
 absolute path when overridden; the Bridge never searches for dotenv files.
 `channelAccounts` is keyed by a deployment-wide unique Channel Account ID. The
-current slice accepts QQ accounts only. Every account has an operator-selected
-Epoch ID for durable deduplication. The same Channel Account ID cannot appear
-in two Profiles, including when another field in one account is invalid.
+current slice accepts QQ and WhatsApp accounts. Every account has an
+operator-selected Epoch ID for durable deduplication. The same Channel Account
+ID cannot appear in two Profiles, including when another field in one account
+is invalid. WhatsApp rotating authentication is loaded only from the fixed
+Profile-local path `stateDirectory/channel-auth/CHANNEL_ACCOUNT_ID`; it is not a
+Secret Reference and is never placed in `config.yaml`.
 
 `appId` and `appSecret` accept only `env:NAME` or
 `file:/absolute/path` Secret References. An `env:` reference resolves first
@@ -61,6 +85,29 @@ absolute file. On macOS and Linux, both kinds of files must be regular,
 non-symlink files owned by the service user with mode exactly `0600`. Missing,
 empty, malformed, or insecure inputs keep the affected adapter unavailable
 without revealing a name or value.
+
+`accessPolicy` fails closed. Its three independent rules default to `deny` and
+accept `deny`, `allowlist`, or `open`. Private-chat rules compare the stable
+Provider Identity. Group events must pass both the group-conversation rule,
+using the provider conversation ID, and the group-participant rule, using the
+Provider Identity. An `allowlist` must contain at least one exact identifier;
+`deny` and `open` must not contain an `allow` list. `groupThreadScope` defaults
+to `conversation`; `participant` gives each admitted group participant a
+separate Codex Thread Binding.
+
+Profile-local `admission` defaults to steer mode with one active Turn, a
+16-entry queue limit, five-minute maximum queue age, and 30 ordinary inputs per
+Channel Account per 60 seconds. The queue is used only when `mode: queue`.
+Limits are checked after Access Policy and command parsing and before native
+Codex work. See [`admission.md`](admission.md) for runtime semantics.
+
+Profile-local `approval` defaults to a five-minute response window and
+`minimal` presentation. `detail` accepts `minimal`, `summary`, or `detailed`.
+Minimal mode exposes only the native operation class and an opaque response
+token. Summary may include a bounded reason and command summary; detailed may
+also include bounded native command, working-directory, or requested-write-root
+fields when Codex supplies them. The Bridge never sends the process-scoped
+JSON-RPC request ID to the Channel. See [`approval-routing.md`](approval-routing.md).
 
 The dotenv parser accepts ordinary `KEY=VALUE` records and literal single- or
 double-quoted values. It does not execute shell syntax, expand variables,

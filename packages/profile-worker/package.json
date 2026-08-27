@@ -16,6 +16,7 @@
     "@codex-channel-bridge/config": "0.1.0-dev",
     "@codex-channel-bridge/core": "0.1.0-dev",
     "@codex-channel-bridge/profile-store": "0.1.0-dev",
-    "@codex-channel-bridge/qq-adapter": "0.1.0-dev"
+    "@codex-channel-bridge/qq-adapter": "0.1.0-dev",
+    "@codex-channel-bridge/whatsapp-adapter": "0.1.0-dev"
   }
 }

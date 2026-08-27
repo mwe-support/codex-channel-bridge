@@ -24,9 +24,7 @@ async function run() {
   const [appId, appSecret] = await resolveCredentialPair(resolver);
   const timeoutMs = boundedTimeout(process.env.BRIDGE_QQ_LIVE_TIMEOUT_MS);
   const adapter = new QQChannelAdapter({
-    profileId: "qq-live-contract",
     channelAccountId: "qq-live-contract",
-    channelAccountEpochId: "live-contract-1",
     appId,
     appSecret
   });
@@ -52,7 +50,16 @@ async function run() {
         const receipt = await adapter.sendText({
           logicalResultId: "qq-live-contract-result",
           segmentIndex: 0,
-          target: event.replyTarget,
+          target: {
+            ...event.replyTarget,
+            conversationKey: [
+              "qq",
+              "qq-live-contract",
+              event.message.conversationKind,
+              encodeURIComponent(event.message.providerConversationId)
+            ].join(":")
+          },
+          providerReplySequence: 1,
           text: "Codex Channel Bridge QQ live contract OK"
         });
         resolveResult({

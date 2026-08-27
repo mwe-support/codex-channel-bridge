@@ -3,10 +3,16 @@ import type {
   ConfigurationApplyResult,
   SupervisorStatus
 } from "@codex-channel-bridge/supervisor";
+import type { ProfileMigrationPlan, ProfileMigrationResult } from "@codex-channel-bridge/profile-store";
 
 export const CONTROL_PROTOCOL_VERSION = 1 as const;
 
-export type AdministrationMethod = "status/get" | "config/plan" | "config/apply";
+export type AdministrationMethod =
+  | "status/get"
+  | "config/plan"
+  | "config/apply"
+  | "migrate/plan"
+  | "migrate/apply";
 
 export interface AdministrationRequest {
   readonly version: typeof CONTROL_PROTOCOL_VERSION;
@@ -43,10 +49,25 @@ export interface ConfigurationPlanResult {
   readonly expiresAt: number;
 }
 
+export interface MigrationPlanResult extends ProfileMigrationPlan {
+  readonly planToken: string;
+  readonly configurationRevision: string;
+  readonly expiresAt: number;
+  readonly requiredBackupManifest: {
+    readonly schemaVersion: 1;
+    readonly kind: "codex-channel-bridge-profile-snapshot";
+    readonly profileId: string;
+    readonly sourceDigest: string;
+    readonly completedAtMs: "POSITIVE_INTEGER";
+  };
+}
+
 export interface AdministrationResults {
   readonly "status/get": SupervisorStatus;
   readonly "config/plan": ConfigurationPlanResult;
   readonly "config/apply": ConfigurationApplyResult;
+  readonly "migrate/plan": MigrationPlanResult;
+  readonly "migrate/apply": ProfileMigrationResult;
 }
 
 export function isAdministrationRequest(value: unknown): value is AdministrationRequest {
@@ -57,7 +78,9 @@ export function isAdministrationRequest(value: unknown): value is Administration
     value.id.length > 0 &&
     (value.method === "status/get" ||
       value.method === "config/plan" ||
-      value.method === "config/apply")
+      value.method === "config/apply" ||
+      value.method === "migrate/plan" ||
+      value.method === "migrate/apply")
   );
 }
 

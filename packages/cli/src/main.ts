@@ -74,6 +74,40 @@ try {
       });
       stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
     }
+  } else if (area === "migrate" && action === "plan") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "endpoint"]);
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("migrate/plan", {
+      profileId: required(options, "profile")
+    });
+    stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+  } else if (area === "migrate" && action === "apply") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, [
+      "profile",
+      "backup-manifest",
+      "confirm",
+      "snapshot-confirmed",
+      "endpoint"
+    ]);
+    if (required(options, "snapshot-confirmed") !== "yes") {
+      throw new Error("--snapshot-confirmed must equal yes");
+    }
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("migrate/plan", {
+      profileId: required(options, "profile")
+    });
+    if (required(options, "confirm") !== plan.planDigest) {
+      throw new Error("--confirm must equal the complete migration plan digest");
+    }
+    const result = await client.request("migrate/apply", {
+      planToken: plan.planToken,
+      confirmPlanDigest: options.confirm,
+      backupManifestPath: required(options, "backup-manifest"),
+      snapshotConfirmed: true
+    });
+    stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
   } else if (area === "supervisor" && action === "run") {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config", "endpoint"]);
@@ -200,6 +234,8 @@ function usage(): never {
       "  bridge status [--endpoint /absolute/path/control.sock]",
       "  bridge config check --config /absolute/path/config.yaml",
       "  bridge config apply --config /absolute/path/config.yaml [--confirm FULL_REVISION] [--endpoint PATH]",
+      "  bridge migrate plan --profile ID [--endpoint PATH]",
+      "  bridge migrate apply --profile ID --backup-manifest /absolute/path/manifest.json --confirm FULL_PLAN_DIGEST --snapshot-confirmed yes [--endpoint PATH]",
       "  bridge supervisor run --config /absolute/path/config.yaml [--endpoint PATH]",
       "  bridge codex probe [--codex /absolute/path/to/codex]",
       "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path --state-directory /absolute/path [--thread ID] [--codex PATH]"

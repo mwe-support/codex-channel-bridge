@@ -9,11 +9,16 @@ export type {
   SecretResolverOptions
 } from "./secrets.js";
 export type {
+  AccessRuleConfiguration,
+  AdmissionConfiguration,
+  ApprovalConfiguration,
   BridgeConfiguration,
+  ChannelAccessPolicyConfiguration,
   ChannelAccountConfiguration,
   ConfigurationCandidate,
   LoadConfigurationOptions,
   ProfileConfiguration,
   QQChannelAccountConfiguration,
-  SupervisorConfiguration
+  SupervisorConfiguration,
+  WhatsAppChannelAccountConfiguration
 } from "./config.js";

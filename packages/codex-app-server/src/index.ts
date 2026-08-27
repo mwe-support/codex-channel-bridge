@@ -29,6 +29,9 @@ export type {
   JsonRpcId,
   JsonRpcNotification,
   JsonRpcRequest,
+  ThreadResumeResponse,
   ThreadStartResponse,
-  TurnStartResponse
+  TurnInterruptResponse,
+  TurnStartResponse,
+  TurnSteerResponse
 } from "./protocol.js";

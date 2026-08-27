@@ -1,6 +1,13 @@
 import { Worker } from "node:worker_threads";
 
-import type { NormalizedChannelMessage } from "@codex-channel-bridge/core";
+import type {
+  CodexInputAcceptance,
+  CodexInputCorrelation,
+  LogicalResultInput,
+  NormalizedChannelMessage,
+  ThreadBinding,
+  ThreadBindingKey
+} from "@codex-channel-bridge/core";
 
 import {
   ProfileStoreError,
@@ -8,14 +15,32 @@ import {
   type ArchivedChannelMessage,
   type ArchiveTextSearch,
   type ArchiveTextSearchHit,
+  type ClaimOutboxOptions,
+  type CodexInputCommitResult,
+  type CodexInputTransition,
+  type CreateThreadBindingInput,
+  type LogicalResultCommitResult,
   type OpenProfileStoreOptions,
-  type ProfileStoreReason
+  type OutboxCounts,
+  type OutboxDeliveryLease,
+  type OutboxSettlement,
+  type OutboxSettlementResult,
+  type ProfileStoreReason,
+  type ThreadBindingCommitResult
 } from "./profile-store.js";
 
 type StorageOperation =
   | { readonly name: "commitMessage"; readonly value: NormalizedChannelMessage }
   | { readonly name: "recentMessages"; readonly conversationKey: string; readonly limit?: number }
   | { readonly name: "searchText"; readonly query: ArchiveTextSearch }
+  | { readonly name: "getThreadBinding"; readonly key: ThreadBindingKey }
+  | { readonly name: "createThreadBinding"; readonly value: CreateThreadBindingInput }
+  | { readonly name: "acceptCodexInput"; readonly value: CodexInputAcceptance }
+  | { readonly name: "transitionCodexInput"; readonly transition: CodexInputTransition }
+  | { readonly name: "commitLogicalResult"; readonly value: LogicalResultInput }
+  | { readonly name: "claimOutbox"; readonly options: ClaimOutboxOptions }
+  | { readonly name: "settleOutbox"; readonly settlement: OutboxSettlement }
+  | { readonly name: "outboxCounts" }
   | { readonly name: "journalMode" }
   | { readonly name: "close" };
 
@@ -102,6 +127,38 @@ export class ProfileStore {
 
   public searchText(query: ArchiveTextSearch): Promise<readonly ArchiveTextSearchHit[]> {
     return this.#request({ name: "searchText", query });
+  }
+
+  public getThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined> {
+    return this.#request({ name: "getThreadBinding", key });
+  }
+
+  public createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult> {
+    return this.#request({ name: "createThreadBinding", value: input });
+  }
+
+  public acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult> {
+    return this.#request({ name: "acceptCodexInput", value: input });
+  }
+
+  public transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation> {
+    return this.#request({ name: "transitionCodexInput", transition });
+  }
+
+  public commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult> {
+    return this.#request({ name: "commitLogicalResult", value: input });
+  }
+
+  public claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]> {
+    return this.#request({ name: "claimOutbox", options });
+  }
+
+  public settleOutbox(settlement: OutboxSettlement): Promise<OutboxSettlementResult> {
+    return this.#request({ name: "settleOutbox", settlement });
+  }
+
+  public outboxCounts(): Promise<OutboxCounts> {
+    return this.#request({ name: "outboxCounts" });
   }
 
   public journalMode(): Promise<string> {

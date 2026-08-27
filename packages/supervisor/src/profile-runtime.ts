@@ -99,6 +99,8 @@ class ForkedProfileRuntime implements ProfileRuntime {
         stateDirectory: this.#profile.stateDirectory,
         secretsFile: this.#profile.secretsFile,
         channelAccounts: this.#profile.channelAccounts,
+        admission: this.#profile.admission,
+        approval: this.#profile.approval,
         ...(this.#profile.codexExecutable
           ? { codexExecutable: this.#profile.codexExecutable }
           : {})

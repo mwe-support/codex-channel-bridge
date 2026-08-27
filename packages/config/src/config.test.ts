@@ -31,6 +31,10 @@ test("parses a complete candidate and applies defaults", () => {
   assert.equal(candidate.configuration.profiles.alpha?.secretsFile, "/srv/alpha/state/secrets.env");
   assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts, {});
   assert.equal(candidate.configuration.supervisor.drainTimeoutMs, 300_000);
+  assert.deepEqual(candidate.configuration.profiles.alpha?.approval, {
+    timeoutMs: 300_000,
+    detail: "minimal"
+  });
   assert.match(candidate.revision, /^[a-f0-9]{64}$/);
 });
 
@@ -56,8 +60,133 @@ profiles:
     enabled: true,
     epochId: "epoch-1",
     appId: "env:TEST_APP_ID",
-    appSecret: "file:/run/secrets/test-app-secret"
+    appSecret: "file:/run/secrets/test-app-secret",
+    groupThreadScope: "conversation",
+    accessPolicy: {
+      privateChats: { mode: "deny", allow: [] },
+      groupChats: { mode: "deny", allow: [] },
+      groupParticipants: { mode: "deny", allow: [] }
+    }
   });
+});
+
+test("parses WhatsApp Channel Accounts without plaintext or Secret Reference fields", () => {
+  const candidate = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    channelAccounts:
+      wa-primary:
+        provider: whatsapp
+        epochId: epoch-1
+        groupThreadScope: participant
+        accessPolicy:
+          privateChats:
+            mode: open
+          groupChats:
+            mode: allowlist
+            allow: [120363000000000000@g.us]
+          groupParticipants:
+            mode: open
+`);
+  assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts["wa-primary"], {
+    id: "wa-primary",
+    provider: "whatsapp",
+    enabled: true,
+    epochId: "epoch-1",
+    groupThreadScope: "participant",
+    accessPolicy: {
+      privateChats: { mode: "open", allow: [] },
+      groupChats: { mode: "allowlist", allow: ["120363000000000000@g.us"] },
+      groupParticipants: { mode: "open", allow: [] }
+    }
+  });
+});
+
+test("parses fail-closed access and bounded admission settings", () => {
+  const candidate = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    admission:
+      mode: queue
+      maximumActiveTurns: 2
+      queueCapacity: 8
+      maximumQueueAgeMs: 60000
+      accountRateLimit: 5
+      accountRateWindowMs: 10000
+    approval:
+      timeoutMs: 120000
+      detail: detailed
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        epochId: epoch-1
+        appId: env:TEST_APP_ID
+        appSecret: env:TEST_APP_SECRET
+        groupThreadScope: participant
+        accessPolicy:
+          privateChats:
+            mode: allowlist
+            allow: [private-user]
+          groupChats:
+            mode: allowlist
+            allow: [group-1]
+          groupParticipants:
+            mode: open
+`);
+  const profile = candidate.configuration.profiles.alpha!;
+  assert.deepEqual(profile.admission, {
+    mode: "queue",
+    maximumActiveTurns: 2,
+    queueCapacity: 8,
+    maximumQueueAgeMs: 60_000,
+    accountRateLimit: 5,
+    accountRateWindowMs: 10_000
+  });
+  assert.deepEqual(profile.approval, { timeoutMs: 120_000, detail: "detailed" });
+  assert.equal(profile.channelAccounts["qq-primary"]?.groupThreadScope, "participant");
+  assert.deepEqual(profile.channelAccounts["qq-primary"]?.accessPolicy.groupParticipants, {
+    mode: "open",
+    allow: []
+  });
+});
+
+test("rejects ambiguous or incomplete access policy", () => {
+  assert.throws(
+    () =>
+      parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    channelAccounts:
+      qq-primary:
+        provider: qq
+        epochId: epoch-1
+        appId: env:TEST_APP_ID
+        appSecret: env:TEST_APP_SECRET
+        accessPolicy:
+          privateChats:
+            mode: allowlist
+            allow: []
+          groupChats:
+            mode: open
+            allow: [misleading-entry]
+`),
+    (error: unknown) =>
+      error instanceof ConfigurationValidationError &&
+      error.issues.some((issue) => issue.includes("must not be empty")) &&
+      error.issues.some((issue) => issue.includes("only valid in allowlist"))
+  );
 });
 
 test("rejects plaintext QQ credentials and duplicate cross-Profile Channel Account IDs", () => {

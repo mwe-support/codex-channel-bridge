@@ -49,6 +49,22 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.recentMessages(operation.conversationKey, operation.limit);
     case "searchText":
       return store.searchText(operation.query);
+    case "getThreadBinding":
+      return store.getThreadBinding(operation.key);
+    case "createThreadBinding":
+      return store.createThreadBinding(operation.value);
+    case "acceptCodexInput":
+      return store.acceptCodexInput(operation.value);
+    case "transitionCodexInput":
+      return store.transitionCodexInput(operation.transition);
+    case "commitLogicalResult":
+      return store.commitLogicalResult(operation.value);
+    case "claimOutbox":
+      return store.claimOutbox(operation.options);
+    case "settleOutbox":
+      return store.settleOutbox(operation.settlement);
+    case "outboxCounts":
+      return store.outboxCounts();
     case "journalMode":
       return store.journalMode();
     case "close":
@@ -66,6 +82,14 @@ function isStorageRequest(value: unknown): value is StorageRequest {
     (value.operation.name === "commitMessage" ||
       value.operation.name === "recentMessages" ||
       value.operation.name === "searchText" ||
+      value.operation.name === "getThreadBinding" ||
+      value.operation.name === "createThreadBinding" ||
+      value.operation.name === "acceptCodexInput" ||
+      value.operation.name === "transitionCodexInput" ||
+      value.operation.name === "commitLogicalResult" ||
+      value.operation.name === "claimOutbox" ||
+      value.operation.name === "settleOutbox" ||
+      value.operation.name === "outboxCounts" ||
       value.operation.name === "journalMode" ||
       value.operation.name === "close")
   );

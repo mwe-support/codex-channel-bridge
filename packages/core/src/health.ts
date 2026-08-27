@@ -14,6 +14,7 @@ export type ProfileReasonCode =
   | "invalid_profile_configuration"
   | "protocol_fault"
   | "profile_store_unavailable"
+  | "migration_required"
   | "channel_adapter_unavailable"
   | "worker_process_exit"
   | "worker_restart_exhausted"

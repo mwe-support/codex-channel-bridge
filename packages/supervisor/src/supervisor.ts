@@ -39,6 +39,10 @@ export interface ConfigurationPreview {
   readonly entries: readonly ConfigurationApplyEntry[];
 }
 
+export type ProfileMaintenanceOperation<T> = (
+  profile: Readonly<ProfileConfiguration>
+) => Promise<T>;
+
 export interface WorkerRestartPolicy {
   readonly delaysMs: readonly number[];
   readonly windowMs: number;
@@ -107,6 +111,20 @@ export class Supervisor extends EventEmitter {
       candidateRevision: candidate.revision,
       entries: planConfiguration(this.#candidate, candidate)
     };
+  }
+
+  public profileConfiguration(profileId: string): Readonly<ProfileConfiguration> | undefined {
+    const profile = this.#candidate?.configuration.profiles[profileId];
+    return profile ? { ...profile } : undefined;
+  }
+
+  public maintainProfile<T>(
+    profileId: string,
+    operation: ProfileMaintenanceOperation<T>
+  ): Promise<T> {
+    const maintenance = this.#operation.then(() => this.#maintainProfile(profileId, operation));
+    this.#operation = maintenance.catch(() => undefined);
+    return maintenance;
   }
 
   public stop(): Promise<SupervisorStatus> {
@@ -201,6 +219,30 @@ export class Supervisor extends EventEmitter {
     await Promise.all([...this.#runtimes.keys()].map((profileId) => this.#stopProfile(profileId)));
     this.#liveness = "stopped";
     return this.status();
+  }
+
+  async #maintainProfile<T>(
+    profileId: string,
+    operation: ProfileMaintenanceOperation<T>
+  ): Promise<T> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    const candidate = this.#candidate;
+    const profile = candidate?.configuration.profiles[profileId];
+    if (!candidate || !profile) throw new Error("Profile is not configured");
+    const health = this.#health.get(profileId);
+    const eligible =
+      health?.readiness === "stopped" ||
+      (health?.readiness === "unavailable" && health.reason === "migration_required");
+    if (!eligible) {
+      throw new Error("Profile must be stopped or unavailable with migration_required");
+    }
+
+    await this.#stopProfile(profileId);
+    try {
+      return await operation({ ...profile });
+    } finally {
+      if (profile.enabled && this.#liveness === "live") await this.#startProfile(profile, candidate);
+    }
   }
 
   #setHealth(health: ProfileHealth): void {
@@ -306,6 +348,7 @@ function sameRestartConfiguration(
     left.stateDirectory === right.stateDirectory &&
     left.secretsFile === right.secretsFile &&
     JSON.stringify(left.channelAccounts) === JSON.stringify(right.channelAccounts) &&
+    JSON.stringify(left.admission) === JSON.stringify(right.admission) &&
     left.codexExecutable === right.codexExecutable
   );
 }

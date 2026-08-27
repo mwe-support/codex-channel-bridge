@@ -10,7 +10,8 @@ export type {
   SupervisorClock,
   SupervisorLiveness,
   SupervisorStatus,
-  WorkerRestartPolicy
+  WorkerRestartPolicy,
+  ProfileMaintenanceOperation
 } from "./supervisor.js";
 export { ForkedProfileRuntimeFactory } from "./profile-runtime.js";
 export type { ProfileRuntime, ProfileRuntimeFactory } from "./profile-runtime.js";

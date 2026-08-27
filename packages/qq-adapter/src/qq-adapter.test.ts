@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { QQBotInboundMessage, QQBotOptions } from "@tencent-connect/qqbot-nodejs";
+import type { QQBot, QQBotInboundMessage, QQBotOptions } from "@tencent-connect/qqbot-nodejs";
 import { ApiError } from "@tencent-connect/qqbot-nodejs/protocol";
 
-import { ChannelDeliveryError, type InboundChannelEvent } from "@codex-channel-bridge/core";
+import { ChannelDeliveryError, type ProviderInboundEvent } from "@codex-channel-bridge/core";
 
 import {
   QQChannelAdapter,
@@ -13,9 +13,7 @@ import {
 } from "./qq-adapter.js";
 
 const options: QQChannelAdapterOptions = {
-  profileId: "alpha",
   channelAccountId: "qq-primary",
-  channelAccountEpochId: "epoch-1",
   appId: "test-app",
   appSecret: "test-secret"
 };
@@ -26,9 +24,11 @@ class FakeBot implements QQBotClient {
     target: { scope: "c2c" | "group"; targetId: string; msgId?: string };
     content: string;
   }> = [];
+  readonly sentRaw: Array<Parameters<QQBot["send"]>[0]> = [];
   middlewareCount = 0;
   factoryOptions?: QQBotOptions;
   sendFailure?: Error;
+  rawSendFailure?: Error;
   startFailure?: Error;
   #resolveStop!: () => void;
 
@@ -54,6 +54,12 @@ class FakeBot implements QQBotClient {
 
   stop(): void {
     this.#resolveStop?.();
+  }
+
+  async send(options: Parameters<QQBot["send"]>[0]): Promise<{ id: string; timestamp: string }> {
+    this.sentRaw.push(options);
+    if (this.rawSendFailure) throw this.rawSendFailure;
+    return { id: "provider-result-1", timestamp: "2026-08-26T12:00:00.000Z" };
   }
 
   async sendText(
@@ -107,7 +113,7 @@ function inbound(overrides: Partial<QQBotInboundMessage> = {}): QQBotInboundMess
 test("starts with the narrow QQ intent and normalizes C2C messages", async () => {
   const fake = new FakeBot();
   const channel = adapter(fake);
-  const events: InboundChannelEvent[] = [];
+  const events: ProviderInboundEvent[] = [];
   await channel.start(async (event) => {
     events.push(event);
   });
@@ -120,20 +126,16 @@ test("starts with the narrow QQ intent and normalizes C2C messages", async () =>
   await fake.emitMessage(1, inbound({ msgIdx: "7" }));
   assert.deepEqual(events[0], {
     message: {
-      profileId: "alpha",
       provider: "qq",
-      channelAccountId: "qq-primary",
-      channelAccountEpochId: "epoch-1",
       providerEventId: '["message-1","7"]',
-      conversationKey: "qq:qq-primary:private:user-openid",
       conversationKind: "private",
+      providerConversationId: "user-openid",
       providerIdentity: "user-openid",
       observedAtMs: Date.parse("2026-08-26T10:00:00.000Z"),
       text: "hello"
     },
     attention: "direct",
     replyTarget: {
-      conversationKey: "qq:qq-primary:private:user-openid",
       conversationKind: "private",
       providerConversationId: "user-openid",
       providerReplyEventId: "message-1"
@@ -146,7 +148,7 @@ test("starts with the narrow QQ intent and normalizes C2C messages", async () =>
 test("distinguishes mentioned and passive QQ group messages", async () => {
   const fake = new FakeBot();
   const channel = adapter(fake);
-  const events: InboundChannelEvent[] = [];
+  const events: ProviderInboundEvent[] = [];
   await channel.start(async (event) => {
     events.push(event);
   });
@@ -180,26 +182,128 @@ test("maps accepted, rejected, and ambiguous QQ delivery outcomes", async () => 
       providerConversationId: "user-openid",
       providerReplyEventId: "message-1"
     },
+    providerReplySequence: 7,
     text: "done"
   };
   const receipt = await channel.sendText(delivery);
   assert.equal(receipt.outcome, "accepted");
   assert.equal(receipt.providerMessageId, "provider-result-1");
-  assert.deepEqual(fake.sent[0]?.target, {
-    scope: "c2c",
-    targetId: "user-openid",
-    msgId: "message-1"
+  assert.deepEqual(fake.sentRaw[0], {
+    target: { scope: "c2c", targetId: "user-openid", msgId: "message-1" },
+    msgType: 0,
+    content: "done",
+    extra: { msg_seq: 7 }
   });
 
-  fake.sendFailure = new ApiError("bad request", 400, "/messages");
+  fake.rawSendFailure = new ApiError("bad request", 400, "/messages");
   await assert.rejects(
     channel.sendText(delivery),
     (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "rejected"
   );
-  fake.sendFailure = new Error("connection reset");
+  fake.rawSendFailure = new Error("connection reset");
   await assert.rejects(
     channel.sendText(delivery),
     (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "ambiguous"
+  );
+  await channel.stop();
+});
+
+test("retries an explicitly expired passive reply once as a proactive message", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  await channel.start(async () => undefined);
+  fake.rawSendFailure = new ApiError(
+    "expired reply",
+    400,
+    "/v2/users/user-openid/messages",
+    304103
+  );
+
+  const receipt = await channel.sendText({
+    logicalResultId: "result-1",
+    segmentIndex: 0,
+    target: {
+      conversationKey: "qq:qq-primary:private:user-openid",
+      conversationKind: "private",
+      providerConversationId: "user-openid",
+      providerReplyEventId: "message-1"
+    },
+    providerReplySequence: 3,
+    text: "long task completed"
+  });
+
+  assert.equal(receipt.outcome, "accepted");
+  assert.equal(fake.sentRaw.length, 1);
+  assert.deepEqual(fake.sent, [
+    {
+      target: { scope: "c2c", targetId: "user-openid" },
+      content: "long task completed"
+    }
+  ]);
+  await channel.stop();
+});
+
+test("applies the same narrow expired-anchor fallback to group delivery", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  await channel.start(async () => undefined);
+  fake.rawSendFailure = new ApiError(
+    "expired group reply",
+    400,
+    "/v2/groups/group-openid/messages",
+    40034005
+  );
+
+  await channel.sendText({
+    logicalResultId: "result-1",
+    segmentIndex: 0,
+    target: {
+      conversationKey: "qq:qq-primary:group:group-openid",
+      conversationKind: "group",
+      providerConversationId: "group-openid",
+      providerReplyEventId: "message-1"
+    },
+    providerReplySequence: 2,
+    text: "group task completed"
+  });
+
+  assert.deepEqual(fake.sent[0]?.target, { scope: "group", targetId: "group-openid" });
+  await channel.stop();
+});
+
+test("does not fall back for unrelated provider rejection or missing durable sequence", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  await channel.start(async () => undefined);
+  const passive = {
+    logicalResultId: "result-1",
+    segmentIndex: 0,
+    target: {
+      conversationKey: "qq:qq-primary:group:group-openid",
+      conversationKind: "group" as const,
+      providerConversationId: "group-openid",
+      providerReplyEventId: "message-1"
+    },
+    providerReplySequence: 2,
+    text: "done"
+  };
+  fake.rawSendFailure = new ApiError("forbidden", 403, "/messages", 40034024);
+  await assert.rejects(
+    channel.sendText(passive),
+    (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "rejected"
+  );
+  assert.equal(fake.sent.length, 0);
+
+  await assert.rejects(
+    channel.sendText({ ...passive, providerReplySequence: undefined }),
+    (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "rejected"
+  );
+  await assert.rejects(
+    channel.sendText({
+      ...passive,
+      target: { ...passive.target, providerReplyEventId: "" }
+    }),
+    (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "rejected"
   );
   await channel.stop();
 });

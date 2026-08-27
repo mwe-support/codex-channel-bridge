@@ -5,11 +5,13 @@
 `@codex-channel-bridge/profile-store` is the first Bridge-owned persistence
 slice. It stores normalized QQ and WhatsApp message events without copying
 Codex Thread or Turn history. The package currently provides provider-event
-deduplication, bounded recent-message reads, and literal-token FTS5 search.
+deduplication, bounded recent-message reads, literal-token FTS5 search, and the
+atomic Logical Result plus durable Outbox contract described in
+[`delivery.md`](delivery.md).
 
 This is not the complete Local Hybrid Retrieval implementation. Substring,
-fuzzy, structured, recency-fusion, Archive MCP, media, purge, and outbox
-behavior remain later slices.
+fuzzy, structured, recency-fusion, Archive MCP, media, and purge behavior
+remain later slices.
 
 ## Profile ownership
 
@@ -29,9 +31,11 @@ fails with `profile_mismatch`; data is never silently adopted or moved.
 
 - `better-sqlite3` is pinned to `13.0.3` and requires Node.js 22 or newer.
 - WAL journal mode, foreign keys, `synchronous=FULL`, and FTS5 are required.
-- A new empty database initializes Bridge schema version 1.
+- A new empty database initializes Bridge schema version 4.
 - An unknown or older schema returns `migration_required`; normal startup does
-  not migrate it.
+  not migrate it. The affected Profile reports `migration_required` without
+  starting Codex. The explicit host-local migration workflow currently supports
+  only the known version 3 to 4 span; see [`migrations.md`](migrations.md).
 - The deduplication identity is
   `(Channel Account Epoch ID, provider event ID)`.
 - Recent reads return at most 500 records and preserve chronological order
@@ -48,11 +52,14 @@ local persistence interface; provider Adapters may impose tighter limits.
 `better-sqlite3` is synchronous. Channel Adapters must not call the store from
 their event loop. `ProfileStore` now exposes only asynchronous operations and
 runs the synchronous SQLite implementation in one dedicated Node.js Worker
-thread per Profile. The Profile Worker opens that storage Worker before Codex,
-commits normalized QQ events through it, and emits only newly inserted events
-to later routing work. A storage failure makes the Profile unavailable and
-stops its Channel Adapters; it never starts Codex work from an uncommitted
-event.
+thread per Profile. The Profile Worker opens that storage Worker before Codex.
+Its single Inbound Pipeline combines Adapter-owned provider facts with the
+Worker-owned Profile, Channel Account, and Account Epoch context, derives the
+Conversation Key, commits the normalized event, and exposes only newly inserted
+events to later routing work. A storage failure makes the Profile unavailable
+and stops its Channel Adapters; it never starts Codex work from an uncommitted
+event. An invalid or provider-mismatched Adapter event instead isolates that
+Adapter and leaves Codex and sibling Adapters available.
 
 ## Verification
 

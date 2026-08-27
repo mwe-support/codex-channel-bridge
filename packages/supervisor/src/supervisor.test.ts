@@ -198,6 +198,64 @@ test("restarts a crashed Worker with a bounded Profile-local budget", async () =
   await supervisor.stop();
 });
 
+test("runs Profile maintenance only behind a stopped migration boundary", async () => {
+  let starts = 0;
+  let stops = 0;
+  let current: ProfileHealth = {
+    profileId: "alpha",
+    readiness: "stopped",
+    reason: null
+  };
+  const listeners = new Set<(health: ProfileHealth) => void>();
+  const migrationFactory: ProfileRuntimeFactory = {
+    create: () => ({
+      async start() {
+        starts += 1;
+        current = {
+          profileId: "alpha",
+          readiness: "unavailable",
+          reason: "migration_required"
+        };
+        for (const listener of listeners) listener({ ...current });
+        return { ...current };
+      },
+      async stop() {
+        stops += 1;
+        current = { profileId: "alpha", readiness: "stopped", reason: null };
+        for (const listener of listeners) listener({ ...current });
+        return { ...current };
+      },
+      health: () => ({ ...current }),
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }
+    })
+  };
+  const supervisor = new Supervisor(migrationFactory);
+  await supervisor.apply(candidate("/srv/alpha/workspace", false));
+  const result = await supervisor.maintainProfile("alpha", async (profile) => {
+    assert.equal(profile.stateDirectory, "/srv/alpha/state");
+    assert.equal(supervisor.status().profiles[0]?.readiness, "stopped");
+    return "migrated";
+  });
+  assert.equal(result, "migrated");
+  assert.equal(starts, 2);
+  assert.equal(stops, 1);
+  assert.equal(supervisor.status().profiles[0]?.reason, "migration_required");
+  await supervisor.stop();
+});
+
+test("rejects Profile maintenance while the Profile is ready", async () => {
+  const supervisor = new Supervisor(new FakeFactory());
+  await supervisor.apply(candidate("/srv/alpha/workspace", false));
+  await assert.rejects(
+    supervisor.maintainProfile("alpha", async () => undefined),
+    /must be stopped or unavailable/
+  );
+  await supervisor.stop();
+});
+
 async function eventually(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (predicate()) return;

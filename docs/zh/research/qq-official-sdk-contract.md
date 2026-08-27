@@ -234,12 +234,19 @@ Message ID 是 Delivery Correlation 与后续 Recall 所需的 Receipt Identity�
 
 ### Reply Window 与 Frequency Hint
 
-当前官方限制为：
+当前官方概述中的限制为：
 
 | Scope | 被动回复窗口 | 每条入站消息可回复次数 |
 | --- | --- | --- |
-| C2C | 60 分钟 | 4 |
+| C2C | 概述与页面摘要写 60 分钟 | 4 |
 | Group | 5 分钟 | 5 |
+
+但同一页面的 C2C Request Field Description 又写 `msg_id` 五分钟内有效，锁定 SDK
+的流式指南也要求使用前五分钟内的入站消息。因此，第一版必须先保守地把五分钟作为
+运行边界，直到
+[`qq-long-running-delivery-limits.md`](qq-long-running-delivery-limits.md)
+列出的真实机器人测试验证当前 Provider 行为。以上两个数值都不能证明一条流的最长
+寿命。
 
 对于主动消息，官方 Overview 当前列出：已认证 Bot 的 C2C Limit 为 10 QPS，未认证
 Bot 为 5 QPS 加 30 QPM；每个 Relationship 20 QPM，每个 User 每日上限 1,000。

@@ -2,9 +2,9 @@
 
 ## 范围
 
-`@codex-channel-bridge/profile-store` 是首个 Bridge-owned Persistence Slice。它存储规范化的 QQ 和 WhatsApp Message Event，但不复制 Codex Thread 或 Turn History。当前 Package 提供 Provider-event Deduplication、有界 Recent-message Read 和 Literal-token FTS5 Search。
+`@codex-channel-bridge/profile-store` 是首个 Bridge-owned Persistence Slice。它存储规范化的 QQ 和 WhatsApp Message Event，但不复制 Codex Thread 或 Turn History。当前 Package 提供 Provider-event Deduplication、有界 Recent-message Read、Literal-token FTS5 Search，以及 [`delivery.md`](delivery.md) 所述的 Atomic Logical Result 与 Durable Outbox Contract。
 
-这不是完整的 Local Hybrid Retrieval 实现。Substring、Fuzzy、Structured、Recency Fusion、Archive MCP、Media、Purge 和 Outbox 行为留到后续阶段。
+这不是完整的 Local Hybrid Retrieval 实现。Substring、Fuzzy、Structured、Recency Fusion、Archive MCP、Media 和 Purge 行为留到后续阶段。
 
 ## Profile 所有权
 
@@ -18,8 +18,8 @@ Profile Worker 在启动时打开 `stateDirectory/bridge.sqlite`，并在 Drain 
 
 - `better-sqlite3` 固定为 `13.0.3`，要求 Node.js 22 或更高版本。
 - 必须启用 WAL Journal Mode、Foreign Key、`synchronous=FULL` 和 FTS5。
-- 新的空数据库初始化为 Bridge Schema Version 1。
-- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration。
+- 新的空数据库初始化为 Bridge Schema Version 4。
+- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration，受影响的 Profile 不启动 Codex。显式 Host-local Migration Workflow 当前只支持已知的 Version 3→4；参见 [`migrations.md`](migrations.md)。
 - Deduplication Identity 是 `(Channel Account Epoch ID, Provider Event ID)`。
 - Recent Read 最多返回 500 条记录，并在所选近期窗口内保持时间正序。
 - FTS5 Search 把输入视为以空白分隔并用 `AND` 连接的 Literal Token；不暴露 Raw FTS Query Syntax，也不是 Semantic Search。
@@ -28,7 +28,7 @@ Profile Worker 在启动时打开 `stateDirectory/bridge.sqlite`，并在 Drain 
 
 ## Event-loop 规则
 
-`better-sqlite3` 是同步引擎。Channel Adapter 不得从自身 Event Loop 调用 Store。`ProfileStore` 现在只暴露异步 Operation，并在每个 Profile 专属的 Node.js Worker Thread 中运行同步 SQLite 实现。Profile Worker 在 Codex 之前打开该 Storage Worker，通过它提交规范化 QQ Event，并且只把新插入的 Event 交给后续 Routing Work。Storage Failure 会让 Profile 进入 Unavailable 并停止其 Channel Adapter；Bridge 绝不从未提交的 Event 启动 Codex Work。
+`better-sqlite3` 是同步引擎。Channel Adapter 不得从自身 Event Loop 调用 Store。`ProfileStore` 现在只暴露异步 Operation，并在每个 Profile 专属的 Node.js Worker Thread 中运行同步 SQLite 实现。Profile Worker 在 Codex 之前打开该 Storage Worker。其唯一的 Inbound Pipeline 将 Adapter-owned Provider Fact 与 Worker-owned Profile、Channel Account 和 Account Epoch Context 合并，派生 Conversation Key，提交规范化 Event，并且只把新插入的 Event 交给后续 Routing Work。Storage Failure 会让 Profile 进入 Unavailable 并停止其 Channel Adapter；Bridge 绝不从未提交的 Event 启动 Codex Work。无效或 Provider 不匹配的 Adapter Event 则只隔离该 Adapter，Codex 与 Sibling Adapter 保持可用。
 
 ## 验证
 

@@ -18,15 +18,62 @@ const PROFILE_KEYS = new Set([
   "stateDirectory",
   "secretsFile",
   "channelAccounts",
-  "codexExecutable"
+  "codexExecutable",
+  "admission",
+  "approval"
 ]);
 const QQ_CHANNEL_ACCOUNT_KEYS = new Set([
   "provider",
   "enabled",
   "epochId",
   "appId",
-  "appSecret"
+  "appSecret",
+  "accessPolicy",
+  "groupThreadScope"
 ]);
+const WHATSAPP_CHANNEL_ACCOUNT_KEYS = new Set([
+  "provider",
+  "enabled",
+  "epochId",
+  "accessPolicy",
+  "groupThreadScope"
+]);
+const ADMISSION_KEYS = new Set([
+  "mode",
+  "maximumActiveTurns",
+  "queueCapacity",
+  "maximumQueueAgeMs",
+  "accountRateLimit",
+  "accountRateWindowMs"
+]);
+const APPROVAL_KEYS = new Set(["timeoutMs", "detail"]);
+const ACCESS_POLICY_KEYS = new Set(["privateChats", "groupChats", "groupParticipants"]);
+const ACCESS_RULE_KEYS = new Set(["mode", "allow"]);
+
+export interface AccessRuleConfiguration {
+  readonly mode: "deny" | "allowlist" | "open";
+  readonly allow: readonly string[];
+}
+
+export interface ChannelAccessPolicyConfiguration {
+  readonly privateChats: AccessRuleConfiguration;
+  readonly groupChats: AccessRuleConfiguration;
+  readonly groupParticipants: AccessRuleConfiguration;
+}
+
+export interface AdmissionConfiguration {
+  readonly mode: "steer" | "queue";
+  readonly maximumActiveTurns: number;
+  readonly queueCapacity: number;
+  readonly maximumQueueAgeMs: number;
+  readonly accountRateLimit: number;
+  readonly accountRateWindowMs: number;
+}
+
+export interface ApprovalConfiguration {
+  readonly timeoutMs: number;
+  readonly detail: "minimal" | "summary" | "detailed";
+}
 
 export interface QQChannelAccountConfiguration {
   readonly id: string;
@@ -35,9 +82,22 @@ export interface QQChannelAccountConfiguration {
   readonly epochId: string;
   readonly appId: string;
   readonly appSecret: string;
+  readonly groupThreadScope: "conversation" | "participant";
+  readonly accessPolicy: ChannelAccessPolicyConfiguration;
 }
 
-export type ChannelAccountConfiguration = QQChannelAccountConfiguration;
+export interface WhatsAppChannelAccountConfiguration {
+  readonly id: string;
+  readonly provider: "whatsapp";
+  readonly enabled: boolean;
+  readonly epochId: string;
+  readonly groupThreadScope: "conversation" | "participant";
+  readonly accessPolicy: ChannelAccessPolicyConfiguration;
+}
+
+export type ChannelAccountConfiguration =
+  | QQChannelAccountConfiguration
+  | WhatsAppChannelAccountConfiguration;
 
 export interface ProfileConfiguration {
   readonly id: string;
@@ -48,6 +108,8 @@ export interface ProfileConfiguration {
   readonly secretsFile: string;
   readonly channelAccounts: Readonly<Record<string, ChannelAccountConfiguration>>;
   readonly codexExecutable?: string;
+  readonly admission: AdmissionConfiguration;
+  readonly approval: ApprovalConfiguration;
 }
 
 export interface SupervisorConfiguration {
@@ -251,6 +313,8 @@ function validateShape(raw: unknown): BridgeConfiguration {
         `profiles.${id}.codexExecutable`,
         issues
       );
+      const admission = validateAdmission(value.admission, `profiles.${id}.admission`, issues);
+      const approval = validateApproval(value.approval, `profiles.${id}.approval`, issues);
       if (
         workspace &&
         codexHome &&
@@ -267,6 +331,8 @@ function validateShape(raw: unknown): BridgeConfiguration {
           stateDirectory,
           secretsFile,
           channelAccounts,
+          admission,
+          approval,
           ...(codexExecutable ? { codexExecutable } : {})
         };
       }
@@ -281,6 +347,31 @@ function validateShape(raw: unknown): BridgeConfiguration {
     supervisor: { drainTimeoutMs, childExitTimeoutMs },
     profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
   };
+}
+
+function validateApproval(
+  value: unknown,
+  path: string,
+  issues: string[]
+): ApprovalConfiguration {
+  const raw = value === undefined ? {} : value;
+  if (!isRecord(raw)) {
+    issues.push(`${path} must be a mapping`);
+    return defaultApproval();
+  }
+  rejectUnknownKeys(raw, APPROVAL_KEYS, path, issues);
+  const detail = raw.detail === undefined ? "minimal" : raw.detail;
+  if (detail !== "minimal" && detail !== "summary" && detail !== "detailed") {
+    issues.push(`${path}.detail must equal minimal, summary, or detailed`);
+  }
+  return {
+    timeoutMs: integerWithin(raw.timeoutMs, 300_000, 10_000, 3_600_000, `${path}.timeoutMs`, issues),
+    detail: detail === "summary" || detail === "detailed" ? detail : "minimal"
+  };
+}
+
+function defaultApproval(): ApprovalConfiguration {
+  return { timeoutMs: 300_000, detail: "minimal" };
 }
 
 function validateChannelAccounts(
@@ -304,11 +395,16 @@ function validateChannelAccounts(
       issues.push(`${accountPath} must be a mapping`);
       continue;
     }
-    rejectUnknownKeys(account, QQ_CHANNEL_ACCOUNT_KEYS, accountPath, issues);
-    if (account.provider !== "qq") {
-      issues.push(`${accountPath}.provider must equal qq`);
+    if (account.provider !== "qq" && account.provider !== "whatsapp") {
+      issues.push(`${accountPath}.provider must equal qq or whatsapp`);
       continue;
     }
+    rejectUnknownKeys(
+      account,
+      account.provider === "qq" ? QQ_CHANNEL_ACCOUNT_KEYS : WHATSAPP_CHANNEL_ACCOUNT_KEYS,
+      accountPath,
+      issues
+    );
     const enabled = account.enabled === undefined ? true : account.enabled;
     if (typeof enabled !== "boolean") issues.push(`${accountPath}.enabled must be boolean`);
     const epochId =
@@ -316,13 +412,174 @@ function validateChannelAccounts(
         ? account.epochId
         : null;
     if (!epochId) issues.push(`${accountPath}.epochId is invalid`);
-    const appId = secretReference(account.appId, `${accountPath}.appId`, issues);
-    const appSecret = secretReference(account.appSecret, `${accountPath}.appSecret`, issues);
-    if (typeof enabled === "boolean" && epochId && appId && appSecret) {
-      accounts[id] = { id, provider: "qq", enabled, epochId, appId, appSecret };
+    const appId = account.provider === "qq"
+      ? secretReference(account.appId, `${accountPath}.appId`, issues)
+      : null;
+    const appSecret = account.provider === "qq"
+      ? secretReference(account.appSecret, `${accountPath}.appSecret`, issues)
+      : null;
+    const groupThreadScope =
+      account.groupThreadScope === undefined ? "conversation" : account.groupThreadScope;
+    if (groupThreadScope !== "conversation" && groupThreadScope !== "participant") {
+      issues.push(`${accountPath}.groupThreadScope must equal conversation or participant`);
+    }
+    const accessPolicy = validateAccessPolicy(
+      account.accessPolicy,
+      `${accountPath}.accessPolicy`,
+      issues
+    );
+    if (typeof enabled === "boolean" && epochId) {
+      const common = {
+        id,
+        enabled,
+        epochId,
+        groupThreadScope:
+          groupThreadScope === "participant" ? "participant" as const : "conversation" as const,
+        accessPolicy
+      };
+      if (account.provider === "whatsapp") {
+        accounts[id] = { ...common, provider: "whatsapp" };
+      } else if (appId && appSecret) {
+        accounts[id] = { ...common, provider: "qq", appId, appSecret };
+      }
     }
   }
   return Object.fromEntries(Object.entries(accounts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function validateAdmission(
+  value: unknown,
+  path: string,
+  issues: string[]
+): AdmissionConfiguration {
+  const raw = value === undefined ? {} : value;
+  if (!isRecord(raw)) {
+    issues.push(`${path} must be a mapping`);
+    return defaultAdmission();
+  }
+  rejectUnknownKeys(raw, ADMISSION_KEYS, path, issues);
+  const mode = raw.mode === undefined ? "steer" : raw.mode;
+  if (mode !== "steer" && mode !== "queue") {
+    issues.push(`${path}.mode must equal steer or queue`);
+  }
+  return {
+    mode: mode === "queue" ? "queue" : "steer",
+    maximumActiveTurns: integerWithin(
+      raw.maximumActiveTurns,
+      1,
+      1,
+      64,
+      `${path}.maximumActiveTurns`,
+      issues
+    ),
+    queueCapacity: integerWithin(raw.queueCapacity, 16, 0, 10_000, `${path}.queueCapacity`, issues),
+    maximumQueueAgeMs: integerWithin(
+      raw.maximumQueueAgeMs,
+      300_000,
+      1_000,
+      86_400_000,
+      `${path}.maximumQueueAgeMs`,
+      issues
+    ),
+    accountRateLimit: integerWithin(
+      raw.accountRateLimit,
+      30,
+      1,
+      100_000,
+      `${path}.accountRateLimit`,
+      issues
+    ),
+    accountRateWindowMs: integerWithin(
+      raw.accountRateWindowMs,
+      60_000,
+      1_000,
+      3_600_000,
+      `${path}.accountRateWindowMs`,
+      issues
+    )
+  };
+}
+
+function defaultAdmission(): AdmissionConfiguration {
+  return {
+    mode: "steer",
+    maximumActiveTurns: 1,
+    queueCapacity: 16,
+    maximumQueueAgeMs: 300_000,
+    accountRateLimit: 30,
+    accountRateWindowMs: 60_000
+  };
+}
+
+function validateAccessPolicy(
+  value: unknown,
+  path: string,
+  issues: string[]
+): ChannelAccessPolicyConfiguration {
+  const raw = value === undefined ? {} : value;
+  if (!isRecord(raw)) {
+    issues.push(`${path} must be a mapping`);
+    return denyAccessPolicy();
+  }
+  rejectUnknownKeys(raw, ACCESS_POLICY_KEYS, path, issues);
+  return {
+    privateChats: validateAccessRule(raw.privateChats, `${path}.privateChats`, issues),
+    groupChats: validateAccessRule(raw.groupChats, `${path}.groupChats`, issues),
+    groupParticipants: validateAccessRule(
+      raw.groupParticipants,
+      `${path}.groupParticipants`,
+      issues
+    )
+  };
+}
+
+function validateAccessRule(
+  value: unknown,
+  path: string,
+  issues: string[]
+): AccessRuleConfiguration {
+  const raw = value === undefined ? {} : value;
+  if (!isRecord(raw)) {
+    issues.push(`${path} must be a mapping`);
+    return { mode: "deny", allow: [] };
+  }
+  rejectUnknownKeys(raw, ACCESS_RULE_KEYS, path, issues);
+  const mode = raw.mode === undefined ? "deny" : raw.mode;
+  if (mode !== "deny" && mode !== "allowlist" && mode !== "open") {
+    issues.push(`${path}.mode must equal deny, allowlist, or open`);
+  }
+  const allow = Array.isArray(raw.allow) ? raw.allow : [];
+  if (raw.allow !== undefined && !Array.isArray(raw.allow)) {
+    issues.push(`${path}.allow must be an array`);
+  }
+  const normalized: string[] = [];
+  for (const [index, entry] of allow.entries()) {
+    if (typeof entry !== "string" || entry.length === 0 || Buffer.byteLength(entry, "utf8") > 8192) {
+      issues.push(`${path}.allow.${index} must be a non-empty provider identifier`);
+    } else if (normalized.includes(entry)) {
+      issues.push(`${path}.allow.${index} is duplicated`);
+    } else {
+      normalized.push(entry);
+    }
+  }
+  if (mode === "allowlist" && normalized.length === 0) {
+    issues.push(`${path}.allow must not be empty in allowlist mode`);
+  }
+  if ((mode === "deny" || mode === "open") && normalized.length > 0) {
+    issues.push(`${path}.allow is only valid in allowlist mode`);
+  }
+  return {
+    mode: mode === "allowlist" || mode === "open" ? mode : "deny",
+    allow: normalized
+  };
+}
+
+function denyAccessPolicy(): ChannelAccessPolicyConfiguration {
+  return {
+    privateChats: { mode: "deny", allow: [] },
+    groupChats: { mode: "deny", allow: [] },
+    groupParticipants: { mode: "deny", allow: [] }
+  };
 }
 
 function secretReference(value: unknown, path: string, issues: string[]): string | null {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { NormalizedChannelMessage } from "@codex-channel-bridge/core";
+import type { LogicalResultInput, NormalizedChannelMessage } from "@codex-channel-bridge/core";
 
 import { ProfileStore } from "./async-profile-store.js";
 import { ProfileStoreError } from "./profile-store.js";
@@ -25,6 +25,24 @@ function message(overrides: Partial<NormalizedChannelMessage> = {}): NormalizedC
   };
 }
 
+function logicalResult(): LogicalResultInput {
+  return {
+    profileId: "alpha",
+    codexThreadId: "thread-1",
+    codexTurnId: "turn-1",
+    provider: "qq",
+    channelAccountId: "qq-primary",
+    channelAccountEpochId: "epoch-1",
+    target: {
+      conversationKey: "qq:qq-primary:private:user-1",
+      conversationKind: "private",
+      providerConversationId: "user-1"
+    },
+    completedAtMs: 1_000,
+    segments: [{ text: "durable result" }]
+  };
+}
+
 async function temporaryDatabase(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-async-store-test-"));
   context.after(async () => rm(directory, { force: true, recursive: true }));
@@ -41,6 +59,30 @@ test("executes archive operations through the asynchronous Profile Store interfa
   assert.deepEqual(duplicate, { recordId: first.recordId, inserted: false });
   assert.equal((await store.recentMessages("qq:private:conversation-1"))[0]?.text, "worker-thread archive");
   assert.equal((await store.searchText({ text: "worker archive" })).length, 1);
+  await store.close();
+});
+
+test("executes Logical Result and Outbox transitions through the storage Worker", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = await ProfileStore.open({ profileId: "alpha", databasePath });
+  const committed = await store.commitLogicalResult(logicalResult());
+  const [lease] = await store.claimOutbox({ nowMs: 1_000, leaseDurationMs: 100 });
+  assert.equal(lease?.logicalResultId, committed.logicalResultId);
+  assert.equal(lease?.providerReplySequence, undefined);
+  assert.ok(lease);
+  assert.equal(
+    (
+      await store.settleOutbox({
+        outboxRecordId: lease.outboxRecordId,
+        leaseToken: lease.leaseToken,
+        outcome: "accepted",
+        providerMessageId: "provider-message-1",
+        acceptedAtMs: 1_010
+      })
+    ).status,
+    "accepted"
+  );
+  assert.equal((await store.outboxCounts()).accepted, 1);
   await store.close();
 });
 

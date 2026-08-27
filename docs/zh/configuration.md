@@ -22,6 +22,16 @@ profiles:
     codexHome: /absolute/path/to/codex-home
     stateDirectory: /absolute/path/to/bridge-state
     secretsFile: /absolute/path/to/bridge-state/secrets.env
+    admission:
+      mode: steer
+      maximumActiveTurns: 1
+      queueCapacity: 16
+      maximumQueueAgeMs: 300000
+      accountRateLimit: 30
+      accountRateWindowMs: 60000
+    approval:
+      timeoutMs: 300000
+      detail: minimal
     channelAccounts:
       qq-primary:
         provider: qq
@@ -29,14 +39,31 @@ profiles:
         epochId: initial
         appId: env:QQ_BOT_APP_ID
         appSecret: file:/run/secrets/qq-bot-app-secret
+        groupThreadScope: conversation
+        accessPolicy:
+          privateChats:
+            mode: allowlist
+            allow: [provider-private-identity]
+          groupChats:
+            mode: allowlist
+            allow: [provider-group-conversation-id]
+          groupParticipants:
+            mode: allowlist
+            allow: [provider-group-participant-id]
     codexExecutable: /optional/absolute/path/to/codex
 ```
 
 Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace`、`codexHome` 和 `stateDirectory` 都必须是现有绝对目录；在完整 Candidate 中，任何一个 Owned Root 都不能与另一个相同，也不能包含另一个或被另一个包含。在 macOS 和 Linux 上，`stateDirectory` 必须是真实目录、由 Service User 所有且 Mode 为 `0700`；Worker 在其中创建 Mode 为 `0600` 的 `bridge.sqlite`。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
 
-`secretsFile` 默认是 `stateDirectory/secrets.env`。覆盖时必须显式提供绝对路径；Bridge 绝不搜索 Dotenv File。`channelAccounts` 以整个 Deployment 范围内唯一的 Channel Account ID 为 Key。当前阶段只接受 QQ Account。每个 Account 都有 Operator 选择的 Epoch ID，用于 Durable Deduplication。即使某个 Account 的其他字段无效，同一 Channel Account ID 也不能出现在两个 Profile 中。
+`secretsFile` 默认是 `stateDirectory/secrets.env`。覆盖时必须显式提供绝对路径；Bridge 绝不搜索 Dotenv File。`channelAccounts` 以整个 Deployment 范围内唯一的 Channel Account ID 为 Key。当前阶段接受 QQ 与 WhatsApp Account。每个 Account 都有 Operator 选择的 Epoch ID，用于 Durable Deduplication。即使某个 Account 的其他字段无效，同一 Channel Account ID 也不能出现在两个 Profile 中。WhatsApp Rotating Authentication 只从固定 Profile-local Path `stateDirectory/channel-auth/CHANNEL_ACCOUNT_ID` 加载；它不是 Secret Reference，也绝不写入 `config.yaml`。
 
 `appId` 和 `appSecret` 只接受 `env:NAME` 或 `file:/absolute/path` Secret Reference。`env:` Reference 先从真实 Service Process Environment 解析，再回退到该 Profile 配置的 `secretsFile`。`file:` Reference 从一个绝对路径文件读取单个 Secret。在 macOS 和 Linux 上，这两类文件都必须是普通、非 Symlink、由 Service User 所有且 Mode 严格为 `0600` 的文件。缺失、空、Malformed 或 Insecure Input 会让受影响 Adapter 保持 Unavailable，且不披露名称或值。
+
+`accessPolicy` 失败关闭。三个独立 Rule 默认均为 `deny`，可设置为 `deny`、`allowlist` 或 `open`。私聊 Rule 比较稳定 Provider Identity。群 Event 必须同时通过使用 Provider Conversation ID 的群会话 Rule，以及使用 Provider Identity 的群参与者 Rule。`allowlist` 至少包含一个精确 Identifier；`deny` 与 `open` 不得携带 `allow` List。`groupThreadScope` 默认为 `conversation`；设置为 `participant` 时，每个获准群成员具有独立 Codex Thread Binding。
+
+Profile-local `admission` 默认使用 Steer Mode、最多一个 Active Turn、16 条 Queue 容量、五分钟最大 Queue Age，以及每个 Channel Account 每 60 秒 30 条 Ordinary Input。只有 `mode: queue` 才会使用 Queue。所有限制都位于 Access Policy 与 Command Parsing 之后、原生 Codex Work 之前。Runtime 语义见 [`admission.md`](admission.md)。
+
+Profile-local `approval` 默认使用五分钟 Response Window 与 `minimal` Presentation。`detail` 接受 `minimal`、`summary` 或 `detailed`。Minimal Mode 只暴露 Native Operation Class 与 Opaque Response Token；Summary 可以包含有界的 Reason 与 Command Summary；Detailed 可以在 Codex 提供时额外包含有界的 Native Command、Working Directory 或 Requested Write Root。Bridge 永不把 Process-scoped JSON-RPC Request ID 发送到 Channel。参见 [`approval-routing.md`](approval-routing.md)。
 
 Dotenv Parser 接受普通 `KEY=VALUE` Record 和使用单引号或双引号包裹的 Literal Value。它不执行 Shell Syntax、不展开 Variable、不进行 Command Substitution，也不包含其他文件。不要提交真实 `secrets.env`；普通 Secret File Name 和 `test-channel.env*` 已被本仓库忽略。
 

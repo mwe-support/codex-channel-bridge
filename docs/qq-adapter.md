@@ -33,7 +33,8 @@ an ongoing per-account readiness report after a post-ready connection failure.
 ## Inbound normalization
 
 The adapter accepts only C2C and QQ group message events. It applies the
-official SDK content sanitizer, then produces one channel-neutral event:
+official SDK content sanitizer, then produces one channel-neutral provider
+event that contains provider facts only:
 
 - C2C messages use `user_openid` as both the stable participant and provider
   conversation identity and are marked `direct`.
@@ -41,8 +42,12 @@ official SDK content sanitizer, then produces one channel-neutral event:
   for the participant. `GROUP_AT_MESSAGE_CREATE` is marked `mention`, while
   full-group events are marked `passive`.
 - The durable provider-event key encodes the provider message ID together with
-  `msg_idx` when present. The Profile Store deduplicates it within the Channel
-  Account Epoch before emitting the event to later routing work.
+  `msg_idx` when present.
+- The event cannot declare its Profile, Channel Account, Account Epoch, or
+  Bridge Conversation Key. The owning Profile Worker injects that trusted
+  context into the single Inbound Pipeline, which derives the Conversation Key
+  and commits the Message Archive before exposing a new event to later routing
+  work. Duplicate events are not exposed again.
 - Provider identifiers remain internal data. Operational output must not log
   them or the message body.
 
@@ -59,18 +64,28 @@ becomes an `accepted` receipt. Definite non-rate-limit 4xx failures are
 `rejected`; rate limits, transport failures, and other uncertain outcomes are
 `ambiguous`.
 
-This method is sufficient for the controlled live contract only. The official
-SDK creates a fresh `msg_seq` for every passive helper call. Production durable
-delivery must first persist the chosen `msg_id + msg_seq` pair and use the raw
-provider send API. Until the outbox implements that rule, the Bridge does not
-claim effectively-once QQ result delivery.
+Passive delivery requires the Outbox-allocated `providerReplySequence`. The
+Adapter passes the persisted `msg_id + msg_seq` through the SDK's explicit
+`send`/raw path, so an ambiguous Outbox retry does not consume a fresh reply
+slot. A passive delivery without that durable sequence is rejected locally.
+
+If QQ definitely rejects the anchor with documented business code `304103` or
+`40034005`, the Adapter retries exactly once without `msg_id`. No other error
+activates this proactive fallback. The user may have disabled proactive
+messages, so fallback rejection remains a delivery failure rather than a
+successful Codex result. Lost responses still cannot be reconciled through a
+Provider lookup API, and the Bridge does not claim strict exactly-once result
+delivery.
 
 ## Verification
 
-Unit contracts cover the exact intent and transport, C2C/group normalization,
-mention versus passive attention, accepted/rejected/ambiguous delivery mapping,
-and startup failure. Profile Worker contracts cover Secret resolution,
-archive-before-routing, independent adapter failure, and drain.
+Unit contracts cover the exact intent and transport, C2C/group provider-fact
+normalization, mention versus passive attention, accepted/rejected/ambiguous
+delivery mapping, stable passive sequence forwarding, narrow expired-anchor
+fallback, unrelated-error rejection, and startup failure. Inbound Pipeline and
+Profile Worker contracts cover trusted authority injection,
+archive-before-routing, deduplication, provider mismatch isolation, independent
+adapter failure, and drain.
 
 An opt-in real test connects the configured robot, waits for one inbound event,
 and sends one fixed passive reply:
@@ -91,3 +106,8 @@ receipt for the fixed reply, and the reply was independently visible in the QQ
 desktop client. No credential, provider identity, provider message ID, or user
 message body was written to test output. C2C, mention-only group delivery,
 Resume, rate-limit, and duplicate/reconciliation behavior remain unverified.
+
+On 2026-08-27, the updated durable-sequence C2C contract reached Gateway
+`ready` but received no new C2C event during its 300-second window. It sent no
+message and ended with `live_contract_timeout`. This is an incomplete external
+interaction, not evidence that the raw-send path passed or failed.

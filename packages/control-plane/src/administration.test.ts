@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+
+import Database from "better-sqlite3";
 
 import {
   parseConfiguration,
@@ -8,6 +13,7 @@ import {
   type SupervisorConfiguration
 } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
+import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 import {
   Supervisor,
   type ProfileRuntime,
@@ -15,6 +21,7 @@ import {
 } from "@codex-channel-bridge/supervisor";
 
 import { AdministrationError, SupervisorAdministration } from "./administration.js";
+import type { AdministrationMethod } from "./protocol.js";
 
 class ReadyRuntime implements ProfileRuntime {
   readonly #listeners = new Set<(health: ProfileHealth) => void>();
@@ -64,9 +71,102 @@ profiles:
 `);
 }
 
-function request(method: "status/get" | "config/plan" | "config/apply", params?: unknown) {
+function request(method: AdministrationMethod, params?: unknown) {
   return { version: 1 as const, id: "request-1", method, params };
 }
+
+test("plans and applies one stopped Profile migration with snapshot evidence", async (context) => {
+  const directory = await schemaThreeState(context);
+  const disabled = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    enabled: false
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: ${directory}
+`);
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(disabled);
+  const administration = new SupervisorAdministration(supervisor, { now: () => 10_000 });
+
+  const plan = (await administration.handle(
+    request("migrate/plan", { profileId: "alpha" })
+  )) as {
+    planToken: string;
+    planDigest: string;
+    sourceDigest: string;
+    migrationRequired: boolean;
+  };
+  assert.equal(plan.migrationRequired, true);
+  const manifestPath = join(directory, "snapshot-manifest.json");
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      kind: "codex-channel-bridge-profile-snapshot",
+      profileId: "alpha",
+      sourceDigest: plan.sourceDigest,
+      completedAtMs: 9_000
+    })}\n`,
+    { mode: 0o600 }
+  );
+  await chmod(manifestPath, 0o600);
+
+  const result = (await administration.handle(
+    request("migrate/apply", {
+      planToken: plan.planToken,
+      confirmPlanDigest: plan.planDigest,
+      backupManifestPath: manifestPath,
+      snapshotConfirmed: true
+    })
+  )) as { fromVersion: number; toVersion: number };
+  assert.deepEqual(result, {
+    ...result,
+    fromVersion: 3,
+    toVersion: 4
+  });
+  SqliteProfileStore.open({
+    profileId: "alpha",
+    databasePath: join(directory, "bridge.sqlite")
+  }).close();
+  assert.equal(supervisor.status().profiles[0]?.readiness, "stopped");
+  await supervisor.stop();
+});
+
+test("requires explicit snapshot confirmation before migration", async (context) => {
+  const directory = await schemaThreeState(context);
+  const disabled = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    enabled: false
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: ${directory}
+`);
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(disabled);
+  const administration = new SupervisorAdministration(supervisor);
+  const plan = (await administration.handle(
+    request("migrate/plan", { profileId: "alpha" })
+  )) as { planToken: string; planDigest: string };
+  await assert.rejects(
+    administration.handle(
+      request("migrate/apply", {
+        planToken: plan.planToken,
+        confirmPlanDigest: plan.planDigest,
+        backupManifestPath: join(directory, "missing.json"),
+        snapshotConfirmed: false
+      })
+    ),
+    (error: unknown) => error instanceof AdministrationError && error.code === "invalid_params"
+  );
+  const database = new Database(join(directory, "bridge.sqlite"), { readonly: true });
+  assert.equal(database.pragma("user_version", { simple: true }), 3);
+  database.close();
+  await supervisor.stop();
+});
 
 test("requires the full candidate revision before applying a stored plan", async () => {
   const supervisor = new Supervisor(factory);
@@ -152,3 +252,18 @@ test("rejects an expired or stale plan without changing runtime state", async ()
   assert.equal(supervisor.status().configurationRevision, other.revision);
   await supervisor.stop();
 });
+
+async function schemaThreeState(context: test.TestContext): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-control-migration-"));
+  await chmod(directory, 0o700);
+  context.after(async () => rm(directory, { recursive: true, force: true }));
+  const databasePath = join(directory, "bridge.sqlite");
+  SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
+  const database = new Database(databasePath);
+  database.exec("DROP TABLE delivery_reply_sequences");
+  database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_sequence");
+  database.pragma("user_version = 3");
+  database.close();
+  await chmod(databasePath, 0o600);
+  return directory;
+}

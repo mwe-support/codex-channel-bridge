@@ -4,18 +4,24 @@ Codex Channel Bridge is a standalone, self-hosted bridge between external messag
 
 ## Status
 
-This repository now contains the first five development slices: a typed stdio
-JSONL Codex client, a foreground multi-Profile Supervisor, a structured
-host-local administration control plane, and Profile-local Message Archive
-persistence, plus a first-party QQ SDK adapter baseline. The Supervisor loads a strictly validated configuration and owns
+This repository contains a typed stdio JSONL Codex client, a foreground
+multi-Profile Supervisor, a structured host-local administration control plane,
+Profile-local Message Archive persistence, a first-party QQ SDK adapter, and a
+pinned Baileys WhatsApp adapter baseline with an owner-only atomic Auth
+Generation Store and staged pairing transaction.
+The Supervisor loads a strictly validated configuration and owns
 one Worker child per enabled Profile; each Worker owns its exclusive App Server
-child, Profile-local WAL SQLite state, and independently supervised QQ Channel
-Adapters. Inbound QQ events are normalized and durably deduplicated before they
-are exposed to later Bridge routing work.
+child, Profile-local WAL SQLite state, and independently supervised Channel
+Adapters. Inbound Channel events are normalized and durably deduplicated before they
+pass through fail-closed access, bounded admission, durable Thread Binding,
+native Turn start/steer, Logical Result commit, and Outbox delivery.
 The control plane supports status and explicitly confirmed runtime
-configuration changes without TCP or HTTP. QQ-to-Codex routing, access policy,
-durable outbox delivery, WhatsApp, and production packaging are not implemented
-yet, so the Bridge is not ready for deployment.
+configuration changes without TCP or HTTP. Stable Codex command and file-change
+Approval Requests are correlated to the exact initiating Channel participant,
+but their durable provider presentation and callback path remain incomplete.
+Restart reconciliation, host-local WhatsApp pairing control/media behavior, and
+production packaging also remain incomplete, so the Bridge is not ready for
+deployment.
 
 ## First-release direction
 
@@ -37,7 +43,12 @@ yet, so the Bridge is not ready for deployment.
 - [Development and Codex protocol verification](docs/development.md)
 - [Configuration and Supervisor operation](docs/configuration.md)
 - [Message Archive persistence baseline](docs/message-archive.md)
+- [Access and admission](docs/admission.md)
+- [Thread Binding and Codex input correlation](docs/thread-binding.md)
+- [Logical Result and durable Outbox](docs/delivery.md)
+- [Codex Approval Request routing](docs/approval-routing.md)
 - [QQ adapter baseline](docs/qq-adapter.md)
+- [WhatsApp adapter baseline](docs/whatsapp-adapter.md)
 
 The inherited Hermes worktree was used only as research context. Its runtime plugins, deployment files, history, and remote are not part of this repository.
 
@@ -88,6 +99,23 @@ The first apply command only returns a redacted plan. The second rereads and
 validates the candidate, then requires its complete revision before changing
 runtime state. See [Configuration and Supervisor operation](docs/configuration.md)
 for endpoint and platform limits.
+
+An older Profile database is never migrated during startup. Inspect and apply
+the currently supported schema 3 to 4 migration through the same host-local
+control plane:
+
+```sh
+node packages/cli/dist/main.js migrate plan --profile alpha
+node packages/cli/dist/main.js migrate apply \
+  --profile alpha \
+  --backup-manifest /absolute/path/alpha-snapshot-manifest.json \
+  --confirm FULL_PLAN_DIGEST \
+  --snapshot-confirmed yes
+```
+
+The apply command requires evidence for an externally completed snapshot; the
+Bridge does not create or upload that backup. See [Explicit Profile schema
+migration](docs/migrations.md).
 
 ## License
 

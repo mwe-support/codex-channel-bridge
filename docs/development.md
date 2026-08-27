@@ -4,34 +4,71 @@
 
 The current runtime slices establish these explicit package boundaries:
 
-1. `@codex-channel-bridge/core` defines shared Profile health vocabulary and
-   the channel-neutral Adapter contract.
+1. `@codex-channel-bridge/core` defines shared Profile health vocabulary, the
+   channel-neutral Adapter contract, provider-fact events, and trusted Channel
+   context types without performing I/O.
 2. `@codex-channel-bridge/codex-app-server` owns newline-delimited JSON
    framing, request correlation, generated-schema capability probes, and the
    supervised App Server child edge.
 3. `@codex-channel-bridge/profile-worker` owns one Profile-exclusive child,
-   readiness, Thread start or reuse, Turn start, and terminal result
-   collection.
+   readiness, trusted Channel context injection, the single Profile-local
+   Inbound Pipeline, the single `CodexEventRouter`, native Turn coordination,
+   and terminal result collection.
 4. `@codex-channel-bridge/config` owns strict YAML parsing, environment
    overrides, Secret Reference resolution, complete static validation, and
    Configuration Revision hashing.
 5. `@codex-channel-bridge/profile-store` owns the Profile-exclusive WAL
-   SQLite schema, provider-event deduplication, recent-message reads, and FTS5
-   lexical search. Its asynchronous interface dispatches synchronous SQLite
-   work to a dedicated Worker thread.
+   SQLite schema, provider-event deduplication, recent-message reads, FTS5
+   lexical search, Thread Bindings, Codex input correlations, atomic Logical
+   Result commits, and durable Outbox state transitions. Its asynchronous
+   interface dispatches synchronous SQLite work to a dedicated Worker thread.
+   Its explicit migration edge currently supports only schema 3 to 4.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
-   Worker child-process restart policy.
+   Worker child-process restart policy. It serializes stopped Profile
+   maintenance without stopping siblings.
 7. `@codex-channel-bridge/control-plane` owns the versioned local JSONL
    administration contract, platform endpoint edge, authorization hook, and
-   two-phase configuration plan/apply protocol.
-8. `@codex-channel-bridge/cli` exposes host-local development commands.
+   two-phase configuration and migration plan/apply protocols.
+8. `@codex-channel-bridge/cli` exposes host-local development and migration
+   commands.
 9. `@codex-channel-bridge/qq-adapter` pins Tencent's official QQ Bot SDK,
-   normalizes C2C and group events, and maps text delivery outcomes without
-   owning routing or Codex behavior.
+   normalizes C2C and group provider facts, and maps text delivery outcomes
+   without declaring a Profile, Account Epoch, routing decision, or Codex
+   behavior in its inbound events.
+10. `@codex-channel-bridge/whatsapp-adapter` pins `baileys@7.0.0-rc14`,
+    normalizes live private/group text, maps send acceptance, and owns the
+    owner-only atomic rotating-auth file edge without claiming Profile routing.
 
 No package stores Codex Thread or Turn history. The Profile worker sends native
 App Server requests and consumes native item and Turn events.
+
+The Bridge-owned Thread Binding and input-correlation ordering is documented in
+[`thread-binding.md`](thread-binding.md). Normalized input passes through Access
+Policy, command parsing, and Profile-local Admission Control before native
+`thread/start`, `thread/resume`, `turn/start`, or `turn/steer` work.
+
+### Profile-local Codex event routing
+
+`ProfileWorker` installs exactly one App Server notification listener for its
+runtime generation. It forwards relevant terminal events into
+`CodexEventRouter` and remains the lifecycle composition root. A new
+`TurnCoordinator` performs native `thread/start` and `turn/start` requests and
+waits for the router's terminal result.
+
+The coordinator reserves one registration for a Thread before sending
+`turn/start`. Early `item/completed` and `turn/completed` signals are buffered
+by their candidate Turn ID, then only the bucket matching the Turn ID returned
+by `turn/start` is claimed. This avoids treating `clientUserMessageId` as a
+notification correlation key; the generated stable schema does not echo that
+field on notifications. Different Threads can run concurrently, while a second
+pending or active Turn on the same Thread is rejected as ambiguous.
+
+The early-signal buffer is bounded to 1,000 relevant signals per pending
+Thread. Timeout, cancellation, Profile stop, and App Server protocol fault all
+release their registrations. Router state is process-generation correlation
+only: it is not Codex Thread history, durable Turn state, or restart
+reconciliation.
 
 ## Toolchain
 
@@ -67,13 +104,13 @@ and administrator-supplied Codex versions. Report a missing prerequisite as an
 environment gap. The Bridge and its validation workflow must not install or
 upgrade Codex on either host.
 
-### Verification snapshot: 2026-08-26
+### Verification snapshots
 
 | Target | Runtime | Result |
 | --- | --- | --- |
-| Native macOS | Node `22.23.1`, npm `10.9.8`, Codex `0.149.1` | 51 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and npm audit passed |
-| Native Linux (`marvel-mini-pc`) | Ubuntu kernel `6.8`, Node `22.22.1`, npm `10.9.4`, Codex `0.149.1` | Fresh `npm ci`, the same unit/control/Supervisor/Codex contracts, and npm audit passed |
-| Linux Docker (`marvel-mini-pc`) | `node:22-bookworm`, Node `22.23.2`, npm `10.9.8`, mounted read-only Codex `0.149.1`, fresh empty Codex home | Fresh `npm ci`, the same unit/control/Supervisor/Codex contracts, and npm audit passed |
+| Native macOS, 2026-08-27 | Node `22.23.1`, npm `10.9.8`, Codex `0.149.1` | Clean build, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
+| Native Linux (`marvel-mini-pc`), 2026-08-27 | Ubuntu kernel `6.8.0-106`, Node `22.22.1`, npm `10.9.4`, Codex `0.149.1` | Fresh `npm ci`, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
+| Linux Docker (`marvel-mini-pc`), 2026-08-27 | `node:22-bookworm`, Node `22.23.2`, npm `10.9.8`, mounted read-only Codex `0.149.1`, fresh empty Codex home | Fresh `npm ci`, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
 
 The Docker run did not mount the host Codex home or authentication state. The
 slim Node image could not build `better-sqlite3` because it lacks Python and a
@@ -172,9 +209,11 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - App Server stderr is consumed separately. The first slice retains only
   bounded content-free byte and chunk counts, never raw stderr text.
 - Experimental APIs are not enabled.
-- Unhandled server-originated Approval Requests or user-input requests receive
-  a JSON-RPC method-not-found response. This fails closed until Channel
-  approval transport is implemented.
+- One Profile runtime has one notification listener and one generation-local
+  event router. Per-Turn notification listeners are not used.
+- Stable command-execution and file-change Approval Requests are routed by their
+  original JSON-RPC request ID to the exact active Turn initiator. Unsupported
+  approval shapes and experimental user-input requests fail closed.
 - Model selection, reasoning, Reviewer policy, sandboxing, compaction, and
   Thread persistence remain Codex-owned.
 
@@ -192,13 +231,33 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   because Node.js does not expose peer credentials. The Windows named-pipe path
   is present, but strict ACL setup and verification remain untested platform
   work. No Web Administration Console is implemented.
-- Profile drain currently stops the App Server because Channel admission,
-  active-Turn tracking, Approval transport, queues, and the durable outbox are
-  not present yet. Their eventual drain conditions remain defined by the ADRs.
+- Profile drain does not yet wait for Channel admission, active-Turn tracking,
+  durable Approval delivery, queues, or pending Outbox delivery. Their complete
+  drain integration remains defined by the ADRs.
 - The Profile Store implements persistence, an off-event-loop storage Worker,
   and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
-  MCP Server, Archive Purge, media persistence, and durable outbox are not
-  implemented yet.
-- The QQ Adapter connects and archives normalized C2C/group events, but access
-  policy, Conversation-to-Thread routing, passive reply sequence persistence,
-  durable outbox retry, and Codex result delivery are not implemented yet.
+  MCP Server, Archive Purge, and media persistence are not implemented yet.
+  Explicit migration currently supports only the known schema 3 to 4 span;
+  other version spans remain unsupported and fail closed.
+- The QQ Adapter emits only C2C/group provider facts. The Profile-local Inbound
+  Pipeline injects Profile, Channel Account, and Account Epoch authority,
+  derives the Conversation Key, archives before exposure, and suppresses
+  duplicates. Access Policy, command parsing, Profile-local Admission, native
+  Thread start/resume, native Turn start/steer, input correlation, Logical
+  Result creation, and durable Outbox dispatch are connected. Initiator-bound
+  `/stop` uses native `turn/interrupt`; `/approve` returns a bound decision to
+  the original native request. The other Channel commands, durable Approval
+  presentation and restart reconciliation remain incomplete. Passive QQ reply
+  sequences are now allocated with the Outbox transaction and forwarded through
+  the explicit raw-send path. The QQ SDK still does not expose a
+  provider idempotency key or reconciliation lookup, so ambiguous sends retain
+  a disclosed duplicate window.
+- The WhatsApp Adapter handles live text, mention/passive distinction, send
+  acceptance, an atomic Profile-local Auth Generation Store, staged pairing,
+  and Provider Identity verification. Host-local pairing control,
+  single-adapter restart, logout/revoke, media, and durable quoted-reply
+  semantics are not implemented yet. Retryable disconnects replace the Socket
+  through a bounded three-attempt backoff; administrative disconnect reasons
+  and exhaustion degrade only that adapter. The Channel-neutral readiness edge
+  projects later degradation and recovery into Profile Health. Missing or
+  insecure auth also degrades only that adapter.
