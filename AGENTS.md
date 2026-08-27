@@ -495,6 +495,18 @@ named target and retain the exact command result. A missing host dependency is
 an environment gap, not authorization for the Bridge or an agent to install or
 upgrade Codex.
 
+At each development stage that changes the runnable QQ-to-Codex path, deploy
+the actual Bridge on the local native macOS machine and complete an end-to-end
+acceptance run using the host's configured QQ credentials and the QQ desktop
+client signed in to the associated test account. Exercise real inbound and
+outbound QQ interactions to verify the changed function, provider and timing
+boundaries, relevant failure cases, and conflict-handling adjustments. Retain
+content-free evidence of the deployed revision, scenario, provider outcome,
+and observed boundary. Unit, mock, and contract tests supplement this live
+acceptance and do not replace it. Keep the credentials and raw provider
+identities only in the existing local secret boundary; never copy them into the
+repository, test fixtures, command output, logs, or acceptance evidence.
+
 Install one Bridge Supervisor service per deployment, not one operating-system
 service per Profile. The Supervisor owns the configured Profile-worker child
 processes, and each worker owns its App Server child; adding or removing a
