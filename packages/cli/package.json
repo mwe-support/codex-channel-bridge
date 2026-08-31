@@ -7,6 +7,7 @@
     "bridge": "./dist/main.js"
   },
   "dependencies": {
+    "@codex-channel-bridge/archive-mcp": "0.1.0-dev",
     "@codex-channel-bridge/codex-app-server": "0.1.0-dev",
     "@codex-channel-bridge/config": "0.1.0-dev",
     "@codex-channel-bridge/control-plane": "0.1.0-dev",

@@ -150,6 +150,33 @@ test("starts with the narrow QQ intent and normalizes C2C messages", async () =>
   assert.equal(channel.readiness(), "stopped");
 });
 
+test("archives official QQ attachment facts as metadata without fetching bytes", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  const events: ProviderInboundEvent[] = [];
+  await channel.start(async (event) => { events.push(event); });
+  await fake.emitMessage(1, inbound({
+    attachments: [{
+      content_type: "image/jpeg",
+      filename: "photo.jpg",
+      url: "https://example.invalid/provider-link",
+      size: 123,
+      width: 10,
+      height: 20
+    }]
+  } as Partial<QQBotInboundMessage>));
+  assert.deepEqual(events[0]?.attachments, [{
+    providerAttachmentId: "0",
+    contentType: "image/jpeg",
+    filename: "photo.jpg",
+    sourceUrl: "https://example.invalid/provider-link",
+    declaredSizeBytes: 123,
+    width: 10,
+    height: 20
+  }]);
+  await channel.stop();
+});
+
 test("distinguishes mentioned and passive QQ group messages", async () => {
   const fake = new FakeBot();
   const channel = adapter(fake);

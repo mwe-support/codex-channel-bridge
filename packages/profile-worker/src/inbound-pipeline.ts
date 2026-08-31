@@ -1,10 +1,18 @@
 import type {
   ChannelReplyTarget,
   InboundChannelEvent,
+  InboundChannelAttachment,
   NormalizedChannelMessage,
   ProviderInboundEvent,
   TrustedChannelContext
 } from "@codex-channel-bridge/core";
+import type {
+  ArchiveAttachmentRecord,
+  ArchiveObservationCommitResult,
+  CommitArchiveObservationInput
+} from "@codex-channel-bridge/profile-store";
+
+import { type MediaArchive, toInboundAttachment } from "./media-archive.js";
 
 interface ArchiveCommitResult {
   readonly recordId: string;
@@ -13,6 +21,7 @@ interface ArchiveCommitResult {
 
 export interface InboundArchive {
   commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
+  commitObservation?(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
 }
 
 export type InboundDisposition =
@@ -45,9 +54,11 @@ export class InboundPipelineError extends Error {
  */
 export class InboundPipeline {
   readonly #archive: InboundArchive;
+  readonly #media?: MediaArchive;
 
-  public constructor(archive: InboundArchive) {
+  public constructor(archive: InboundArchive, media?: MediaArchive) {
     this.#archive = archive;
+    this.#media = media;
   }
 
   public async accept(
@@ -55,11 +66,58 @@ export class InboundPipeline {
     providerEvent: ProviderInboundEvent
   ): Promise<InboundDisposition> {
     const event = normalizeInboundEvent(context, providerEvent);
-    const commit = await this.#archive.commitMessage(event.message);
+    const observation = {
+      message: event.message,
+      attachments: (providerEvent.attachments ?? []).map((attachment) => ({
+        providerAttachmentId: attachment.providerAttachmentId,
+        contentType: attachment.contentType,
+        ...(attachment.filename === undefined ? {} : { filename: attachment.filename }),
+        ...(attachment.sourceUrl === undefined ? {} : { sourceUrl: attachment.sourceUrl }),
+        ...(attachment.declaredSizeBytes === undefined
+          ? {}
+          : { declaredSizeBytes: attachment.declaredSizeBytes }),
+        ...(attachment.width === undefined ? {} : { width: attachment.width }),
+        ...(attachment.height === undefined ? {} : { height: attachment.height }),
+        ...(attachment.transcript === undefined ? {} : { transcript: attachment.transcript }),
+        bytesState: attachment.contentSource === undefined ? "metadata_only" : "pending"
+      }))
+    } satisfies CommitArchiveObservationInput;
+    const commit = this.#archive.commitObservation
+      ? await this.#archive.commitObservation(observation)
+      : {
+          ...(await this.#archive.commitMessage(event.message)),
+          attachments: []
+        };
+    const attachments = await this.#mirrorAttachments(commit.attachments, providerEvent);
     if (!commit.inserted) {
       return { kind: "duplicate", archiveRecordId: commit.recordId };
     }
-    return { kind: "observed", archiveRecordId: commit.recordId, event };
+    return {
+      kind: "observed",
+      archiveRecordId: commit.recordId,
+      event: { ...event, ...(attachments.length === 0 ? {} : { attachments }) }
+    };
+  }
+
+  async #mirrorAttachments(
+    records: readonly ArchiveAttachmentRecord[],
+    providerEvent: ProviderInboundEvent
+  ): Promise<readonly InboundChannelAttachment[]> {
+    const sources = new Map(
+      (providerEvent.attachments ?? [])
+        .filter((attachment) => attachment.contentSource !== undefined)
+        .map((attachment) => [attachment.providerAttachmentId, attachment.contentSource!])
+    );
+    const result: InboundChannelAttachment[] = [];
+    for (const record of records) {
+      const source = sources.get(record.providerAttachmentId);
+      result.push(
+        this.#media && source && record.bytesState === "pending"
+          ? await this.#media.mirror(record, source)
+          : toInboundAttachment(record)
+      );
+    }
+    return result;
   }
 }
 
@@ -147,8 +205,24 @@ function validateProviderEvent(event: ProviderInboundEvent): void {
       event.attention !== "mention" &&
       event.attention !== "passive") ||
     replyTarget.conversationKind !== message.conversationKind ||
-    replyTarget.providerConversationId !== message.providerConversationId
+    replyTarget.providerConversationId !== message.providerConversationId ||
+    !validProviderAttachments(event)
   ) {
     throw new InboundPipelineError("invalid_provider_event", "Provider event is invalid");
   }
+}
+
+function validProviderAttachments(event: ProviderInboundEvent): boolean {
+  const ids = new Set<string>();
+  for (const attachment of event.attachments ?? []) {
+    if (
+      !attachment.providerAttachmentId.trim() ||
+      ids.has(attachment.providerAttachmentId) ||
+      !attachment.contentType.trim() ||
+      (attachment.declaredSizeBytes !== undefined &&
+        (!Number.isSafeInteger(attachment.declaredSizeBytes) || attachment.declaredSizeBytes < 0))
+    ) return false;
+    ids.add(attachment.providerAttachmentId);
+  }
+  return true;
 }

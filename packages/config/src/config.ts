@@ -24,7 +24,8 @@ const PROFILE_KEYS = new Set([
   "channelAccounts",
   "codexExecutable",
   "admission",
-  "approval"
+  "approval",
+  "media"
 ]);
 const QQ_CHANNEL_ACCOUNT_KEYS = new Set([
   "provider",
@@ -51,6 +52,7 @@ const ADMISSION_KEYS = new Set([
   "accountRateWindowMs"
 ]);
 const APPROVAL_KEYS = new Set(["timeoutMs", "detail"]);
+const MEDIA_KEYS = new Set(["perAttachmentLimitBytes", "profileQuotaBytes"]);
 const ACCESS_POLICY_KEYS = new Set(["privateChats", "groupChats", "groupParticipants"]);
 const ACCESS_RULE_KEYS = new Set(["mode", "allow"]);
 
@@ -77,6 +79,11 @@ export interface AdmissionConfiguration {
 export interface ApprovalConfiguration {
   readonly timeoutMs: number;
   readonly detail: "minimal" | "summary" | "detailed";
+}
+
+export interface MediaConfiguration {
+  readonly perAttachmentLimitBytes: number;
+  readonly profileQuotaBytes: number;
 }
 
 export interface QQChannelAccountConfiguration {
@@ -114,6 +121,7 @@ export interface ProfileConfiguration {
   readonly codexExecutable?: string;
   readonly admission: AdmissionConfiguration;
   readonly approval: ApprovalConfiguration;
+  readonly media: MediaConfiguration;
 }
 
 export interface SupervisorConfiguration {
@@ -328,6 +336,7 @@ function validateShape(raw: unknown): BridgeConfiguration {
       );
       const admission = validateAdmission(value.admission, `profiles.${id}.admission`, issues);
       const approval = validateApproval(value.approval, `profiles.${id}.approval`, issues);
+      const media = validateMedia(value.media, `profiles.${id}.media`, issues);
       if (
         workspace &&
         codexHome &&
@@ -346,6 +355,7 @@ function validateShape(raw: unknown): BridgeConfiguration {
           channelAccounts,
           admission,
           approval,
+          media,
           ...(codexExecutable ? { codexExecutable } : {})
         };
       }
@@ -353,12 +363,53 @@ function validateShape(raw: unknown): BridgeConfiguration {
   }
 
   rejectOverlappingOwnedPaths(profiles, issues);
+  rejectOverlappingSecretFiles(profiles, issues);
   if (issues.length > 0) throw new ConfigurationValidationError(issues.sort());
 
   return {
     schemaVersion: 1,
     supervisor: { drainTimeoutMs, childExitTimeoutMs, codexRestartCooldownMs },
     profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
+  };
+}
+
+function validateMedia(
+  value: unknown,
+  path: string,
+  issues: string[]
+): MediaConfiguration {
+  const raw = value === undefined ? {} : value;
+  if (!isRecord(raw)) {
+    issues.push(`${path} must be a mapping`);
+    return defaultMedia();
+  }
+  rejectUnknownKeys(raw, MEDIA_KEYS, path, issues);
+  const perAttachmentLimitBytes = integerWithin(
+    raw.perAttachmentLimitBytes,
+    64 * 1024 * 1024,
+    1,
+    1024 * 1024 * 1024 * 1024,
+    `${path}.perAttachmentLimitBytes`,
+    issues
+  );
+  const profileQuotaBytes = integerWithin(
+    raw.profileQuotaBytes,
+    10 * 1024 * 1024 * 1024,
+    1,
+    Number.MAX_SAFE_INTEGER,
+    `${path}.profileQuotaBytes`,
+    issues
+  );
+  if (profileQuotaBytes < perAttachmentLimitBytes) {
+    issues.push(`${path}.profileQuotaBytes must be at least perAttachmentLimitBytes`);
+  }
+  return { perAttachmentLimitBytes, profileQuotaBytes };
+}
+
+function defaultMedia(): MediaConfiguration {
+  return {
+    perAttachmentLimitBytes: 64 * 1024 * 1024,
+    profileQuotaBytes: 10 * 1024 * 1024 * 1024
   };
 }
 
@@ -687,6 +738,34 @@ function rejectOverlappingOwnedPaths(
       issues.push(
         `profiles.${left.profileId}.${left.field} overlaps profiles.${right.profileId}.${right.field}`
       );
+    }
+  }
+}
+
+function rejectOverlappingSecretFiles(
+  profiles: Record<string, ProfileConfiguration>,
+  issues: string[]
+): void {
+  const values = Object.values(profiles);
+  for (const [index, profile] of values.entries()) {
+    const secretInsideOwnState = pathContains(profile.stateDirectory, profile.secretsFile);
+    if (!secretInsideOwnState && pathsOverlap(profile.stateDirectory, profile.secretsFile)) {
+      issues.push(`profiles.${profile.id}.secretsFile overlaps its stateDirectory boundary`);
+    }
+    for (let otherIndex = index + 1; otherIndex < values.length; otherIndex += 1) {
+      const other = values[otherIndex];
+      if (!other) continue;
+      if (pathsOverlap(profile.secretsFile, other.secretsFile)) {
+        issues.push(`profiles.${profile.id}.secretsFile overlaps profiles.${other.id}.secretsFile`);
+      }
+      for (const field of ["workspace", "codexHome", "stateDirectory"] as const) {
+        if (pathsOverlap(profile.secretsFile, other[field])) {
+          issues.push(`profiles.${profile.id}.secretsFile overlaps profiles.${other.id}.${field}`);
+        }
+        if (pathsOverlap(other.secretsFile, profile[field])) {
+          issues.push(`profiles.${other.id}.secretsFile overlaps profiles.${profile.id}.${field}`);
+        }
+      }
     }
   }
 }

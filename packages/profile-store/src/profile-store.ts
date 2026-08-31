@@ -14,9 +14,10 @@ import type {
   ThreadBinding,
   ThreadBindingKey
 } from "@codex-channel-bridge/core";
+import { searchArchiveHybrid } from "./hybrid-retrieval.js";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -58,11 +59,72 @@ export interface OpenProfileStoreOptions {
   readonly profileId: string;
   readonly databasePath: string;
   readonly busyTimeoutMs?: number;
+  readonly readOnly?: boolean;
 }
 
 export interface ArchiveCommitResult {
   readonly recordId: string;
   readonly inserted: boolean;
+}
+
+export interface ArchiveAttachmentInput {
+  readonly providerAttachmentId: string;
+  readonly contentType: string;
+  readonly filename?: string;
+  readonly sourceUrl?: string;
+  readonly declaredSizeBytes?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly transcript?: string;
+  readonly bytesState: "metadata_only" | "pending";
+}
+
+export interface ArchiveAttachmentRecord {
+  readonly attachmentRecordId: string;
+  readonly messageRecordId: string;
+  readonly providerAttachmentId: string;
+  readonly contentType: string;
+  readonly filename?: string;
+  readonly sourceUrl?: string;
+  readonly declaredSizeBytes?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly transcript?: string;
+  readonly bytesState: "metadata_only" | "pending" | "mirrored" | "unavailable";
+  readonly contentSha256?: string;
+  readonly mirroredSizeBytes?: number;
+  readonly failureReason?: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface CommitArchiveObservationInput {
+  readonly message: NormalizedChannelMessage;
+  readonly attachments: readonly ArchiveAttachmentInput[];
+}
+
+export interface ArchiveObservationCommitResult extends ArchiveCommitResult {
+  readonly attachments: readonly ArchiveAttachmentRecord[];
+}
+
+export type SettleArchiveAttachmentInput =
+  | {
+      readonly attachmentRecordId: string;
+      readonly outcome: "mirrored";
+      readonly contentSha256: string;
+      readonly mirroredSizeBytes: number;
+      readonly settledAtMs: number;
+    }
+  | {
+      readonly attachmentRecordId: string;
+      readonly outcome: "unavailable";
+      readonly failureReason: string;
+      readonly settledAtMs: number;
+    };
+
+export interface AbandonArchiveAttachmentsInput {
+  readonly failureReason: string;
+  readonly settledAtMs: number;
 }
 
 export interface ChannelTransportCheckpoint {
@@ -86,6 +148,76 @@ export interface ArchiveTextSearch {
 export interface ArchiveTextSearchHit extends ArchivedChannelMessage {
   /** Lower values rank first, following SQLite FTS5 bm25(). */
   readonly rank: number;
+}
+
+export type ArchiveRetrievalSignal =
+  | "exact"
+  | "lexical"
+  | "substring"
+  | "fuzzy"
+  | "structured"
+  | "recency";
+
+export interface ArchiveHybridSearch {
+  readonly text?: string;
+  readonly provider?: ChannelProvider;
+  readonly channelAccountId?: string;
+  readonly conversationKey?: string;
+  readonly conversationKind?: ChannelConversationKind;
+  readonly providerIdentity?: string;
+  readonly observedAfterMs?: number;
+  readonly observedBeforeMs?: number;
+  readonly fuzzyThreshold?: number;
+  readonly limit?: number;
+}
+
+export interface ArchiveHybridSearchHit extends ArchivedChannelMessage {
+  /** Higher values rank first after weighted reciprocal-rank fusion. */
+  readonly score: number;
+  readonly matchedSignals: readonly ArchiveRetrievalSignal[];
+}
+
+export type ArchivePurgeScope =
+  | { readonly kind: "profile" }
+  | {
+      readonly kind: "conversation_before";
+      readonly conversationKey: string;
+      readonly beforeMs: number;
+    };
+
+export interface ArchivePurgePreview {
+  readonly profileId: string;
+  readonly scope: ArchivePurgeScope;
+  readonly messageCount: number;
+  readonly referencedMediaBytes: number;
+  readonly liveReferenceCount: number;
+  readonly selectionDigest: string;
+}
+
+export interface ApplyArchivePurgeInput {
+  readonly scope: ArchivePurgeScope;
+  readonly expectedMessageCount: number;
+  readonly expectedSelectionDigest: string;
+  readonly confirmedProfileId: string;
+  readonly atMs: number;
+}
+
+export interface ArchivePurgeResult extends ArchivePurgePreview {
+  readonly auditRecordId: string;
+  readonly unreferencedContentSha256: readonly string[];
+}
+
+export interface ProfilePurgeState {
+  readonly archiveMessages: number;
+  readonly archiveAttachments: number;
+  readonly threadBindings: number;
+  readonly codexInputCorrelations: number;
+  readonly logicalResults: number;
+  readonly outboxRecords: number;
+  readonly approvalRequests: number;
+  readonly auditRecords: number;
+  readonly channelTransportCheckpoints: number;
+  readonly liveWorkCount: number;
 }
 
 export interface LogicalResultCommitResult {
@@ -411,6 +543,32 @@ interface AuditRecordRow {
   readonly at_ms: number;
 }
 
+interface ArchiveAttachmentRow {
+  readonly attachment_record_id: string;
+  readonly message_record_id: string;
+  readonly provider_attachment_id: string;
+  readonly content_type: string;
+  readonly original_filename: string | null;
+  readonly source_url: string | null;
+  readonly declared_size_bytes: number | null;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly transcript: string | null;
+  readonly bytes_state: "metadata_only" | "pending" | "mirrored" | "unavailable";
+  readonly content_sha256: string | null;
+  readonly mirrored_size_bytes: number | null;
+  readonly failure_reason: string | null;
+  readonly created_at_ms: number;
+  readonly updated_at_ms: number;
+}
+
+interface ArchivePurgeSnapshot {
+  readonly recordIds: readonly string[];
+  readonly content: readonly { readonly sha256: string; readonly bytes: number }[];
+  readonly liveReferenceCount: number;
+  readonly selectionDigest: string;
+}
+
 export class SqliteProfileStore {
   readonly #profileId: string;
   readonly #database: Database.Database;
@@ -424,16 +582,20 @@ export class SqliteProfileStore {
   public static open(options: OpenProfileStoreOptions): SqliteProfileStore {
     validateOpenOptions(options);
     const existed = fileExists(options.databasePath);
+    if (options.readOnly && !existed) {
+      throw new ProfileStoreError("invalid_store_configuration", "Read-only Profile store is missing");
+    }
     assertStorePath(options.databasePath, existed);
 
     let database: Database.Database | undefined;
     try {
       database = new Database(options.databasePath, {
-        timeout: options.busyTimeoutMs ?? 5_000
+        timeout: options.busyTimeoutMs ?? 5_000,
+        ...(options.readOnly ? { readonly: true, fileMustExist: true } : {})
       });
       if (process.platform !== "win32" && !existed) chmodSync(options.databasePath, 0o600);
-      configureDatabase(database, options.busyTimeoutMs ?? 5_000);
-      requireFts5(database);
+      configureDatabase(database, options.busyTimeoutMs ?? 5_000, options.readOnly ?? false);
+      requireFts5(database, options.readOnly ?? false);
       initializeOrValidateSchema(database, options.profileId);
       return new SqliteProfileStore(options.profileId, database);
     } catch (error) {
@@ -444,12 +606,18 @@ export class SqliteProfileStore {
   }
 
   public commitMessage(message: NormalizedChannelMessage): ArchiveCommitResult {
+    const result = this.commitObservation({ message, attachments: [] });
+    return { recordId: result.recordId, inserted: result.inserted };
+  }
+
+  public commitObservation(input: CommitArchiveObservationInput): ArchiveObservationCommitResult {
     this.#requireOpen();
-    validateMessage(message, this.#profileId);
+    validateMessage(input.message, this.#profileId);
+    validateArchiveAttachments(input.attachments);
     const recordId = randomUUID();
     try {
-      const result = this.#database
-        .prepare(
+      const commit = this.#database.transaction(() => {
+        const result = this.#database.prepare(
           `INSERT INTO message_archive (
              record_id,
              profile_id,
@@ -478,29 +646,149 @@ export class SqliteProfileStore {
              @text
            )
            ON CONFLICT(channel_account_epoch_id, provider_event_id) DO NOTHING`
-        )
-        .run({ recordId, ...message });
-      if (result.changes === 1) return { recordId, inserted: true };
-      const existing = this.#database
-        .prepare<
-          { channelAccountEpochId: string; providerEventId: string },
-          { record_id: string }
-        >(
-          `SELECT record_id
-             FROM message_archive
-            WHERE channel_account_epoch_id = @channelAccountEpochId
-              AND provider_event_id = @providerEventId`
-        )
-        .get({
-          channelAccountEpochId: message.channelAccountEpochId,
-          providerEventId: message.providerEventId
-        });
-      if (!existing) throw new Error("Deduplicated record was not found");
-      return { recordId: existing.record_id, inserted: false };
+        ).run({ recordId, ...input.message });
+        let committedRecordId: string = recordId;
+        if (result.changes !== 1) {
+          const existing = this.#database
+            .prepare<
+              { channelAccountEpochId: string; providerEventId: string },
+              { record_id: string }
+            >(
+              `SELECT record_id
+                 FROM message_archive
+                WHERE channel_account_epoch_id = @channelAccountEpochId
+                  AND provider_event_id = @providerEventId`
+            )
+            .get({
+              channelAccountEpochId: input.message.channelAccountEpochId,
+              providerEventId: input.message.providerEventId
+            });
+          if (!existing) throw new Error("Deduplicated record was not found");
+          committedRecordId = existing.record_id;
+        } else {
+          const insertAttachment = this.#database.prepare(
+            `INSERT INTO archive_attachments (
+               attachment_record_id, message_record_id, profile_id,
+               provider_attachment_id, content_type, original_filename,
+               source_url, declared_size_bytes, width, height, transcript,
+               bytes_state, created_at_ms, updated_at_ms
+             ) VALUES (
+               @attachmentRecordId, @messageRecordId, @profileId,
+               @providerAttachmentId, @contentType, @filename,
+               @sourceUrl, @declaredSizeBytes, @width, @height, @transcript,
+               @bytesState, @createdAtMs, @createdAtMs
+             )`
+          );
+          for (const attachment of input.attachments) {
+            insertAttachment.run({
+              attachmentRecordId: randomUUID(),
+              messageRecordId: committedRecordId,
+              profileId: this.#profileId,
+              filename: attachment.filename ?? null,
+              sourceUrl: attachment.sourceUrl ?? null,
+              declaredSizeBytes: attachment.declaredSizeBytes ?? null,
+              width: attachment.width ?? null,
+              height: attachment.height ?? null,
+              transcript: attachment.transcript ?? null,
+              createdAtMs: input.message.observedAtMs,
+              ...attachment
+            });
+          }
+        }
+        return {
+          recordId: committedRecordId,
+          inserted: result.changes === 1,
+          attachments: this.#archiveAttachmentsForMessage(committedRecordId)
+        };
+      });
+      return commit.immediate();
     } catch (error) {
       if (error instanceof ProfileStoreError) throw error;
-      throw new ProfileStoreError("storage_failure", "Unable to commit Channel message");
+      throw new ProfileStoreError("storage_failure", "Unable to commit Channel observation");
     }
+  }
+
+  public archiveAttachments(messageRecordId: string): readonly ArchiveAttachmentRecord[] {
+    this.#requireOpen();
+    validateExternalId(messageRecordId, "messageRecordId");
+    return this.#archiveAttachmentsForMessage(messageRecordId);
+  }
+
+  public settleArchiveAttachment(input: SettleArchiveAttachmentInput): ArchiveAttachmentRecord {
+    this.#requireOpen();
+    validateAttachmentSettlement(input);
+    try {
+      const result = this.#database.prepare(
+        `UPDATE archive_attachments
+            SET bytes_state = @outcome,
+                content_sha256 = @contentSha256,
+                mirrored_size_bytes = @mirroredSizeBytes,
+                failure_reason = @failureReason,
+                updated_at_ms = @settledAtMs
+          WHERE profile_id = @profileId
+            AND attachment_record_id = @attachmentRecordId
+            AND bytes_state = 'pending'`
+      ).run({
+        profileId: this.#profileId,
+        contentSha256: input.outcome === "mirrored" ? input.contentSha256 : null,
+        mirroredSizeBytes: input.outcome === "mirrored" ? input.mirroredSizeBytes : null,
+        failureReason: input.outcome === "unavailable" ? input.failureReason : null,
+        ...input
+      });
+      const record = this.#database.prepare<
+        { profileId: string; attachmentRecordId: string },
+        ArchiveAttachmentRow
+      >(
+        `SELECT * FROM archive_attachments
+          WHERE profile_id = @profileId AND attachment_record_id = @attachmentRecordId`
+      ).get({ profileId: this.#profileId, attachmentRecordId: input.attachmentRecordId });
+      if (!record) throw new ProfileStoreError("invalid_channel_message", "Attachment is unknown");
+      if (result.changes !== 1 && record.bytes_state !== input.outcome) {
+        throw new ProfileStoreError("invalid_channel_message", "Attachment is already settled");
+      }
+      return toArchiveAttachment(record);
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to settle archived attachment");
+    }
+  }
+
+  public mirroredMediaBytes(): number {
+    this.#requireOpen();
+    const row = this.#database.prepare<{ profileId: string }, { bytes: number }>(
+      `SELECT coalesce(sum(mirrored_size_bytes), 0) AS bytes
+         FROM archive_attachments
+        WHERE profile_id = @profileId AND bytes_state = 'mirrored'`
+    ).get({ profileId: this.#profileId });
+    return row?.bytes ?? 0;
+  }
+
+  public abandonPendingArchiveAttachments(input: AbandonArchiveAttachmentsInput): number {
+    this.#requireOpen();
+    if (!validExternalId(input.failureReason) || !validTimestamp(input.settledAtMs)) {
+      throw new ProfileStoreError("invalid_channel_message", "Attachment abandonment is invalid");
+    }
+    try {
+      return this.#database.prepare(
+        `UPDATE archive_attachments
+            SET bytes_state = 'unavailable',
+                failure_reason = @failureReason,
+                updated_at_ms = @settledAtMs
+          WHERE profile_id = @profileId
+            AND bytes_state = 'pending'`
+      ).run({ profileId: this.#profileId, ...input }).changes;
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to abandon pending attachments");
+    }
+  }
+
+  #archiveAttachmentsForMessage(messageRecordId: string): readonly ArchiveAttachmentRecord[] {
+    return this.#database.prepare<{ profileId: string; messageRecordId: string }, ArchiveAttachmentRow>(
+      `SELECT * FROM archive_attachments
+        WHERE profile_id = @profileId AND message_record_id = @messageRecordId
+        ORDER BY row_id`
+    ).all({ profileId: this.#profileId, messageRecordId }).map(toArchiveAttachment);
   }
 
   public getChannelTransportCheckpoint(
@@ -675,6 +963,190 @@ export class SqliteProfileStore {
         limit
       });
     return rows.map((row) => ({ ...toArchivedMessage(row), rank: row.rank }));
+  }
+
+  public searchHybrid(query: ArchiveHybridSearch): readonly ArchiveHybridSearchHit[] {
+    this.#requireOpen();
+    return searchArchiveHybrid(this.#database, this.#profileId, query);
+  }
+
+  public previewArchivePurge(scope: ArchivePurgeScope): ArchivePurgePreview {
+    this.#requireOpen();
+    validateArchivePurgeScope(scope);
+    const snapshot = this.#archivePurgeSnapshot(scope);
+    return {
+      profileId: this.#profileId,
+      scope,
+      messageCount: snapshot.recordIds.length,
+      referencedMediaBytes: snapshot.content.reduce((total, item) => total + item.bytes, 0),
+      liveReferenceCount: snapshot.liveReferenceCount,
+      selectionDigest: snapshot.selectionDigest
+    };
+  }
+
+  public applyArchivePurge(input: ApplyArchivePurgeInput): ArchivePurgeResult {
+    this.#requireOpen();
+    validateArchivePurgeScope(input.scope);
+    if (
+      input.confirmedProfileId !== this.#profileId ||
+      !Number.isSafeInteger(input.expectedMessageCount) ||
+      input.expectedMessageCount < 0 ||
+      !/^[a-f0-9]{64}$/.test(input.expectedSelectionDigest) ||
+      !Number.isSafeInteger(input.atMs) ||
+      input.atMs < 0
+    ) {
+      throw new ProfileStoreError("invalid_store_configuration", "Archive purge confirmation is invalid");
+    }
+    try {
+      const purge = this.#database.transaction(() => {
+        const snapshot = this.#archivePurgeSnapshot(input.scope);
+        if (
+          snapshot.recordIds.length !== input.expectedMessageCount ||
+          snapshot.selectionDigest !== input.expectedSelectionDigest
+        ) {
+          throw new ProfileStoreError("invalid_store_configuration", "Archive purge selection changed");
+        }
+        if (snapshot.liveReferenceCount !== 0) {
+          throw new ProfileStoreError("invalid_store_configuration", "Archive purge has live references");
+        }
+        const deleteRecord = this.#database.prepare(
+          "DELETE FROM message_archive WHERE profile_id = ? AND record_id = ?"
+        );
+        for (const recordId of snapshot.recordIds) deleteRecord.run(this.#profileId, recordId);
+        const unreferencedContentSha256 = snapshot.content
+          .filter((item) => {
+            const row = this.#database.prepare<{ sha256: string }, { count: number }>(
+              `SELECT count(*) AS count FROM archive_attachments
+                WHERE content_sha256 = @sha256 AND bytes_state = 'mirrored'`
+            ).get({ sha256: item.sha256 });
+            return (row?.count ?? 0) === 0;
+          })
+          .map((item) => item.sha256);
+        const auditRecordId = randomUUID();
+        this.#database.prepare(
+          `INSERT INTO audit_records (
+             audit_record_id, profile_id, correlation_id, action, result,
+             target_reference, at_ms
+           ) VALUES (?, ?, ?, 'archive_purge', 'succeeded', ?, ?)`
+        ).run(
+          auditRecordId,
+          this.#profileId,
+          randomUUID(),
+          `${snapshot.recordIds.length}:${snapshot.selectionDigest}`,
+          input.atMs
+        );
+        return {
+          profileId: this.#profileId,
+          scope: input.scope,
+          messageCount: snapshot.recordIds.length,
+          referencedMediaBytes: snapshot.content.reduce((total, item) => total + item.bytes, 0),
+          liveReferenceCount: 0,
+          selectionDigest: snapshot.selectionDigest,
+          auditRecordId,
+          unreferencedContentSha256
+        } satisfies ArchivePurgeResult;
+      });
+      return purge.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to purge Message Archive");
+    }
+  }
+
+  public profilePurgeState(): ProfilePurgeState {
+    this.#requireOpen();
+    const count = (table: string): number =>
+      this.#database.prepare<{ profileId: string }, { count: number }>(
+        `SELECT count(*) AS count FROM ${table} WHERE profile_id = @profileId`
+      ).get({ profileId: this.#profileId })?.count ?? 0;
+    const liveCorrelations = this.#database.prepare<{ profileId: string }, { count: number }>(
+      `SELECT count(*) AS count FROM codex_input_correlations
+        WHERE profile_id = @profileId AND state IN ('accepted', 'started', 'uncertain')`
+    ).get({ profileId: this.#profileId })?.count ?? 0;
+    const pendingApprovals = this.#database.prepare<{ profileId: string }, { count: number }>(
+      `SELECT count(*) AS count FROM approval_requests
+        WHERE profile_id = @profileId AND state = 'pending'`
+    ).get({ profileId: this.#profileId })?.count ?? 0;
+    const pendingOutbox = this.#database.prepare<{ profileId: string }, { count: number }>(
+      `SELECT count(*) AS count FROM delivery_outbox
+        WHERE profile_id = @profileId AND status IN ('pending', 'leased', 'retry_wait')`
+    ).get({ profileId: this.#profileId })?.count ?? 0;
+    return {
+      archiveMessages: count("message_archive"),
+      archiveAttachments: count("archive_attachments"),
+      threadBindings: count("thread_bindings"),
+      codexInputCorrelations: count("codex_input_correlations"),
+      logicalResults: count("logical_results"),
+      outboxRecords: count("delivery_outbox"),
+      approvalRequests: count("approval_requests"),
+      auditRecords: count("audit_records"),
+      channelTransportCheckpoints: count("channel_transport_checkpoints"),
+      liveWorkCount: liveCorrelations + pendingApprovals + pendingOutbox
+    };
+  }
+
+  #archivePurgeSnapshot(scope: ArchivePurgeScope): ArchivePurgeSnapshot {
+    const filter = archivePurgeFilter(scope);
+    const recordIds = this.#database.prepare<
+      { profileId: string; conversationKey: string | null; beforeMs: number | null },
+      { record_id: string }
+    >(
+      `SELECT record_id FROM message_archive
+        WHERE profile_id = @profileId ${filter.sql}
+        ORDER BY record_id`
+    ).all({ profileId: this.#profileId, ...filter.params }).map((row) => row.record_id);
+    const selected = new Set(recordIds);
+    const contentRows = this.#database.prepare<
+      { profileId: string },
+      { message_record_id: string; content_sha256: string; mirrored_size_bytes: number }
+    >(
+      `SELECT message_record_id, content_sha256, mirrored_size_bytes
+         FROM archive_attachments
+        WHERE profile_id = @profileId
+          AND bytes_state = 'mirrored'
+          AND content_sha256 IS NOT NULL
+          AND mirrored_size_bytes IS NOT NULL`
+    ).all({ profileId: this.#profileId });
+    const content = new Map<string, number>();
+    for (const row of contentRows) {
+      if (selected.has(row.message_record_id)) content.set(row.content_sha256, row.mirrored_size_bytes);
+    }
+    const correlationCount = recordIds.length === 0
+      ? 0
+      : this.#database.prepare<{ profileId: string }, { archive_record_id: string }>(
+          `SELECT archive_record_id FROM codex_input_correlations
+            WHERE profile_id = @profileId AND state IN ('accepted', 'started', 'uncertain')`
+        ).all({ profileId: this.#profileId }).filter((row) => selected.has(row.archive_record_id)).length;
+    const conversationFilter = scope.kind === "profile"
+      ? ""
+      : " AND conversation_key = @conversationKey";
+    const pendingApproval = this.#database.prepare<
+      { profileId: string; conversationKey: string | null },
+      { count: number }
+    >(
+      `SELECT count(*) AS count FROM approval_requests
+        WHERE profile_id = @profileId AND state = 'pending'${conversationFilter}`
+    ).get({
+      profileId: this.#profileId,
+      conversationKey: scope.kind === "conversation_before" ? scope.conversationKey : null
+    })?.count ?? 0;
+    const pendingOutbox = this.#database.prepare<
+      { profileId: string; conversationKey: string | null },
+      { count: number }
+    >(
+      `SELECT count(*) AS count FROM delivery_outbox
+        WHERE profile_id = @profileId
+          AND status IN ('pending', 'leased', 'retry_wait')${conversationFilter}`
+    ).get({
+      profileId: this.#profileId,
+      conversationKey: scope.kind === "conversation_before" ? scope.conversationKey : null
+    })?.count ?? 0;
+    return {
+      recordIds,
+      content: [...content].map(([sha256, bytes]) => ({ sha256, bytes })),
+      liveReferenceCount: correlationCount + pendingApproval + pendingOutbox,
+      selectionDigest: createHash("sha256").update(JSON.stringify(recordIds)).digest("hex")
+    };
   }
 
   public getThreadBinding(key: ThreadBindingKey): ThreadBinding | undefined {
@@ -1791,7 +2263,8 @@ function validateOpenOptions(options: OpenProfileStoreOptions): void {
     !PROFILE_ID_PATTERN.test(options.profileId) ||
     !isAbsolute(options.databasePath) ||
     (options.busyTimeoutMs !== undefined &&
-      (!Number.isInteger(options.busyTimeoutMs) || options.busyTimeoutMs < 0))
+      (!Number.isInteger(options.busyTimeoutMs) || options.busyTimeoutMs < 0)) ||
+    (options.readOnly !== undefined && typeof options.readOnly !== "boolean")
   ) {
     throw new ProfileStoreError(
       "invalid_store_configuration",
@@ -1846,21 +2319,29 @@ function fileExists(path: string): boolean {
   }
 }
 
-function configureDatabase(database: Database.Database, busyTimeoutMs: number): void {
+function configureDatabase(
+  database: Database.Database,
+  busyTimeoutMs: number,
+  readOnly: boolean
+): void {
   database.pragma(`busy_timeout = ${busyTimeoutMs}`);
   database.pragma("foreign_keys = ON");
-  database.pragma("synchronous = FULL");
-  const mode = String(database.pragma("journal_mode = WAL", { simple: true })).toLowerCase();
+  if (readOnly) database.pragma("query_only = ON");
+  else database.pragma("synchronous = FULL");
+  const mode = String(
+    database.pragma(readOnly ? "journal_mode" : "journal_mode = WAL", { simple: true })
+  ).toLowerCase();
   if (mode !== "wal") {
     throw new ProfileStoreError("storage_failure", "Profile store could not enable WAL mode");
   }
 }
 
-function requireFts5(database: Database.Database): void {
+function requireFts5(database: Database.Database, readOnly: boolean): void {
   try {
-    database.exec(
-      "CREATE VIRTUAL TABLE temp.bridge_fts5_probe USING fts5(value); DROP TABLE temp.bridge_fts5_probe;"
-    );
+    if (readOnly) database.prepare("SELECT rowid FROM message_archive_fts LIMIT 0").all();
+    else database.exec(
+        "CREATE VIRTUAL TABLE temp.bridge_fts5_probe USING fts5(value); DROP TABLE temp.bridge_fts5_probe;"
+      );
   } catch {
     throw new ProfileStoreError("fts5_unavailable", "SQLite FTS5 is required");
   }
@@ -1934,6 +2415,43 @@ function createSchema(database: Database.Database, profileId: string): void {
 
       CREATE INDEX message_archive_recent
         ON message_archive (conversation_key, observed_at_ms DESC, row_id DESC);
+
+      CREATE TABLE archive_attachments (
+        row_id INTEGER PRIMARY KEY,
+        attachment_record_id TEXT NOT NULL UNIQUE,
+        message_record_id TEXT NOT NULL REFERENCES message_archive(record_id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL,
+        provider_attachment_id TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        original_filename TEXT,
+        source_url TEXT,
+        declared_size_bytes INTEGER CHECK (declared_size_bytes IS NULL OR declared_size_bytes >= 0),
+        width INTEGER CHECK (width IS NULL OR width >= 0),
+        height INTEGER CHECK (height IS NULL OR height >= 0),
+        transcript TEXT,
+        bytes_state TEXT NOT NULL CHECK (
+          bytes_state IN ('metadata_only', 'pending', 'mirrored', 'unavailable')
+        ),
+        content_sha256 TEXT,
+        mirrored_size_bytes INTEGER CHECK (
+          mirrored_size_bytes IS NULL OR mirrored_size_bytes >= 0
+        ),
+        failure_reason TEXT,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        UNIQUE (message_record_id, provider_attachment_id),
+        CHECK (bytes_state <> 'mirrored' OR (
+          content_sha256 IS NOT NULL AND mirrored_size_bytes IS NOT NULL
+        )),
+        CHECK (bytes_state <> 'unavailable' OR failure_reason IS NOT NULL)
+      );
+
+      CREATE INDEX archive_attachments_state
+        ON archive_attachments (profile_id, bytes_state, created_at_ms);
+
+      CREATE INDEX archive_attachments_content
+        ON archive_attachments (profile_id, content_sha256)
+        WHERE content_sha256 IS NOT NULL;
 
       CREATE VIRTUAL TABLE message_archive_fts USING fts5(
         text_body,
@@ -2169,6 +2687,93 @@ function validateMessage(message: NormalizedChannelMessage, profileId: string): 
   validateExternalId(message.conversationKey, "conversationKey");
   validateExternalId(message.providerConversationId, "providerConversationId");
   validateExternalId(message.providerIdentity, "providerIdentity");
+}
+
+function validateArchiveAttachments(attachments: readonly ArchiveAttachmentInput[]): void {
+  const ids = new Set<string>();
+  if (attachments.length > 100) invalidMessage();
+  for (const attachment of attachments) {
+    validateExternalId(attachment.providerAttachmentId, "providerAttachmentId");
+    if (
+      ids.has(attachment.providerAttachmentId) ||
+      !attachment.contentType.trim() ||
+      Buffer.byteLength(attachment.contentType, "utf8") > 1024 ||
+      (attachment.filename !== undefined && Buffer.byteLength(attachment.filename, "utf8") > 8192) ||
+      (attachment.sourceUrl !== undefined && Buffer.byteLength(attachment.sourceUrl, "utf8") > 65536) ||
+      (attachment.transcript !== undefined && Buffer.byteLength(attachment.transcript, "utf8") > MAX_TEXT_BYTES) ||
+      (attachment.bytesState !== "metadata_only" && attachment.bytesState !== "pending") ||
+      !validOptionalNonnegativeInteger(attachment.declaredSizeBytes) ||
+      !validOptionalNonnegativeInteger(attachment.width) ||
+      !validOptionalNonnegativeInteger(attachment.height)
+    ) invalidMessage();
+    ids.add(attachment.providerAttachmentId);
+  }
+}
+
+function validateArchivePurgeScope(scope: ArchivePurgeScope): void {
+  if (scope.kind === "profile") return;
+  if (
+    scope.kind !== "conversation_before" ||
+    !Number.isSafeInteger(scope.beforeMs) ||
+    scope.beforeMs < 0
+  ) {
+    throw new ProfileStoreError("invalid_store_configuration", "Archive purge scope is invalid");
+  }
+  validateExternalId(scope.conversationKey, "conversationKey");
+}
+
+function archivePurgeFilter(scope: ArchivePurgeScope): {
+  readonly sql: string;
+  readonly params: { readonly conversationKey: string | null; readonly beforeMs: number | null };
+} {
+  return scope.kind === "profile"
+    ? { sql: "", params: { conversationKey: null, beforeMs: null } }
+    : {
+        sql: "AND conversation_key = @conversationKey AND observed_at_ms < @beforeMs",
+        params: { conversationKey: scope.conversationKey, beforeMs: scope.beforeMs }
+      };
+}
+
+function validateAttachmentSettlement(input: SettleArchiveAttachmentInput): void {
+  validateExternalId(input.attachmentRecordId, "attachmentRecordId");
+  if (!Number.isSafeInteger(input.settledAtMs) || input.settledAtMs < 0) invalidMessage();
+  if (input.outcome === "mirrored") {
+    if (
+      !/^[a-f0-9]{64}$/.test(input.contentSha256) ||
+      !Number.isSafeInteger(input.mirroredSizeBytes) ||
+      input.mirroredSizeBytes < 0
+    ) invalidMessage();
+  } else if (
+    !input.failureReason.trim() ||
+    Buffer.byteLength(input.failureReason, "utf8") > 1024
+  ) {
+    invalidMessage();
+  }
+}
+
+function validOptionalNonnegativeInteger(value: number | undefined): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function toArchiveAttachment(row: ArchiveAttachmentRow): ArchiveAttachmentRecord {
+  return {
+    attachmentRecordId: row.attachment_record_id,
+    messageRecordId: row.message_record_id,
+    providerAttachmentId: row.provider_attachment_id,
+    contentType: row.content_type,
+    ...(row.original_filename === null ? {} : { filename: row.original_filename }),
+    ...(row.source_url === null ? {} : { sourceUrl: row.source_url }),
+    ...(row.declared_size_bytes === null ? {} : { declaredSizeBytes: row.declared_size_bytes }),
+    ...(row.width === null ? {} : { width: row.width }),
+    ...(row.height === null ? {} : { height: row.height }),
+    ...(row.transcript === null ? {} : { transcript: row.transcript }),
+    bytesState: row.bytes_state,
+    ...(row.content_sha256 === null ? {} : { contentSha256: row.content_sha256 }),
+    ...(row.mirrored_size_bytes === null ? {} : { mirroredSizeBytes: row.mirrored_size_bytes }),
+    ...(row.failure_reason === null ? {} : { failureReason: row.failure_reason }),
+    createdAtMs: row.created_at_ms,
+    updatedAtMs: row.updated_at_ms
+  };
 }
 
 function validateThreadBindingKey(key: ThreadBindingKey): void {

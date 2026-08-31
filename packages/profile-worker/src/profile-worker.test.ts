@@ -119,6 +119,7 @@ class FakeStore implements ProfileStoreRuntime {
   readonly logicalResults: LogicalResultInput[] = [];
   readonly transitions: CodexInputTransition[] = [];
   outboxClaimCount = 0;
+  abandonedPendingAttachments = 0;
   binding?: Awaited<ReturnType<ProfileStoreRuntime["getThreadBinding"]>>;
   correlationSequence = 0;
   pendingApprovalLease?: OutboxDeliveryLease;
@@ -150,6 +151,11 @@ class FakeStore implements ProfileStoreRuntime {
 
   async clearChannelTransportCheckpoint(channelAccountId: string) {
     this.transportCheckpoints.delete(channelAccountId);
+  }
+
+  async abandonPendingArchiveAttachments() {
+    this.abandonedPendingAttachments += 1;
+    return 0;
   }
 
   async getThreadBinding(_key: ThreadBindingKey) {
@@ -461,6 +467,7 @@ test("starts a Profile only after schema and live model probes pass", async () =
     codexVerification: "tested"
   });
   assert.equal(runtime.requests[0]?.method, "model/list");
+  assert.equal(store.abandonedPendingAttachments, 1);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.ok(store.outboxClaimCount >= 1);
   await worker.stop();

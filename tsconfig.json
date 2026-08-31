@@ -5,6 +5,7 @@
     { "path": "packages/config" },
     { "path": "packages/codex-app-server" },
     { "path": "packages/profile-store" },
+    { "path": "packages/archive-mcp" },
     { "path": "packages/qq-adapter" },
     { "path": "packages/whatsapp-adapter" },
     { "path": "packages/profile-worker" },

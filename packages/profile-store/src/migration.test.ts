@@ -13,7 +13,7 @@ import {
 } from "./migration.js";
 import { SqliteProfileStore } from "./profile-store.js";
 
-test("plans and applies the explicit schema 3 to 8 migration", async (context) => {
+test("plans and applies the explicit schema 3 to 9 migration", async (context) => {
   const fixture = await schemaThreeFixture(context);
   const target = {
     profileId: "alpha",
@@ -23,10 +23,10 @@ test("plans and applies the explicit schema 3 to 8 migration", async (context) =
 
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 3);
-  assert.equal(plan.targetVersion, 8);
+  assert.equal(plan.targetVersion, 9);
   assert.equal(plan.migrationRequired, true);
-  assert.equal(plan.operations.length, 20);
-  assert.equal(plan.irreversibleSteps.length, 8);
+  assert.equal(plan.operations.length, 23);
+  assert.equal(plan.irreversibleSteps.length, 9);
   assert.ok(plan.estimatedAdditionalBytes >= 1024 * 1024);
 
   const result = await applyProfileStoreMigration({
@@ -36,7 +36,7 @@ test("plans and applies the explicit schema 3 to 8 migration", async (context) =
     nowMs: 10_000
   });
   assert.equal(result.fromVersion, 3);
-  assert.equal(result.toVersion, 8);
+  assert.equal(result.toVersion, 9);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
   const current = await planProfileStoreMigration(target);
   assert.equal(current.migrationRequired, false);
@@ -56,12 +56,14 @@ test("plans and applies the explicit schema 3 to 8 migration", async (context) =
     "succeeded",
     "started",
     "succeeded",
+    "started",
+    "succeeded",
     "succeeded"
   ]);
   assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
 });
 
-test("plans and applies the explicit schema 4 to 8 migration", async (context) => {
+test("plans and applies the explicit schema 4 to 9 migration", async (context) => {
   const fixture = await schemaFourFixture(context);
   const target = {
     profileId: "alpha",
@@ -70,20 +72,20 @@ test("plans and applies the explicit schema 4 to 8 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 4);
-  assert.equal(plan.targetVersion, 8);
-  assert.equal(plan.operations.length, 16);
-  assert.equal(plan.irreversibleSteps.length, 7);
+  assert.equal(plan.targetVersion, 9);
+  assert.equal(plan.operations.length, 19);
+  assert.equal(plan.irreversibleSteps.length, 8);
   const result = await applyProfileStoreMigration({
     ...target,
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 4);
-  assert.equal(result.toVersion, 8);
+  assert.equal(result.toVersion, 9);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
-test("plans and applies the explicit schema 5 to 8 migration", async (context) => {
+test("plans and applies the explicit schema 5 to 9 migration", async (context) => {
   const fixture = await currentFixture(context);
   const target = {
     profileId: "alpha",
@@ -92,20 +94,20 @@ test("plans and applies the explicit schema 5 to 8 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 5);
-  assert.equal(plan.targetVersion, 8);
-  assert.equal(plan.operations.length, 11);
-  assert.equal(plan.irreversibleSteps.length, 5);
+  assert.equal(plan.targetVersion, 9);
+  assert.equal(plan.operations.length, 14);
+  assert.equal(plan.irreversibleSteps.length, 6);
   const result = await applyProfileStoreMigration({
     ...target,
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 5);
-  assert.equal(result.toVersion, 8);
+  assert.equal(result.toVersion, 9);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
-test("plans and applies the explicit schema 6 to 8 migration", async (context) => {
+test("plans and applies the explicit schema 6 to 9 migration", async (context) => {
   const fixture = await schemaSixFixture(context);
   const target = {
     profileId: "alpha",
@@ -114,13 +116,16 @@ test("plans and applies the explicit schema 6 to 8 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 6);
-  assert.equal(plan.targetVersion, 8);
+  assert.equal(plan.targetVersion, 9);
   assert.deepEqual(plan.operations, [
     "create durable Channel transport checkpoints",
     "set SQLite user_version to 7",
     "verify profile ownership, schema shape, foreign keys, and quick_check",
     "add durable WhatsApp quoted-reply participant and text fields",
     "set SQLite user_version to 8",
+    "verify profile ownership, schema shape, foreign keys, and quick_check",
+    "create durable Archive attachment metadata and media state",
+    "set SQLite user_version to 9",
     "verify profile ownership, schema shape, foreign keys, and quick_check"
   ]);
   const result = await applyProfileStoreMigration({
@@ -129,11 +134,11 @@ test("plans and applies the explicit schema 6 to 8 migration", async (context) =
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 6);
-  assert.equal(result.toVersion, 8);
+  assert.equal(result.toVersion, 9);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
-test("plans and applies the explicit schema 7 to 8 migration", async (context) => {
+test("plans and applies the explicit schema 7 to 9 migration", async (context) => {
   const fixture = await schemaSevenFixture(context);
   const target = {
     profileId: "alpha",
@@ -145,6 +150,9 @@ test("plans and applies the explicit schema 7 to 8 migration", async (context) =
   assert.deepEqual(plan.operations, [
     "add durable WhatsApp quoted-reply participant and text fields",
     "set SQLite user_version to 8",
+    "verify profile ownership, schema shape, foreign keys, and quick_check",
+    "create durable Archive attachment metadata and media state",
+    "set SQLite user_version to 9",
     "verify profile ownership, schema shape, foreign keys, and quick_check"
   ]);
   const result = await applyProfileStoreMigration({
@@ -152,7 +160,7 @@ test("plans and applies the explicit schema 7 to 8 migration", async (context) =
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
-  assert.equal(result.toVersion, 8);
+  assert.equal(result.toVersion, 9);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
@@ -347,6 +355,8 @@ async function currentFixture(context: test.TestContext): Promise<{
 }
 
 function downgradeEightToSeven(database: Database.Database): void {
+  database.exec("DROP TABLE archive_attachments");
+  database.pragma("user_version = 8");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_text_body");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_participant_id");
   database.pragma("user_version = 7");

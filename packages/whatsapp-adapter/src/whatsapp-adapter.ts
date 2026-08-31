@@ -1,5 +1,6 @@
 import makeWASocket, {
   areJidsSameUser,
+  downloadMediaMessage,
   DisconnectReason,
   jidNormalizedUser,
   normalizeMessageContent,
@@ -38,6 +39,10 @@ export interface WhatsAppInboundMessage {
   readonly messageTimestamp?: number | { toNumber(): number } | null;
   readonly message?: unknown;
 }
+
+export type WhatsAppMediaDownloader = (
+  message: WhatsAppInboundMessage
+) => Promise<AsyncIterable<Uint8Array>>;
 
 export interface BaileysSocketConfiguration {
   readonly auth: unknown;
@@ -409,7 +414,9 @@ function waitForDelay(delayMs: number, signal: AbortSignal): Promise<boolean> {
 export function normalizeWhatsAppMessage(
   message: WhatsAppInboundMessage,
   selfJid: string | undefined,
-  receivedAtMs: number
+  receivedAtMs: number,
+  downloadMedia: WhatsAppMediaDownloader = async (value) =>
+    downloadMediaMessage(value as WAMessage, "stream", {})
 ): ProviderInboundEvent | null {
   if (message.key.fromMe || !message.key.id || !message.key.remoteJid) return null;
   const remoteJid = normalizeJid(message.key.remoteJid);
@@ -422,6 +429,7 @@ export function normalizeWhatsAppMessage(
   if (!participant) return null;
   const content = normalizeMessageContent(message.message as WAMessage["message"]);
   const text = extractText(content);
+  const attachment = extractMediaAttachment(message, content, downloadMedia);
   const mentioned = selfJid
     ? extractMentions(content).some((jid) => areJidsSameUser(jid, selfJid))
     : false;
@@ -440,6 +448,42 @@ export function normalizeWhatsAppMessage(
       conversationKind: isGroup ? "group" : "private",
       providerConversationId: remoteJid,
       providerReplyEventId: message.key.id
+    },
+    ...(attachment ? { attachments: [attachment] } : {})
+  };
+}
+
+function extractMediaAttachment(
+  message: WhatsAppInboundMessage,
+  content: ReturnType<typeof normalizeMessageContent>,
+  downloadMedia: WhatsAppMediaDownloader
+) {
+  const media = content?.imageMessage ??
+    content?.videoMessage ??
+    content?.audioMessage ??
+    content?.documentMessage ??
+    content?.stickerMessage;
+  if (!media) return undefined;
+  let opened = false;
+  const declaredSizeBytes = safeLong(media.fileLength);
+  const width = safeLong("width" in media ? media.width : undefined);
+  const height = safeLong("height" in media ? media.height : undefined);
+  const filename = "fileName" in media && typeof media.fileName === "string"
+    ? media.fileName
+    : undefined;
+  return {
+    providerAttachmentId: "media-0",
+    contentType: media.mimetype ?? "application/octet-stream",
+    ...(filename ? { filename } : {}),
+    ...(declaredSizeBytes === undefined ? {} : { declaredSizeBytes }),
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+    contentSource: {
+      openStream: async (): Promise<AsyncIterable<Uint8Array>> => {
+        if (opened) throw new Error("WhatsApp media source was already opened");
+        opened = true;
+        return downloadMedia(message);
+      }
     }
   };
 }
@@ -472,6 +516,12 @@ function providerTimestampMs(value: WhatsAppInboundMessage["messageTimestamp"]):
   if (!Number.isSafeInteger(seconds) || seconds < 0) return null;
   const milliseconds = seconds * 1_000;
   return Number.isSafeInteger(milliseconds) ? milliseconds : null;
+}
+
+function safeLong(value: number | { toNumber(): number } | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const parsed = typeof value === "number" ? value : value.toNumber();
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function validateDelivery(delivery: ChannelTextDelivery): void {

@@ -4,8 +4,8 @@ Normal Supervisor startup never changes an existing Profile database schema.
 An older database keeps only that Profile `unavailable: migration_required`;
 the Supervisor and sibling Profiles remain live.
 
-The current binary supports Bridge Profile schema version 7 to version 8 and
-composed version 3, 4, 5, or 6 to version 8 paths. Unknown versions and inconsistent
+The current binary supports Bridge Profile schema version 8 to version 9 and
+composed version 3, 4, 5, 6, or 7 to version 9 paths. Unknown versions and inconsistent
 schema shapes fail closed. Version 3 to 4 adds and backfills durable QQ passive
 reply sequences. Version 4 to 5 retains the provider conversation target in the
 Message Archive and generalizes Logical Result source identity so restart
@@ -17,7 +17,9 @@ Message Archive commit. Its sequence is monotonic within one Gateway Session;
 a confirmed new Session replaces the old Session and may restart the provider
 sequence. Version 7 to 8 adds durable WhatsApp quoted-reply participant and
 original-text fields to the Outbox; existing records remain valid without a
-quote. Every path verifies Profile ownership, the resulting schema, foreign
+quote. Version 8 to 9 creates durable Archive attachment metadata and media
+state without fetching or rewriting historical Channel content. Every path
+verifies Profile ownership, the resulting schema, foreign
 keys, and SQLite `quick_check`.
 
 ## Plan

@@ -4,7 +4,7 @@ Supervisor 正常启动绝不修改现有 Profile Database Schema。旧 Database
 Profile 保持 `unavailable: migration_required`；Supervisor 与 Sibling Profile 继续
 保持 Live。
 
-当前 Binary 支持 Bridge Profile Schema 7→8，以及串联的 3、4、5 或 6→8 Path。未知
+当前 Binary 支持 Bridge Profile Schema 8→9，以及串联的 3、4、5、6 或 7→9 Path。未知
 Version 或不一致的 Schema Shape 都会失败关闭。3→4 会增加并回填持久 QQ Passive
 Reply Sequence；4→5 会在 Message Archive 保留 Provider Conversation Target，并泛化
 Logical Result Source Identity，使 Restart Uncertainty 与其 Channel Notification 能在
@@ -12,7 +12,7 @@ Logical Result Source Identity，使 Restart Uncertainty 与其 Channel Notifica
 Lifecycle State 与不含正文的 Audit Record。6→7 为每个 Channel Account 增加一个
 Session-aware Channel Transport Checkpoint，使 QQ Gateway Resume 只在 Message Archive
 提交后推进。Sequence 在同一个 Gateway Session 内单调递增；确认新的 Session 后会替换
-旧 Session，Provider Sequence 可以重新从较小值开始。7→8 为 Outbox 增加持久 WhatsApp Quoted-reply Participant 与 Original-text Field；已有 Record 继续有效，但不具备 Quote。所有 Path 都会验证 Profile
+旧 Session，Provider Sequence 可以重新从较小值开始。7→8 为 Outbox 增加持久 WhatsApp Quoted-reply Participant 与 Original-text Field；已有 Record 继续有效，但不具备 Quote。8→9 创建持久 Archive Attachment Metadata 与 Media State，不获取或重写历史 Channel Content。所有 Path 都会验证 Profile
 Ownership、迁移后 Schema、Foreign Key 与 SQLite `quick_check`。
 
 ## Plan

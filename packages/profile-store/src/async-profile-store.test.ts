@@ -60,6 +60,22 @@ test("executes archive operations through the asynchronous Profile Store interfa
   assert.deepEqual(duplicate, { recordId: first.recordId, inserted: false });
   assert.equal((await store.recentMessages("qq:private:conversation-1"))[0]?.text, "worker-thread archive");
   assert.equal((await store.searchText({ text: "worker archive" })).length, 1);
+  const hybrid = await store.searchHybrid({ text: "worker-thread archive" });
+  assert.equal(hybrid.length, 1);
+  assert.ok(hybrid[0]?.matchedSignals.includes("exact"));
+  const pending = await store.commitObservation({
+    message: message({ provider: "whatsapp", providerEventId: "event-pending" }),
+    attachments: [{
+      providerAttachmentId: "media-pending",
+      contentType: "application/octet-stream",
+      bytesState: "pending"
+    }]
+  });
+  assert.equal(await store.abandonPendingArchiveAttachments({
+    failureReason: "media_source_lost",
+    settledAtMs: 2_000
+  }), 1);
+  assert.equal((await store.archiveAttachments(pending.recordId))[0]?.bytesState, "unavailable");
   await store.close();
 });
 

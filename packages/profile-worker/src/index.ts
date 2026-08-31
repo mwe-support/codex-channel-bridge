@@ -6,6 +6,8 @@ export {
   InboundPipeline,
   InboundPipelineError
 } from "./inbound-pipeline.js";
+export { MediaArchive, toInboundAttachment } from "./media-archive.js";
+export type { MediaArchiveOptions, MediaArchiveStore } from "./media-archive.js";
 export {
   CodexEventRouter,
   CodexEventRouterError

@@ -11,7 +11,16 @@ import type {
 
 import {
   ProfileStoreError,
+  type AbandonArchiveAttachmentsInput,
+  type ArchiveAttachmentRecord,
+  type ArchiveObservationCommitResult,
   type ArchiveCommitResult,
+  type ArchiveHybridSearch,
+  type ArchiveHybridSearchHit,
+  type ArchivePurgePreview,
+  type ArchivePurgeResult,
+  type ArchivePurgeScope,
+  type ApplyArchivePurgeInput,
   type AppendAuditRecordInput,
   type ArchivedChannelMessage,
   type ArchiveTextSearch,
@@ -27,6 +36,7 @@ import {
   type CommitCodexInputUncertaintyInput,
   type CommitCodexTurnResultInput,
   type CommitApprovalRequestInput,
+  type CommitArchiveObservationInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -37,17 +47,28 @@ import {
   type OutboxSettlement,
   type OutboxSettlementResult,
   type ProfileStoreReason,
+  type ProfilePurgeState,
   type SettleApprovalRequestInput,
+  type SettleArchiveAttachmentInput,
   type ThreadBindingCommitResult
 } from "./profile-store.js";
 
 type StorageOperation =
   | { readonly name: "commitMessage"; readonly value: NormalizedChannelMessage }
+  | { readonly name: "commitObservation"; readonly value: CommitArchiveObservationInput }
+  | { readonly name: "archiveAttachments"; readonly messageRecordId: string }
+  | { readonly name: "settleArchiveAttachment"; readonly value: SettleArchiveAttachmentInput }
+  | { readonly name: "mirroredMediaBytes" }
+  | { readonly name: "abandonPendingArchiveAttachments"; readonly value: AbandonArchiveAttachmentsInput }
   | { readonly name: "getChannelTransportCheckpoint"; readonly channelAccountId: string }
   | { readonly name: "putChannelTransportCheckpoint"; readonly value: ChannelTransportCheckpoint }
   | { readonly name: "clearChannelTransportCheckpoint"; readonly channelAccountId: string }
   | { readonly name: "recentMessages"; readonly conversationKey: string; readonly limit?: number }
   | { readonly name: "searchText"; readonly query: ArchiveTextSearch }
+  | { readonly name: "searchHybrid"; readonly query: ArchiveHybridSearch }
+  | { readonly name: "previewArchivePurge"; readonly scope: ArchivePurgeScope }
+  | { readonly name: "applyArchivePurge"; readonly value: ApplyArchivePurgeInput }
+  | { readonly name: "profilePurgeState" }
   | { readonly name: "getThreadBinding"; readonly key: ThreadBindingKey }
   | { readonly name: "createThreadBinding"; readonly value: CreateThreadBindingInput }
   | { readonly name: "acceptCodexInput"; readonly value: CodexInputAcceptance }
@@ -138,6 +159,30 @@ export class ProfileStore {
     return this.#request({ name: "commitMessage", value: message });
   }
 
+  public commitObservation(
+    input: CommitArchiveObservationInput
+  ): Promise<ArchiveObservationCommitResult> {
+    return this.#request({ name: "commitObservation", value: input });
+  }
+
+  public archiveAttachments(messageRecordId: string): Promise<readonly ArchiveAttachmentRecord[]> {
+    return this.#request({ name: "archiveAttachments", messageRecordId });
+  }
+
+  public settleArchiveAttachment(
+    input: SettleArchiveAttachmentInput
+  ): Promise<ArchiveAttachmentRecord> {
+    return this.#request({ name: "settleArchiveAttachment", value: input });
+  }
+
+  public mirroredMediaBytes(): Promise<number> {
+    return this.#request({ name: "mirroredMediaBytes" });
+  }
+
+  public abandonPendingArchiveAttachments(input: AbandonArchiveAttachmentsInput): Promise<number> {
+    return this.#request({ name: "abandonPendingArchiveAttachments", value: input });
+  }
+
   public getChannelTransportCheckpoint(
     channelAccountId: string
   ): Promise<ChannelTransportCheckpoint | undefined> {
@@ -167,6 +212,22 @@ export class ProfileStore {
 
   public searchText(query: ArchiveTextSearch): Promise<readonly ArchiveTextSearchHit[]> {
     return this.#request({ name: "searchText", query });
+  }
+
+  public searchHybrid(query: ArchiveHybridSearch): Promise<readonly ArchiveHybridSearchHit[]> {
+    return this.#request({ name: "searchHybrid", query });
+  }
+
+  public previewArchivePurge(scope: ArchivePurgeScope): Promise<ArchivePurgePreview> {
+    return this.#request({ name: "previewArchivePurge", scope });
+  }
+
+  public applyArchivePurge(input: ApplyArchivePurgeInput): Promise<ArchivePurgeResult> {
+    return this.#request({ name: "applyArchivePurge", value: input });
+  }
+
+  public profilePurgeState(): Promise<ProfilePurgeState> {
+    return this.#request({ name: "profilePurgeState" });
   }
 
   public getThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined> {

@@ -45,6 +45,16 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
   switch (operation.name) {
     case "commitMessage":
       return store.commitMessage(operation.value);
+    case "commitObservation":
+      return store.commitObservation(operation.value);
+    case "archiveAttachments":
+      return store.archiveAttachments(operation.messageRecordId);
+    case "settleArchiveAttachment":
+      return store.settleArchiveAttachment(operation.value);
+    case "mirroredMediaBytes":
+      return store.mirroredMediaBytes();
+    case "abandonPendingArchiveAttachments":
+      return store.abandonPendingArchiveAttachments(operation.value);
     case "getChannelTransportCheckpoint":
       return store.getChannelTransportCheckpoint(operation.channelAccountId);
     case "putChannelTransportCheckpoint":
@@ -55,6 +65,14 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.recentMessages(operation.conversationKey, operation.limit);
     case "searchText":
       return store.searchText(operation.query);
+    case "searchHybrid":
+      return store.searchHybrid(operation.query);
+    case "previewArchivePurge":
+      return store.previewArchivePurge(operation.scope);
+    case "applyArchivePurge":
+      return store.applyArchivePurge(operation.value);
+    case "profilePurgeState":
+      return store.profilePurgeState();
     case "getThreadBinding":
       return store.getThreadBinding(operation.key);
     case "createThreadBinding":
@@ -104,11 +122,20 @@ function isStorageRequest(value: unknown): value is StorageRequest {
     Number.isSafeInteger(value.id) &&
     isRecord(value.operation) &&
     (value.operation.name === "commitMessage" ||
+      value.operation.name === "commitObservation" ||
+      value.operation.name === "archiveAttachments" ||
+      value.operation.name === "settleArchiveAttachment" ||
+      value.operation.name === "mirroredMediaBytes" ||
+      value.operation.name === "abandonPendingArchiveAttachments" ||
       value.operation.name === "getChannelTransportCheckpoint" ||
       value.operation.name === "putChannelTransportCheckpoint" ||
       value.operation.name === "clearChannelTransportCheckpoint" ||
       value.operation.name === "recentMessages" ||
       value.operation.name === "searchText" ||
+      value.operation.name === "searchHybrid" ||
+      value.operation.name === "previewArchivePurge" ||
+      value.operation.name === "applyArchivePurge" ||
+      value.operation.name === "profilePurgeState" ||
       value.operation.name === "getThreadBinding" ||
       value.operation.name === "createThreadBinding" ||
       value.operation.name === "acceptCodexInput" ||

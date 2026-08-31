@@ -2,9 +2,7 @@
 
 ## 范围
 
-`@codex-channel-bridge/profile-store` 是首个 Bridge-owned Persistence Slice。它存储规范化的 QQ 和 WhatsApp Message Event，但不复制 Codex Thread 或 Turn History。当前 Package 提供 Provider-event Deduplication、有界 Recent-message Read、Literal-token FTS5 Search，以及 [`delivery.md`](delivery.md) 所述的 Atomic Logical Result 与 Durable Outbox Contract。
-
-这不是完整的 Local Hybrid Retrieval 实现。Substring、Fuzzy、Structured、Recency Fusion、Archive MCP、Media 和 Purge 行为留到后续阶段。
+`@codex-channel-bridge/profile-store` 是 Bridge-owned Persistence Slice。它存储规范化的 QQ、WhatsApp Message Event 和 Channel-owned Attachment Fact，但不复制 Codex Thread 或 Turn History。当前 Package 提供 Provider-event Deduplication、有界读取、本地无 Embedding 的 Hybrid Retrieval、只读 Profile-local Archive MCP、有界 Media Mirroring、显式 Archive Purge，以及 [`delivery.md`](delivery.md) 所述的 Atomic Logical Result 与 Durable Outbox Contract。
 
 ## Profile 所有权
 
@@ -18,11 +16,25 @@ Profile Worker 在启动时打开 `stateDirectory/bridge.sqlite`，并在 Drain 
 
 - `better-sqlite3` 固定为 `13.0.3`，要求 Node.js 22 或更高版本。
 - 必须启用 WAL Journal Mode、Foreign Key、`synchronous=FULL` 和 FTS5。
-- 新的空数据库初始化为 Bridge Schema Version 8。
-- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration，受影响的 Profile 不启动 Codex。显式 Host-local Migration Workflow 当前只支持已知的 Version 3、4、5、6 或 7→8；参见 [`migrations.md`](migrations.md)。
+- 新的空数据库初始化为 Bridge Schema Version 9。
+- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration，受影响的 Profile 不启动 Codex。显式 Host-local Migration Workflow 当前只支持已知的 Version 3、4、5、6、7 或 8→9；参见 [`migrations.md`](migrations.md)。
 - Deduplication Identity 是 `(Channel Account Epoch ID, Provider Event ID)`。
 - Recent Read 最多返回 500 条记录，并在所选近期窗口内保持时间正序。
-- FTS5 Search 把输入视为以空白分隔并用 `AND` 连接的 Literal Token；不暴露 Raw FTS Query Syntax，也不是 Semantic Search。
+- Hybrid Retrieval 融合 Exact、BM25/FTS5 Lexical、Substring、Trigram-fuzzy、Structured-filter 和 Recency Rank。它完全本地且确定性运行，不使用 Embedding、Vector Extension 或外部 Provider。
+
+## Archive MCP
+
+`bridge archive mcp --profile ID --state-directory PATH` 为一个 Profile 启动只读 stdio MCP Server，暴露有界的 `archive_search` 和 `archive_recent` Tool。Server 以 Read-only 方式打开现有 WAL Database，不修改 Codex Configuration，并从 Tool Result 中去除 Raw Provider Event 和 Participant Identifier。管理员可在 Profile 的 Codex-owned MCP Configuration 中注册该进程；Bridge 不会自动修改该配置。
+
+## Attachment 与 Media
+
+Message 与 Attachment Metadata 在任何 Byte Side Effect 之前进入同一个 SQLite Transaction。QQ 默认只保留 Provider Metadata 与 Link。WhatsApp 使用固定版本 Baileys 解密后的 Media Stream，并写入 `media/sha256/<prefix>/<digest>`。Profile-local `media` 配置通过 `perAttachmentLimitBytes` 与 `profileQuotaBytes` 设置限制；默认值为单 Attachment 64 MiB、单 Profile 已镜像 Byte 10 GiB。Profile 内部串行进行 Quota Decision，因此并发 Stream 不能超额占用配置容量。Limit、Quota 或 Stream Failure 只会把该 Attachment 标记为 `unavailable`；Metadata 继续保留，Bridge 不会把缺失 Byte 声称为 Durable Storage。新 Profile-worker Generation 会在 Adapter 启动前把继承的 `pending` Byte Operation 标记为 `unavailable` 并使用 `media_source_lost`；进程绑定的 Provider Stream 在 Restart 后绝不被假定可以 Replay。Attachment 永不自动执行。
+
+## 显式 Purge
+
+`bridge archive purge` 只支持一个 Profile 的整个 Archive，或一个精确 Conversation 在指定时间之前的记录。Plan 会报告 Message Count、去重后的 Referenced Media Byte、Live-reference Count 和 Selection Digest。Apply 同时要求完整 Profile ID 与预期 Count，只在 Profile 已 Disabled/Stopped 时运行，以 Transaction 删除 Base/FTS Row，仅回收无剩余引用的 Content-addressed Media，保留 Thread Binding 与 Codex History，并追加不含正文的 Audit Record。Database Transaction 之后的 Physical Media Cleanup 采用 Best-effort；Result 会返回不含内容的 `mediaCleanupFailures` Count，避免 Filesystem Fault 把已经 Commit 的 Database Purge 误报为可回滚失败。
+
+`bridge profile purge` 与 Archive Purge 分离。它要求 Profile 已 Disabled、无 Live Work，并用完整 Profile ID 确认；它列出 Bridge-owned Path 与 Preserved Path，只删除 Bridge State 和本地 Channel Authentication，保留 Workspace 与 Codex home，并在被删除目录之外留下永久、不含正文的 Profile Tombstone 与 Audit Entry。
 
 规范化的 External Identifier 必须非空，每项最大 8 KiB。Text Body 可以为 null，UTF-8 最大 1 MiB。这些限制保护本地 Persistence Interface；Provider Adapter 可以使用更严格的限制。
 

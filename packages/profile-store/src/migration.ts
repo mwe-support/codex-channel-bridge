@@ -16,7 +16,7 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 const MIN_ESTIMATED_ADDITIONAL_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
@@ -90,31 +90,45 @@ export async function planProfileStoreMigration(
     currentVersion = Number(database.pragma("user_version", { simple: true }));
     requireProfile(database, target.profileId);
     if (currentVersion === CURRENT_SCHEMA_VERSION) {
-      requireVersionEightShape(database);
+      requireVersionNineShape(database);
       operations = [];
       irreversibleSteps = [];
+    } else if (currentVersion === 8) {
+      requireVersionEightShape(database);
+      operations = versionEightToNineOperations();
+      irreversibleSteps = versionEightToNineIrreversibleSteps();
     } else if (currentVersion === 7) {
       requireVersionSevenShape(database);
-      operations = versionSevenToEightOperations();
-      irreversibleSteps = versionSevenToEightIrreversibleSteps();
+      operations = [...versionSevenToEightOperations(), ...versionEightToNineOperations()];
+      irreversibleSteps = [
+        ...versionSevenToEightIrreversibleSteps(),
+        ...versionEightToNineIrreversibleSteps()
+      ];
     } else if (currentVersion === 6) {
       requireVersionSixShape(database);
-      operations = [...versionSixToSevenOperations(), ...versionSevenToEightOperations()];
+      operations = [
+        ...versionSixToSevenOperations(),
+        ...versionSevenToEightOperations(),
+        ...versionEightToNineOperations()
+      ];
       irreversibleSteps = [
         ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps()
+        ...versionSevenToEightIrreversibleSteps(),
+        ...versionEightToNineIrreversibleSteps()
       ];
     } else if (currentVersion === 5) {
       requireVersionFiveShape(database);
       operations = [
         ...versionFiveToSixOperations(),
         ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations()
+        ...versionSevenToEightOperations(),
+        ...versionEightToNineOperations()
       ];
       irreversibleSteps = [
         ...versionFiveToSixIrreversibleSteps(),
         ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps()
+        ...versionSevenToEightIrreversibleSteps(),
+        ...versionEightToNineIrreversibleSteps()
       ];
     } else if (currentVersion === 4) {
       requireVersionFourShape(database);
@@ -122,13 +136,15 @@ export async function planProfileStoreMigration(
         ...versionFourToFiveOperations(),
         ...versionFiveToSixOperations(),
         ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations()
+        ...versionSevenToEightOperations(),
+        ...versionEightToNineOperations()
       ];
       irreversibleSteps = [
         ...versionFourToFiveIrreversibleSteps(),
         ...versionFiveToSixIrreversibleSteps(),
         ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps()
+        ...versionSevenToEightIrreversibleSteps(),
+        ...versionEightToNineIrreversibleSteps()
       ];
     } else if (currentVersion === 3) {
       requireVersionThreeShape(database);
@@ -140,14 +156,16 @@ export async function planProfileStoreMigration(
         ...versionFourToFiveOperations(),
         ...versionFiveToSixOperations(),
         ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations()
+        ...versionSevenToEightOperations(),
+        ...versionEightToNineOperations()
       ];
       irreversibleSteps = [
         "rebuild delivery_outbox to add provider reply sequencing for schema version 4",
         ...versionFourToFiveIrreversibleSteps(),
         ...versionFiveToSixIrreversibleSteps(),
         ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps()
+        ...versionSevenToEightIrreversibleSteps(),
+        ...versionEightToNineIrreversibleSteps()
       ];
     } else {
       throw new ProfileMigrationError(
@@ -269,10 +287,19 @@ export async function applyProfileStoreMigration(
       appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 7, 8, "succeeded");
       activeStep = undefined;
     }
-    requireVersionEightShape(database);
+    if (Number(database.pragma("user_version", { simple: true })) === 8) {
+      requireVersionEightShape(database);
+      activeStep = { fromVersion: 8, toVersion: 9 };
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 8, 9, "started");
+      migrateEightToNine(database);
+      requireVersionNineShape(database);
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 8, 9, "succeeded");
+      activeStep = undefined;
+    }
+    requireVersionNineShape(database);
     const quickCheck = String(database.pragma("quick_check", { simple: true }));
     if (quickCheck !== "ok") throw new Error("SQLite quick_check failed");
-  } catch {
+  } catch (error) {
     if (activeStep) {
       appendMigrationStepAudit(
         options.auditPath,
@@ -292,7 +319,8 @@ export async function applyProfileStoreMigration(
       toVersion: CURRENT_SCHEMA_VERSION,
       atMs: Date.now()
     });
-    throw new ProfileMigrationError("migration_failed", "Profile schema migration failed");
+    const detail = error instanceof Error ? `: ${error.message}` : "";
+    throw new ProfileMigrationError("migration_failed", `Profile schema migration failed${detail}`);
   } finally {
     database.close();
   }
@@ -597,6 +625,18 @@ function versionSevenToEightIrreversibleSteps(): readonly string[] {
   return ["extend delivery Outbox records with WhatsApp quoted-reply facts"];
 }
 
+function versionEightToNineOperations(): readonly string[] {
+  return [
+    "create durable Archive attachment metadata and media state",
+    "set SQLite user_version to 9",
+    "verify profile ownership, schema shape, foreign keys, and quick_check"
+  ];
+}
+
+function versionEightToNineIrreversibleSteps(): readonly string[] {
+  return ["create durable Archive attachment and media state"];
+}
+
 function migrateSixToSeven(database: Database.Database): void {
   const migrate = database.transaction(() => {
     database.exec(`
@@ -623,6 +663,49 @@ function migrateSevenToEight(database: Database.Database): void {
       ALTER TABLE delivery_outbox ADD COLUMN provider_reply_text_body TEXT;
     `);
     database.pragma("user_version = 8");
+  });
+  migrate.immediate();
+}
+
+function migrateEightToNine(database: Database.Database): void {
+  const migrate = database.transaction(() => {
+    database.exec(`
+      CREATE TABLE archive_attachments (
+        row_id INTEGER PRIMARY KEY,
+        attachment_record_id TEXT NOT NULL UNIQUE,
+        message_record_id TEXT NOT NULL REFERENCES message_archive(record_id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL,
+        provider_attachment_id TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        original_filename TEXT,
+        source_url TEXT,
+        declared_size_bytes INTEGER CHECK (declared_size_bytes IS NULL OR declared_size_bytes >= 0),
+        width INTEGER CHECK (width IS NULL OR width >= 0),
+        height INTEGER CHECK (height IS NULL OR height >= 0),
+        transcript TEXT,
+        bytes_state TEXT NOT NULL CHECK (
+          bytes_state IN ('metadata_only', 'pending', 'mirrored', 'unavailable')
+        ),
+        content_sha256 TEXT,
+        mirrored_size_bytes INTEGER CHECK (
+          mirrored_size_bytes IS NULL OR mirrored_size_bytes >= 0
+        ),
+        failure_reason TEXT,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        UNIQUE (message_record_id, provider_attachment_id),
+        CHECK (bytes_state <> 'mirrored' OR (
+          content_sha256 IS NOT NULL AND mirrored_size_bytes IS NOT NULL
+        )),
+        CHECK (bytes_state <> 'unavailable' OR failure_reason IS NOT NULL)
+      );
+      CREATE INDEX archive_attachments_state
+        ON archive_attachments (profile_id, bytes_state, created_at_ms);
+      CREATE INDEX archive_attachments_content
+        ON archive_attachments (profile_id, content_sha256)
+        WHERE content_sha256 IS NOT NULL;
+    `);
+    database.pragma("user_version = 9");
   });
   migrate.immediate();
 }
@@ -913,7 +996,7 @@ function requireVersionSevenShape(database: Database.Database): void {
 }
 
 function requireVersionEightShape(database: Database.Database): void {
-  requireVersionSixCompatibleShape(database, CURRENT_SCHEMA_VERSION);
+  requireVersionSixCompatibleShape(database, 8);
   const checkpointColumns = tableColumns(database, "channel_transport_checkpoints");
   const outboxColumns = tableColumns(database, "delivery_outbox");
   if (
@@ -927,6 +1010,25 @@ function requireVersionEightShape(database: Database.Database): void {
     !outboxColumns.includes("provider_reply_text_body")
   ) {
     throw new ProfileMigrationError("schema_mismatch", "Schema version 8 shape is inconsistent");
+  }
+}
+
+function requireVersionNineShape(database: Database.Database): void {
+  requireVersionSixCompatibleShape(database, CURRENT_SCHEMA_VERSION);
+  const checkpointColumns = tableColumns(database, "channel_transport_checkpoints");
+  const outboxColumns = tableColumns(database, "delivery_outbox");
+  const attachmentColumns = tableColumns(database, "archive_attachments");
+  if (
+    !checkpointColumns.includes("sequence_number") ||
+    !outboxColumns.includes("provider_reply_participant_id") ||
+    !outboxColumns.includes("provider_reply_text_body") ||
+    !attachmentColumns.includes("attachment_record_id") ||
+    !attachmentColumns.includes("message_record_id") ||
+    !attachmentColumns.includes("bytes_state") ||
+    !attachmentColumns.includes("content_sha256") ||
+    !attachmentColumns.includes("mirrored_size_bytes")
+  ) {
+    throw new ProfileMigrationError("schema_mismatch", "Schema version 9 shape is inconsistent");
   }
 }
 

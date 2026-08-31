@@ -36,6 +36,10 @@ test("parses a complete candidate and applies defaults", () => {
     timeoutMs: 300_000,
     detail: "minimal"
   });
+  assert.deepEqual(candidate.configuration.profiles.alpha?.media, {
+    perAttachmentLimitBytes: 64 * 1024 * 1024,
+    profileQuotaBytes: 10 * 1024 * 1024 * 1024
+  });
   assert.match(candidate.revision, /^[a-f0-9]{64}$/);
 });
 
@@ -125,6 +129,9 @@ profiles:
     approval:
       timeoutMs: 120000
       detail: detailed
+    media:
+      perAttachmentLimitBytes: 1024
+      profileQuotaBytes: 4096
     channelAccounts:
       qq-primary:
         provider: qq
@@ -152,11 +159,34 @@ profiles:
     accountRateWindowMs: 10_000
   });
   assert.deepEqual(profile.approval, { timeoutMs: 120_000, detail: "detailed" });
+  assert.deepEqual(profile.media, {
+    perAttachmentLimitBytes: 1_024,
+    profileQuotaBytes: 4_096
+  });
   assert.equal(profile.channelAccounts["qq-primary"]?.groupThreadScope, "participant");
   assert.deepEqual(profile.channelAccounts["qq-primary"]?.accessPolicy.groupParticipants, {
     mode: "open",
     allow: []
   });
+});
+
+test("rejects a Profile media quota smaller than its attachment limit", () => {
+  assert.throws(
+    () => parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    media:
+      perAttachmentLimitBytes: 4096
+      profileQuotaBytes: 1024
+`),
+    (error: unknown) =>
+      error instanceof ConfigurationValidationError &&
+      error.issues.includes("profiles.alpha.media.profileQuotaBytes must be at least perAttachmentLimitBytes")
+  );
 });
 
 test("rejects ambiguous or incomplete access policy", () => {
@@ -295,6 +325,28 @@ profiles:
     (error: unknown) =>
       error instanceof ConfigurationValidationError &&
       error.issues.some((issue) => issue.includes("stateDirectory"))
+  );
+});
+
+test("rejects Secret File ownership shared across Profiles", () => {
+  assert.throws(
+    () => parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    secretsFile: /srv/shared/secrets.env
+  beta:
+    workspace: /srv/beta/workspace
+    codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
+    secretsFile: /srv/shared/secrets.env
+`),
+    (error: unknown) =>
+      error instanceof ConfigurationValidationError &&
+      error.issues.some((issue) => issue.includes("secretsFile overlaps"))
   );
 });
 

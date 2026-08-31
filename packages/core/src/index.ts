@@ -42,7 +42,11 @@ export type {
   ChannelDeliveryReceipt,
   ChannelReplyTarget,
   ChannelTextDelivery,
+  ArchiveAttachmentBytesState,
   InboundChannelEvent,
+  InboundChannelAttachment,
+  ProviderAttachmentContentSource,
+  ProviderInboundAttachment,
   ProviderInboundEvent,
   ProviderReplyTarget
 } from "./channel-adapter.js";

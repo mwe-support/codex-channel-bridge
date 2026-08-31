@@ -72,6 +72,154 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
   reopened.close();
 });
 
+test("commits attachment metadata with its message and settles mirrored bytes once", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const committed = store.commitObservation({
+    message: message({ provider: "whatsapp" }),
+    attachments: [
+      {
+        providerAttachmentId: "media-1",
+        contentType: "image/jpeg",
+        filename: "photo.jpg",
+        declaredSizeBytes: 5,
+        width: 10,
+        height: 20,
+        bytesState: "pending"
+      }
+    ]
+  });
+  assert.equal(committed.inserted, true);
+  assert.equal(committed.attachments[0]?.bytesState, "pending");
+  const settled = store.settleArchiveAttachment({
+    attachmentRecordId: committed.attachments[0]!.attachmentRecordId,
+    outcome: "mirrored",
+    contentSha256: "a".repeat(64),
+    mirroredSizeBytes: 5,
+    settledAtMs: 2_000
+  });
+  assert.equal(settled.bytesState, "mirrored");
+  assert.equal(store.mirroredMediaBytes(), 5);
+
+  const duplicate = store.commitObservation({
+    message: message({ provider: "whatsapp", text: "replay" }),
+    attachments: []
+  });
+  assert.equal(duplicate.inserted, false);
+  assert.equal(duplicate.attachments[0]?.contentSha256, "a".repeat(64));
+  assert.throws(
+    () => store.settleArchiveAttachment({
+      attachmentRecordId: settled.attachmentRecordId,
+      outcome: "unavailable",
+      failureReason: "late_failure",
+      settledAtMs: 3_000
+    }),
+    (error: unknown) =>
+      error instanceof ProfileStoreError && error.reason === "invalid_channel_message"
+  );
+  const pending = store.commitObservation({
+    message: message({ provider: "whatsapp", providerEventId: "event-pending" }),
+    attachments: [{
+      providerAttachmentId: "media-pending",
+      contentType: "application/octet-stream",
+      bytesState: "pending"
+    }]
+  });
+  assert.equal(store.abandonPendingArchiveAttachments({
+    failureReason: "media_source_lost",
+    settledAtMs: 4_000
+  }), 1);
+  assert.equal(
+    store.archiveAttachments(pending.recordId)[0]?.failureReason,
+    "media_source_lost"
+  );
+  store.close();
+});
+
+test("previews and atomically purges one exact conversation window", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const first = store.commitObservation({
+    message: message({ providerEventId: "event-old", observedAtMs: 1_000 }),
+    attachments: [{
+      providerAttachmentId: "media-old",
+      contentType: "image/jpeg",
+      bytesState: "pending"
+    }]
+  });
+  store.settleArchiveAttachment({
+    attachmentRecordId: first.attachments[0]!.attachmentRecordId,
+    outcome: "mirrored",
+    contentSha256: "b".repeat(64),
+    mirroredSizeBytes: 7,
+    settledAtMs: 1_100
+  });
+  store.commitMessage(message({ providerEventId: "event-new", observedAtMs: 2_000 }));
+  store.commitMessage(message({
+    providerEventId: "event-other",
+    conversationKey: "qq:private:conversation-2",
+    providerConversationId: "conversation-2",
+    observedAtMs: 500
+  }));
+  const scope = {
+    kind: "conversation_before" as const,
+    conversationKey: "qq:private:conversation-1",
+    beforeMs: 1_500
+  };
+  const preview = store.previewArchivePurge(scope);
+  assert.equal(preview.messageCount, 1);
+  assert.equal(preview.referencedMediaBytes, 7);
+  assert.equal(preview.liveReferenceCount, 0);
+  const result = store.applyArchivePurge({
+    scope,
+    expectedMessageCount: preview.messageCount,
+    expectedSelectionDigest: preview.selectionDigest,
+    confirmedProfileId: "alpha",
+    atMs: 3_000
+  });
+  assert.deepEqual(result.unreferencedContentSha256, ["b".repeat(64)]);
+  assert.equal(store.recentMessages("qq:private:conversation-1").length, 1);
+  assert.equal(store.recentMessages("qq:private:conversation-2").length, 1);
+  assert.equal(store.auditRecords()[0]?.action, "archive_purge");
+  store.close();
+});
+
+test("rejects Archive purge while a selected message has live Codex correlation", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const archived = store.commitMessage(message());
+  const binding = store.createThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:private:conversation-1",
+    scope: "conversation",
+    codexThreadId: "thread-live",
+    boundAtMs: 1_001
+  }).binding;
+  store.acceptCodexInput({
+    profileId: "alpha",
+    archiveRecordId: archived.recordId,
+    bindingId: binding.bindingId,
+    codexThreadId: binding.codexThreadId,
+    clientUserMessageId: "input-live",
+    acceptedAtMs: 1_002
+  });
+  const preview = store.previewArchivePurge({ kind: "profile" });
+  assert.equal(preview.liveReferenceCount, 1);
+  assert.throws(
+    () => store.applyArchivePurge({
+      scope: { kind: "profile" },
+      expectedMessageCount: preview.messageCount,
+      expectedSelectionDigest: preview.selectionDigest,
+      confirmedProfileId: "alpha",
+      atMs: 2_000
+    }),
+    (error: unknown) =>
+      error instanceof ProfileStoreError && error.reason === "invalid_store_configuration"
+  );
+  assert.equal(store.recentMessages("qq:private:conversation-1").length, 1);
+  store.close();
+});
+
 test("persists session-aware Channel transport checkpoints across restarts", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
@@ -169,6 +317,66 @@ test("indexes text with FTS5 and can constrain search to one conversation", asyn
   assert.equal(constrained[0]?.text, "launch docker tests");
   assert.equal(typeof constrained[0]?.rank, "number");
   store.close();
+});
+
+test("fuses exact, lexical, substring, fuzzy, structured, and recency Archive signals", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  store.commitMessage(message({ providerEventId: "event-1", observedAtMs: 1_000, text: "deploy native linux bridge" }));
+  store.commitMessage(message({ providerEventId: "event-2", observedAtMs: 2_000, text: "deploy native linuz bridge" }));
+  store.commitMessage(message({
+    providerEventId: "event-3",
+    provider: "whatsapp",
+    channelAccountId: "wa-primary",
+    channelAccountEpochId: "wa-epoch-1",
+    conversationKey: "whatsapp:wa-primary:group:team",
+    conversationKind: "group",
+    providerConversationId: "team",
+    providerIdentity: "member-2",
+    observedAtMs: 3_000,
+    text: "native linux deployment notes"
+  }));
+  store.commitMessage(message({ providerEventId: "event-4", observedAtMs: 4_000, text: "unrelated recent message" }));
+
+  const results = store.searchHybrid({ text: "deploy native linux bridge", limit: 4 });
+  assert.equal(results[0]?.text, "deploy native linux bridge");
+  assert.ok(results[0]?.matchedSignals.includes("exact"));
+  assert.ok(results[0]?.matchedSignals.includes("lexical"));
+  assert.ok(results.some((entry) =>
+    entry.text === "deploy native linuz bridge" && entry.matchedSignals.includes("fuzzy")
+  ));
+  assert.ok(results.every((entry, index) => index === 0 || results[index - 1]!.score >= entry.score));
+
+  const structured = store.searchHybrid({
+    provider: "whatsapp",
+    conversationKind: "group",
+    providerIdentity: "member-2",
+    observedAfterMs: 2_500,
+    observedBeforeMs: 3_500
+  });
+  assert.equal(structured.length, 1);
+  assert.equal(structured[0]?.channelAccountId, "wa-primary");
+  assert.deepEqual(structured[0]?.matchedSignals, ["recency", "structured"]);
+  assert.throws(
+    () => store.searchHybrid({ observedAfterMs: 5, observedBeforeMs: 5 }),
+    /hybrid query is invalid/
+  );
+  store.close();
+});
+
+test("opens a concurrent read-only Archive view without mutating Profile state", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const writer = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  writer.commitMessage(message());
+  const reader = SqliteProfileStore.open({ profileId: "alpha", databasePath, readOnly: true });
+  assert.equal(reader.searchHybrid({ text: "contract tests" }).length, 1);
+  assert.throws(
+    () => reader.commitMessage(message({ providerEventId: "read-only-write" })),
+    (error: unknown) => error instanceof ProfileStoreError && error.reason === "storage_failure"
+  );
+  assert.equal(writer.recentMessages("qq:private:conversation-1").length, 1);
+  reader.close();
+  writer.close();
 });
 
 test("binds conversation and participant scopes without copying Codex history", async (context) => {

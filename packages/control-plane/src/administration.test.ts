@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -142,7 +142,7 @@ profiles:
   assert.deepEqual(result, {
     ...result,
     fromVersion: 3,
-    toVersion: 8
+    toVersion: 9
   });
   SqliteProfileStore.open({
     profileId: "alpha",
@@ -301,6 +301,106 @@ test("forwards only short-lived WhatsApp pairing material to the initiating admi
   await supervisor.stop();
 });
 
+test("plans and applies Archive purge only through a stopped Profile boundary", async (context) => {
+  const fixture = await purgeState(context);
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(fixture.candidate);
+  const administration = new SupervisorAdministration(supervisor, { now: () => 5_000 });
+  const plan = (await administration.handle(request("archive/purge-plan", {
+    profileId: "alpha",
+    scope: "profile"
+  }))) as { planToken: string; profileId: string; messageCount: number };
+  assert.equal(plan.messageCount, 1);
+  const result = (await administration.handle(request("archive/purge-apply", {
+    planToken: plan.planToken,
+    confirmProfileId: plan.profileId,
+    confirmMessageCount: plan.messageCount
+  }))) as { messageCount: number; mediaCleanupFailures: number };
+  assert.deepEqual(
+    { messageCount: result.messageCount, mediaCleanupFailures: result.mediaCleanupFailures },
+    { messageCount: 1, mediaCleanupFailures: 0 }
+  );
+  const store = SqliteProfileStore.open({
+    profileId: "alpha",
+    databasePath: join(fixture.stateDirectory, "bridge.sqlite")
+  });
+  assert.equal(store.recentMessages("qq:private:conversation-1").length, 0);
+  assert.equal(store.auditRecords()[0]?.action, "archive_purge");
+  store.close();
+  await supervisor.stop();
+});
+
+test("plans and applies permanent Profile purge with exact identity confirmation", async (context) => {
+  const fixture = await purgeState(context);
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(fixture.candidate);
+  const administration = new SupervisorAdministration(supervisor, { now: () => 6_000 });
+  const plan = (await administration.handle(request("profile/purge-plan", {
+    profileId: "alpha"
+  }))) as { planToken: string; profileId: string; tombstonePath: string };
+  const result = (await administration.handle(request("profile/purge-apply", {
+    planToken: plan.planToken,
+    confirmProfileId: plan.profileId
+  }))) as { profileId: string };
+  assert.equal(result.profileId, "alpha");
+  await assert.rejects(stat(fixture.stateDirectory));
+  assert.equal((await stat(fixture.workspace)).isDirectory(), true);
+  assert.equal((await stat(fixture.codexHome)).isDirectory(), true);
+  assert.match(await readFile(plan.tombstonePath, "utf8"), /"result":"succeeded"/u);
+  await supervisor.stop();
+});
+
+async function purgeState(context: test.TestContext): Promise<{
+  readonly candidate: ConfigurationCandidate;
+  readonly stateDirectory: string;
+  readonly workspace: string;
+  readonly codexHome: string;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "bridge-control-purge-"));
+  await chmod(root, 0o700);
+  context.after(async () => rm(root, { recursive: true, force: true }));
+  const stateDirectory = join(root, "state");
+  const workspace = join(root, "workspace");
+  const codexHome = join(root, "codex-home");
+  await Promise.all([
+    mkdir(stateDirectory, { mode: 0o700 }),
+    mkdir(workspace, { mode: 0o700 }),
+    mkdir(codexHome, { mode: 0o700 })
+  ]);
+  const store = SqliteProfileStore.open({
+    profileId: "alpha",
+    databasePath: join(stateDirectory, "bridge.sqlite")
+  });
+  store.commitMessage({
+    profileId: "alpha",
+    provider: "qq",
+    channelAccountId: "qq-primary",
+    channelAccountEpochId: "epoch-1",
+    providerEventId: "event-1",
+    conversationKey: "qq:private:conversation-1",
+    conversationKind: "private",
+    providerConversationId: "conversation-1",
+    providerIdentity: "participant-1",
+    observedAtMs: 1_000,
+    text: "purge test"
+  });
+  store.close();
+  return {
+    candidate: parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    enabled: false
+    workspace: ${workspace}
+    codexHome: ${codexHome}
+    stateDirectory: ${stateDirectory}
+`),
+    stateDirectory,
+    workspace,
+    codexHome
+  };
+}
+
 async function schemaThreeState(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-control-migration-"));
   await chmod(directory, 0o700);
@@ -308,6 +408,7 @@ async function schemaThreeState(context: test.TestContext): Promise<string> {
   const databasePath = join(directory, "bridge.sqlite");
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
   const database = new Database(databasePath);
+  database.exec("DROP TABLE archive_attachments");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_text_body");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_participant_id");
   downgradeFiveToFour(database);

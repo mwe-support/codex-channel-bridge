@@ -378,6 +378,8 @@ function sameRestartConfiguration(
     left.secretsFile === right.secretsFile &&
     JSON.stringify(left.channelAccounts) === JSON.stringify(right.channelAccounts) &&
     JSON.stringify(left.admission) === JSON.stringify(right.admission) &&
+    JSON.stringify(left.approval) === JSON.stringify(right.approval) &&
+    JSON.stringify(left.media) === JSON.stringify(right.media) &&
     left.codexExecutable === right.codexExecutable
   );
 }

@@ -17,6 +17,7 @@ export type {
   ChannelAccountConfiguration,
   ConfigurationCandidate,
   LoadConfigurationOptions,
+  MediaConfiguration,
   ProfileConfiguration,
   QQChannelAccountConfiguration,
   SupervisorConfiguration,

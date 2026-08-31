@@ -27,9 +27,11 @@ bounded Profile drain. Recovery-discovered uncertainty is atomically committed
 with a durable Channel notification. WhatsApp lifecycle operations now cross
 the owner-only local control plane, stream expiring QR material only to the
 initiating interactive CLI, replace only the selected adapter, retain durable
-revocation uncertainty, and preserve quoted-reply facts in schema version 8.
-WhatsApp media behavior and production packaging remain incomplete, so the
-Bridge is not ready for deployment.
+revocation uncertainty, and preserve quoted-reply facts introduced in schema version 8.
+Profile-local Archive retrieval, read-only MCP projection, bounded media
+mirroring, and explicit Archive/Profile purge are now implemented. Production
+packaging and the remaining cross-platform acceptance work are incomplete, so
+the Bridge is not ready for deployment.
 
 ## First-release direction
 
@@ -109,7 +111,7 @@ runtime state. See [Configuration and Supervisor operation](docs/configuration.m
 for endpoint and platform limits.
 
 An older Profile database is never migrated during startup. Inspect and apply
-the currently supported schema 3, 4, 5, 6, or 7 to 8 migration through the same host-local
+the currently supported schema 3, 4, 5, 6, 7, or 8 to 9 migration through the same host-local
 control plane:
 
 ```sh

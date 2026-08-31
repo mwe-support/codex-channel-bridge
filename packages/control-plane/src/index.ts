@@ -27,6 +27,15 @@ export type {
   AdministrationResponse,
   AdministrationEventResponse,
   AdministrationResults,
+  ArchivePurgeApplyResult,
+  ArchivePurgePlanResult,
   ConfigurationPlanResult,
-  MigrationPlanResult
+  MigrationPlanResult,
+  ProfilePurgePlanResult
 } from "./protocol.js";
+export { applyProfilePurge, planProfilePurge } from "./profile-purge.js";
+export type {
+  ApplyProfilePurgeInput,
+  ProfilePurgePreview,
+  ProfilePurgeResult
+} from "./profile-purge.js";

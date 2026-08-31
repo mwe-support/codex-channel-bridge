@@ -33,6 +33,9 @@ profiles:
     approval:
       timeoutMs: 300000
       detail: minimal
+    media:
+      perAttachmentLimitBytes: 67108864
+      profileQuotaBytes: 10737418240
     channelAccounts:
       qq-primary:
         provider: qq
@@ -58,7 +61,7 @@ profiles:
 
 Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace`、`codexHome` 和 `stateDirectory` 都必须是现有绝对目录；在完整 Candidate 中，任何一个 Owned Root 都不能与另一个相同，也不能包含另一个或被另一个包含。在 macOS 和 Linux 上，`stateDirectory` 必须是真实目录、由 Service User 所有且 Mode 为 `0700`；Worker 在其中创建 Mode 为 `0600` 的 `bridge.sqlite`。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
 
-`secretsFile` 默认是 `stateDirectory/secrets.env`。覆盖时必须显式提供绝对路径；Bridge 绝不搜索 Dotenv File。`channelAccounts` 以整个 Deployment 范围内唯一的 Channel Account ID 为 Key。当前阶段接受 QQ 与 WhatsApp Account。每个 Account 都有 Operator 选择的 Epoch ID，用于 Durable Deduplication。即使某个 Account 的其他字段无效，同一 Channel Account ID 也不能出现在两个 Profile 中。WhatsApp Rotating Authentication 只从固定 Profile-local Path `stateDirectory/channel-auth/CHANNEL_ACCOUNT_ID` 加载；它不是 Secret Reference，也绝不写入 `config.yaml`。
+`secretsFile` 默认是 `stateDirectory/secrets.env`。覆盖时必须显式提供绝对路径；Bridge 绝不搜索 Dotenv File。不同 Profile 不能共享同一个 Secret File，也不能让该文件与其他 Profile 的 Workspace、Codex home 或 State Boundary 重叠。`channelAccounts` 以整个 Deployment 范围内唯一的 Channel Account ID 为 Key。当前阶段接受 QQ 与 WhatsApp Account。每个 Account 都有 Operator 选择的 Epoch ID，用于 Durable Deduplication。即使某个 Account 的其他字段无效，同一 Channel Account ID 也不能出现在两个 Profile 中。WhatsApp Rotating Authentication 只从固定 Profile-local Path `stateDirectory/channel-auth/CHANNEL_ACCOUNT_ID` 加载；它不是 Secret Reference，也绝不写入 `config.yaml`。
 
 `appId` 和 `appSecret` 只接受 `env:NAME` 或 `file:/absolute/path` Secret Reference。`env:` Reference 先从真实 Service Process Environment 解析，再回退到该 Profile 配置的 `secretsFile`。`file:` Reference 从一个绝对路径文件读取单个 Secret。在 macOS 和 Linux 上，这两类文件都必须是普通、非 Symlink、由 Service User 所有且 Mode 严格为 `0600` 的文件。缺失、空、Malformed 或 Insecure Input 会让受影响 Adapter 保持 Unavailable，且不披露名称或值。
 
@@ -68,9 +71,11 @@ Profile-local `admission` 默认使用 Steer Mode、最多一个 Active Turn、1
 
 Profile-local `approval` 默认使用五分钟 Response Window 与 `minimal` Presentation。`detail` 接受 `minimal`、`summary` 或 `detailed`。Minimal Mode 只暴露 Native Operation Class 与 Opaque Response Token；Summary 可以包含有界的 Reason 与 Command Summary；Detailed 可以在 Codex 提供时额外包含有界的 Native Command、Working Directory 或 Requested Write Root。Bridge 永不把 Process-scoped JSON-RPC Request ID 发送到 Channel。参见 [`approval-routing.md`](approval-routing.md)。
 
+Profile-local `media` 默认限制为单 Attachment 64 MiB、单 Profile 已镜像 Byte 10 GiB。`perAttachmentLimitBytes` 与 `profileQuotaBytes` 必须是正整数，且 Profile Quota 不能小于单 Attachment Limit。这两个值只限制已镜像 Byte；超过限制或无法获取 Byte 时，Attachment Metadata 仍保留在 Message Archive 中。
+
 Dotenv Parser 接受普通 `KEY=VALUE` Record 和使用单引号或双引号包裹的 Literal Value。它不执行 Shell Syntax、不展开 Variable、不进行 Command Substitution，也不包含其他文件。不要提交真实 `secrets.env`；普通 Secret File Name 和 `test-channel.env*` 已被本仓库忽略。
 
-移除 Profile 或设置 `enabled: false` 会停止其 Worker，但不会删除 Workspace、Codex home、Bridge Data 或未来的 Channel Authentication State。永久 Purge 仍是独立的未来 Host-local Operation。
+移除 Profile 或设置 `enabled: false` 会停止其 Worker，但不会删除 Workspace、Codex home、Bridge Data 或 Channel Authentication State。永久 Purge 仍是独立、需要显式确认的 Host-local Operation。
 
 ## 环境变量覆盖
 

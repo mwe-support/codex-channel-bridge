@@ -22,6 +22,9 @@ profiles:
     approval:
       timeoutMs: 300000
       detail: minimal
+    media:
+      perAttachmentLimitBytes: 67108864
+      profileQuotaBytes: 10737418240
     channelAccounts:
       qq-primary:
         provider: qq

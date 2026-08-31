@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -8,8 +9,11 @@ import {
 } from "@codex-channel-bridge/config";
 import {
   ProfileMigrationError,
+  ProfileStore,
   applyProfileStoreMigration,
   planProfileStoreMigration,
+  type ArchivePurgePreview,
+  type ArchivePurgeScope,
   type ProfileMigrationPlan
 } from "@codex-channel-bridge/profile-store";
 import {
@@ -22,9 +26,16 @@ import {
   asRecord,
   type AdministrationRequest,
   type ConfigurationPlanResult,
-  type MigrationPlanResult
+  type ArchivePurgePlanResult,
+  type MigrationPlanResult,
+  type ProfilePurgePlanResult
 } from "./protocol.js";
 import { readMigrationBackupManifest } from "./migration-backup.js";
+import {
+  applyProfilePurge,
+  planProfilePurge,
+  type ProfilePurgePreview
+} from "./profile-purge.js";
 
 export interface AdministrationHandler {
   handle(
@@ -60,6 +71,16 @@ interface PendingMigrationPlan {
   readonly plan: ProfileMigrationPlan;
 }
 
+interface PendingArchivePurgePlan {
+  readonly result: ArchivePurgePlanResult;
+  readonly preview: ArchivePurgePreview;
+}
+
+interface PendingProfilePurgePlan {
+  readonly result: ProfilePurgePlanResult;
+  readonly preview: ProfilePurgePreview;
+}
+
 export class SupervisorAdministration implements AdministrationHandler {
   readonly #supervisor: Supervisor;
   readonly #planLifetimeMs: number;
@@ -67,6 +88,8 @@ export class SupervisorAdministration implements AdministrationHandler {
   readonly #loadCandidate: (absolutePath: string) => Promise<ConfigurationCandidate>;
   readonly #plans = new Map<string, PendingPlan>();
   readonly #migrationPlans = new Map<string, PendingMigrationPlan>();
+  readonly #archivePurgePlans = new Map<string, PendingArchivePurgePlan>();
+  readonly #profilePurgePlans = new Map<string, PendingProfilePurgePlan>();
 
   public constructor(supervisor: Supervisor, options: AdministrationOptions = {}) {
     this.#supervisor = supervisor;
@@ -85,7 +108,192 @@ export class SupervisorAdministration implements AdministrationHandler {
     if (request.method === "config/apply") return this.#apply(request.params);
     if (request.method === "migrate/plan") return this.#planMigration(request.params);
     if (request.method === "migrate/apply") return this.#applyMigration(request.params);
+    if (request.method === "archive/purge-plan") return this.#planArchivePurge(request.params);
+    if (request.method === "archive/purge-apply") return this.#applyArchivePurge(request.params);
+    if (request.method === "profile/purge-plan") return this.#planProfilePurge(request.params);
+    if (request.method === "profile/purge-apply") return this.#applyProfilePurge(request.params);
     return this.#channelAction(request.method, request.params, emitEvent);
+  }
+
+  async #planProfilePurge(params: unknown): Promise<ProfilePurgePlanResult> {
+    const record = asRecord(params);
+    if (!record || typeof record.profileId !== "string") {
+      throw new AdministrationError("invalid_params", "profile/purge-plan requires profileId");
+    }
+    const configurationRevision = this.#supervisor.status().configurationRevision;
+    const profile = this.#supervisor.profileConfiguration(record.profileId);
+    if (!configurationRevision || !profile) {
+      throw new AdministrationError("profile_not_found", "Profile is not configured");
+    }
+    if (profile.enabled) {
+      throw new AdministrationError("profile_not_disabled", "Profile must be disabled before purge");
+    }
+    let preview: ProfilePurgePreview;
+    try {
+      preview = await planProfilePurge(profile);
+    } catch (error) {
+      throw new AdministrationError(
+        "profile_purge_unavailable",
+        error instanceof Error ? error.message : "Profile purge could not be planned"
+      );
+    }
+    const result: ProfilePurgePlanResult = {
+      ...preview,
+      planToken: randomUUID(),
+      configurationRevision,
+      expiresAt: this.#now() + this.#planLifetimeMs
+    };
+    this.#profilePurgePlans.set(result.planToken, { result, preview });
+    return result;
+  }
+
+  async #applyProfilePurge(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (!record || typeof record.planToken !== "string" || typeof record.confirmProfileId !== "string") {
+      throw new AdministrationError(
+        "invalid_params",
+        "profile/purge-apply requires planToken and confirmProfileId"
+      );
+    }
+    const pending = this.#profilePurgePlans.get(record.planToken);
+    this.#profilePurgePlans.delete(record.planToken);
+    if (!pending || pending.result.expiresAt < this.#now()) {
+      throw new AdministrationError("plan_expired", "Profile purge plan is absent or expired");
+    }
+    if (pending.preview.profileId !== record.confirmProfileId) {
+      throw new AdministrationError(
+        "confirmation_mismatch",
+        "Profile purge confirmation must match the complete Profile ID"
+      );
+    }
+    if (this.#supervisor.status().configurationRevision !== pending.result.configurationRevision) {
+      throw new AdministrationError("plan_stale", "Configuration Revision changed after planning");
+    }
+    try {
+      return await this.#supervisor.maintainProfile(pending.preview.profileId, async (profile) => {
+        if (profile.enabled) throw new Error("Profile must remain disabled");
+        return applyProfilePurge({
+          profile,
+          expectedSelectionDigest: pending.preview.selectionDigest,
+          confirmedProfileId: record.confirmProfileId as string,
+          nowMs: this.#now()
+        });
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "profile_purge_failed",
+        error instanceof Error ? error.message : "Profile purge failed"
+      );
+    }
+  }
+
+  async #planArchivePurge(params: unknown): Promise<ArchivePurgePlanResult> {
+    const record = asRecord(params);
+    if (!record || typeof record.profileId !== "string") {
+      throw new AdministrationError("invalid_params", "archive/purge-plan requires profileId");
+    }
+    const configurationRevision = this.#supervisor.status().configurationRevision;
+    const profile = this.#supervisor.profileConfiguration(record.profileId);
+    if (!configurationRevision || !profile) {
+      throw new AdministrationError("profile_not_found", "Profile is not configured");
+    }
+    const scope = parseArchivePurgeScope(record);
+    const store = await ProfileStore.open({
+      profileId: profile.id,
+      databasePath: join(profile.stateDirectory, "bridge.sqlite")
+    });
+    let preview: ArchivePurgePreview;
+    try {
+      preview = await store.previewArchivePurge(scope);
+    } finally {
+      await store.close();
+    }
+    const result: ArchivePurgePlanResult = {
+      ...preview,
+      planToken: randomUUID(),
+      configurationRevision,
+      expiresAt: this.#now() + this.#planLifetimeMs
+    };
+    this.#archivePurgePlans.set(result.planToken, { result, preview });
+    return result;
+  }
+
+  async #applyArchivePurge(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.planToken !== "string" ||
+      typeof record.confirmProfileId !== "string" ||
+      typeof record.confirmMessageCount !== "number" ||
+      !Number.isSafeInteger(record.confirmMessageCount)
+    ) {
+      throw new AdministrationError(
+        "invalid_params",
+        "archive/purge-apply requires planToken, confirmProfileId, and confirmMessageCount"
+      );
+    }
+    const pending = this.#archivePurgePlans.get(record.planToken);
+    this.#archivePurgePlans.delete(record.planToken);
+    if (!pending || pending.result.expiresAt < this.#now()) {
+      throw new AdministrationError("plan_expired", "Archive purge plan is absent or expired");
+    }
+    if (
+      pending.preview.profileId !== record.confirmProfileId ||
+      pending.preview.messageCount !== record.confirmMessageCount
+    ) {
+      throw new AdministrationError(
+        "confirmation_mismatch",
+        "Archive purge confirmation must match the complete Profile ID and expected count"
+      );
+    }
+    if (this.#supervisor.status().configurationRevision !== pending.result.configurationRevision) {
+      throw new AdministrationError("plan_stale", "Configuration Revision changed after planning");
+    }
+    try {
+      return await this.#supervisor.maintainProfile(pending.preview.profileId, async (profile) => {
+        const store = await ProfileStore.open({
+          profileId: profile.id,
+          databasePath: join(profile.stateDirectory, "bridge.sqlite")
+        });
+        try {
+          const current = await store.previewArchivePurge(pending.preview.scope);
+          if (
+            current.selectionDigest !== pending.preview.selectionDigest ||
+            current.messageCount !== pending.preview.messageCount
+          ) {
+            throw new AdministrationError("plan_stale", "Archive purge selection changed after planning");
+          }
+          const result = await store.applyArchivePurge({
+            scope: pending.preview.scope,
+            expectedMessageCount: pending.preview.messageCount,
+            expectedSelectionDigest: pending.preview.selectionDigest,
+            confirmedProfileId: record.confirmProfileId as string,
+            atMs: this.#now()
+          });
+          let mediaCleanupFailures = 0;
+          for (const digest of result.unreferencedContentSha256) {
+            if (!/^[a-f0-9]{64}$/.test(digest)) {
+              mediaCleanupFailures += 1;
+              continue;
+            }
+            await unlink(join(profile.stateDirectory, "media", "sha256", digest.slice(0, 2), digest))
+              .catch((error: unknown) => {
+                if (!isMissingPath(error)) mediaCleanupFailures += 1;
+              });
+          }
+          return { ...result, mediaCleanupFailures };
+        } finally {
+          await store.close();
+        }
+      });
+    } catch (error) {
+      if (error instanceof AdministrationError) throw error;
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("stopped")) {
+        throw new AdministrationError("profile_not_quiescent", "Profile must be disabled and stopped");
+      }
+      throw error;
+    }
   }
 
   async #channelAction(
@@ -300,6 +508,12 @@ export class SupervisorAdministration implements AdministrationHandler {
     for (const [token, plan] of this.#migrationPlans) {
       if (plan.result.expiresAt < now) this.#migrationPlans.delete(token);
     }
+    for (const [token, plan] of this.#archivePurgePlans) {
+      if (plan.result.expiresAt < now) this.#archivePurgePlans.delete(token);
+    }
+    for (const [token, plan] of this.#profilePurgePlans) {
+      if (plan.result.expiresAt < now) this.#profilePurgePlans.delete(token);
+    }
   }
 }
 
@@ -309,6 +523,36 @@ function migrationTarget(profile: { readonly id: string; readonly stateDirectory
     databasePath: join(profile.stateDirectory, "bridge.sqlite"),
     auditPath: join(profile.stateDirectory, "migration-audit.jsonl")
   };
+}
+
+function parseArchivePurgeScope(record: Record<string, unknown>): ArchivePurgeScope {
+  if (record.scope === "profile") {
+    if (record.conversationKey !== undefined || record.beforeMs !== undefined) {
+      throw new AdministrationError("invalid_params", "Profile Archive purge accepts no conversation range");
+    }
+    return { kind: "profile" };
+  }
+  if (
+    record.scope === "conversation_before" &&
+    typeof record.conversationKey === "string" &&
+    typeof record.beforeMs === "number" &&
+    Number.isSafeInteger(record.beforeMs) &&
+    record.beforeMs >= 0
+  ) {
+    return {
+      kind: "conversation_before",
+      conversationKey: record.conversationKey,
+      beforeMs: record.beforeMs
+    };
+  }
+  throw new AdministrationError(
+    "invalid_params",
+    "Archive purge scope must be profile or exact conversation_before"
+  );
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function migrationAdministrationError(error: unknown): AdministrationError {

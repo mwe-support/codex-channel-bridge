@@ -5,7 +5,13 @@ import type {
   WhatsAppChannelAccountEvent,
   WhatsAppChannelAccountResult
 } from "@codex-channel-bridge/supervisor";
-import type { ProfileMigrationPlan, ProfileMigrationResult } from "@codex-channel-bridge/profile-store";
+import type {
+  ArchivePurgePreview,
+  ArchivePurgeResult,
+  ProfileMigrationPlan,
+  ProfileMigrationResult
+} from "@codex-channel-bridge/profile-store";
+import type { ProfilePurgePreview, ProfilePurgeResult } from "./profile-purge.js";
 
 export const CONTROL_PROTOCOL_VERSION = 1 as const;
 
@@ -15,6 +21,10 @@ export type AdministrationMethod =
   | "config/apply"
   | "migrate/plan"
   | "migrate/apply"
+  | "archive/purge-plan"
+  | "archive/purge-apply"
+  | "profile/purge-plan"
+  | "profile/purge-apply"
   | "channel/connect"
   | "channel/disconnect"
   | "whatsapp/pair"
@@ -76,12 +86,32 @@ export interface MigrationPlanResult extends ProfileMigrationPlan {
   };
 }
 
+export interface ArchivePurgePlanResult extends ArchivePurgePreview {
+  readonly planToken: string;
+  readonly configurationRevision: string;
+  readonly expiresAt: number;
+}
+
+export interface ArchivePurgeApplyResult extends ArchivePurgeResult {
+  readonly mediaCleanupFailures: number;
+}
+
+export interface ProfilePurgePlanResult extends ProfilePurgePreview {
+  readonly planToken: string;
+  readonly configurationRevision: string;
+  readonly expiresAt: number;
+}
+
 export interface AdministrationResults {
   readonly "status/get": SupervisorStatus;
   readonly "config/plan": ConfigurationPlanResult;
   readonly "config/apply": ConfigurationApplyResult;
   readonly "migrate/plan": MigrationPlanResult;
   readonly "migrate/apply": ProfileMigrationResult;
+  readonly "archive/purge-plan": ArchivePurgePlanResult;
+  readonly "archive/purge-apply": ArchivePurgeApplyResult;
+  readonly "profile/purge-plan": ProfilePurgePlanResult;
+  readonly "profile/purge-apply": ProfilePurgeResult;
   readonly "channel/connect": WhatsAppChannelAccountResult;
   readonly "channel/disconnect": WhatsAppChannelAccountResult;
   readonly "whatsapp/pair": WhatsAppChannelAccountResult;
@@ -100,6 +130,10 @@ export function isAdministrationRequest(value: unknown): value is Administration
       value.method === "config/apply" ||
       value.method === "migrate/plan" ||
       value.method === "migrate/apply" ||
+      value.method === "archive/purge-plan" ||
+      value.method === "archive/purge-apply" ||
+      value.method === "profile/purge-plan" ||
+      value.method === "profile/purge-apply" ||
       value.method === "channel/connect" ||
       value.method === "channel/disconnect" ||
       value.method === "whatsapp/pair" ||

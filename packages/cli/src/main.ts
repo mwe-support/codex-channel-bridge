@@ -2,6 +2,7 @@
 import { stdin, stdout } from "node:process";
 import qrcode from "qrcode-terminal";
 
+import { runArchiveMcp } from "@codex-channel-bridge/archive-mcp";
 import { probeCodexProtocol } from "@codex-channel-bridge/codex-app-server";
 import {
   ConfigurationValidationError,
@@ -109,6 +110,87 @@ try {
       snapshotConfirmed: true
     });
     stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+  } else if (area === "archive" && action === "mcp") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "state-directory"]);
+    await runArchiveMcp({
+      profileId: required(options, "profile"),
+      stateDirectory: required(options, "state-directory")
+    });
+  } else if (area === "archive" && action === "purge") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, [
+      "profile",
+      "conversation",
+      "before-ms",
+      "confirm-profile",
+      "confirm-count",
+      "endpoint"
+    ]);
+    const profileId = required(options, "profile");
+    const hasConversation = options.conversation !== undefined || options["before-ms"] !== undefined;
+    if (hasConversation && (options.conversation === undefined || options["before-ms"] === undefined)) {
+      throw new Error("--conversation and --before-ms must be supplied together");
+    }
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("archive/purge-plan", {
+      profileId,
+      ...(hasConversation
+        ? {
+            scope: "conversation_before",
+            conversationKey: options.conversation,
+            beforeMs: boundedInteger(options["before-ms"]!, "--before-ms", 0, Number.MAX_SAFE_INTEGER)
+          }
+        : { scope: "profile" })
+    });
+    if (options["confirm-profile"] === undefined || options["confirm-count"] === undefined) {
+      stdout.write(`${JSON.stringify({
+        applied: false,
+        ...plan,
+        confirmationRequired: {
+          confirmProfile: plan.profileId,
+          confirmCount: plan.messageCount
+        }
+      }, null, 2)}\n`);
+    } else {
+      const confirmCount = boundedInteger(
+        options["confirm-count"],
+        "--confirm-count",
+        0,
+        Number.MAX_SAFE_INTEGER
+      );
+      if (options["confirm-profile"] !== plan.profileId || confirmCount !== plan.messageCount) {
+        throw new Error("Archive purge confirmation must match the complete Profile ID and expected count");
+      }
+      const result = await client.request("archive/purge-apply", {
+        planToken: plan.planToken,
+        confirmProfileId: options["confirm-profile"],
+        confirmMessageCount: confirmCount
+      });
+      stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+    }
+  } else if (area === "profile" && action === "purge") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "confirm", "endpoint"]);
+    const profileId = required(options, "profile");
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("profile/purge-plan", { profileId });
+    if (options.confirm === undefined) {
+      stdout.write(`${JSON.stringify({
+        applied: false,
+        ...plan,
+        confirmationRequired: plan.profileId
+      }, null, 2)}\n`);
+    } else {
+      if (options.confirm !== plan.profileId) {
+        throw new Error("--confirm must equal the complete Profile ID");
+      }
+      const result = await client.request("profile/purge-apply", {
+        planToken: plan.planToken,
+        confirmProfileId: options.confirm
+      });
+      stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+    }
   } else if (area === "channel" && (action === "connect" || action === "disconnect")) {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["profile", "account", "endpoint"]);
@@ -301,6 +383,9 @@ function usage(): never {
       "  bridge whatsapp pair --profile ID --account ID [--timeout-ms 120000] [--endpoint PATH]",
       "  bridge whatsapp logout --profile ID --account ID [--endpoint PATH]",
       "  bridge whatsapp forget-local --profile ID --account ID --confirm FULL_ACCOUNT_ID [--endpoint PATH]",
+      "  bridge archive mcp --profile ID --state-directory /absolute/path/to/profile-state",
+      "  bridge archive purge --profile ID [--conversation EXACT_KEY --before-ms TIMESTAMP] [--confirm-profile ID --confirm-count COUNT] [--endpoint PATH]",
+      "  bridge profile purge --profile ID [--confirm FULL_PROFILE_ID] [--endpoint PATH]",
       "  bridge supervisor run --config /absolute/path/config.yaml [--endpoint PATH]",
       "  bridge codex probe [--codex /absolute/path/to/codex]",
       "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path --state-directory /absolute/path [--thread ID] [--codex PATH]"

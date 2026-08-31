@@ -37,6 +37,9 @@ profiles:
     approval:
       timeoutMs: 300000
       detail: minimal
+    media:
+      perAttachmentLimitBytes: 67108864
+      profileQuotaBytes: 10737418240
     channelAccounts:
       qq-primary:
         provider: qq
@@ -74,6 +77,8 @@ its service environment. The Bridge does not install or upgrade it.
 
 `secretsFile` defaults to `stateDirectory/secrets.env`. It must be an explicit
 absolute path when overridden; the Bridge never searches for dotenv files.
+One Secret File cannot be shared by Profiles or overlap another Profile's
+Workspace, Codex home, or state boundary.
 `channelAccounts` is keyed by a deployment-wide unique Channel Account ID. The
 current slice accepts QQ and WhatsApp accounts. Every account has an
 operator-selected Epoch ID for durable deduplication. The same Channel Account
@@ -114,6 +119,12 @@ also include bounded native command, working-directory, or requested-write-root
 fields when Codex supplies them. The Bridge never sends the process-scoped
 JSON-RPC request ID to the Channel. See [`approval-routing.md`](approval-routing.md).
 
+Profile-local `media` defaults to 64 MiB per attachment and 10 GiB of mirrored
+bytes for the Profile. Set `perAttachmentLimitBytes` and `profileQuotaBytes` as
+positive integers; the Profile quota must be at least the per-attachment
+limit. These limits bound only mirrored bytes. Attachment metadata remains in
+the Message Archive when bytes exceed a limit or cannot be fetched.
+
 The dotenv parser accepts ordinary `KEY=VALUE` records and literal single- or
 double-quoted values. It does not execute shell syntax, expand variables,
 perform command substitution, or include other files. Do not commit a real
@@ -122,7 +133,8 @@ by this repository.
 
 Removing a Profile or setting `enabled: false` stops its Worker. It does not
 delete its Workspace, Codex home, Bridge data, or future Channel authentication
-state. Permanent purge remains a separate future host-local operation.
+state. Permanent purge remains a separate, explicitly confirmed host-local
+operation.
 
 ## Environment overrides
 

@@ -23,11 +23,51 @@ export interface ProviderReplyTarget {
   readonly providerReplyEventId?: string;
 }
 
+export interface ProviderAttachmentContentSource {
+  /** Open a single bounded provider byte stream. Callers must not invoke it twice. */
+  openStream(): Promise<AsyncIterable<Uint8Array>>;
+}
+
+export interface ProviderInboundAttachment {
+  /** Unique only within the provider event. */
+  readonly providerAttachmentId: string;
+  readonly contentType: string;
+  readonly filename?: string;
+  readonly sourceUrl?: string;
+  readonly declaredSizeBytes?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly transcript?: string;
+  readonly contentSource?: ProviderAttachmentContentSource;
+}
+
+export type ArchiveAttachmentBytesState =
+  | "metadata_only"
+  | "pending"
+  | "mirrored"
+  | "unavailable";
+
+export interface InboundChannelAttachment {
+  readonly attachmentRecordId: string;
+  readonly providerAttachmentId: string;
+  readonly contentType: string;
+  readonly filename?: string;
+  readonly sourceUrl?: string;
+  readonly declaredSizeBytes?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly transcript?: string;
+  readonly bytesState: ArchiveAttachmentBytesState;
+  readonly contentSha256?: string;
+  readonly mirroredSizeBytes?: number;
+}
+
 /** Provider-owned facts emitted by a Channel Adapter. */
 export interface ProviderInboundEvent {
   readonly message: ProviderInboundMessage;
   readonly attention: ChannelAttention;
   readonly replyTarget: ProviderReplyTarget;
+  readonly attachments?: readonly ProviderInboundAttachment[];
 }
 
 /** Trusted, archived Channel event emitted by the Inbound Pipeline. */
@@ -35,6 +75,7 @@ export interface InboundChannelEvent {
   readonly message: NormalizedChannelMessage;
   readonly attention: ChannelAttention;
   readonly replyTarget: ChannelReplyTarget;
+  readonly attachments?: readonly InboundChannelAttachment[];
 }
 
 export interface ChannelTextDelivery {

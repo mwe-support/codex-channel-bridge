@@ -162,6 +162,29 @@ test("configuration planning has no runtime side effects", () => {
   ]);
 });
 
+test("treats Profile media bounds as restart-owned configuration", () => {
+  const first = candidate();
+  const next = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: /srv/alpha/workspace
+    codexHome: /srv/alpha/codex
+    stateDirectory: /srv/alpha/state
+    media:
+      perAttachmentLimitBytes: 1024
+      profileQuotaBytes: 4096
+  beta:
+    workspace: /srv/beta/workspace
+    codexHome: /srv/beta/codex
+    stateDirectory: /srv/beta/state
+`);
+  assert.deepEqual(planConfiguration(first, next), [
+    { profileId: "alpha", action: "restart" },
+    { profileId: "beta", action: "unchanged" }
+  ]);
+});
+
 test("forwards a WhatsApp lifecycle action only to the selected live Profile", async () => {
   const factory = new FakeFactory();
   const supervisor = new Supervisor(factory);

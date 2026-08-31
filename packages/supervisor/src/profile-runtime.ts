@@ -130,6 +130,7 @@ class ForkedProfileRuntime implements ProfileRuntime {
         channelAccounts: this.#profile.channelAccounts,
         admission: this.#profile.admission,
         approval: this.#profile.approval,
+        media: this.#profile.media,
         drainTimeoutMs: this.#drainTimeoutMs,
         childExitTimeoutMs: this.#childExitTimeoutMs,
         codexRestartCooldownMs: this.#supervisorCodexRestartCooldownMs,

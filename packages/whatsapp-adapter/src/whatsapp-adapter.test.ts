@@ -106,6 +106,37 @@ test("normalizes private and mentioned group messages with provider-owned identi
   assert.equal(group?.attention, "mention");
 });
 
+test("exposes one-shot Baileys decrypted media as a bounded stream source", async () => {
+  let downloads = 0;
+  const event = normalizeWhatsAppMessage({
+    ...privateMessage("media-1", "caption"),
+    message: {
+      imageMessage: {
+        caption: "caption",
+        mimetype: "image/jpeg",
+        fileLength: 3,
+        width: 10,
+        height: 20,
+        mediaKey: new Uint8Array([1]),
+        directPath: "/media",
+        url: "https://example.invalid/media"
+      }
+    }
+  } as WAMessage, undefined, 9_000, async () => {
+    downloads += 1;
+    return (async function* () { yield new Uint8Array([1, 2, 3]); })();
+  });
+  assert.equal(event?.attachments?.[0]?.contentType, "image/jpeg");
+  assert.equal(event?.attachments?.[0]?.declaredSizeBytes, 3);
+  const source = event?.attachments?.[0]?.contentSource;
+  assert.ok(source);
+  const chunks: number[] = [];
+  for await (const chunk of await source.openStream()) chunks.push(...chunk);
+  assert.deepEqual(chunks, [1, 2, 3]);
+  assert.equal(downloads, 1);
+  await assert.rejects(source.openStream(), /already opened/u);
+});
+
 test("maps a successful WhatsApp send to the Channel delivery receipt", async () => {
   const socket = new FakeSocket();
   const adapter = new WhatsAppChannelAdapter(

@@ -16,7 +16,8 @@ import {
   SecretResolver,
   type AdmissionConfiguration,
   type ApprovalConfiguration,
-  type ChannelAccountConfiguration
+  type ChannelAccountConfiguration,
+  type MediaConfiguration
 } from "@codex-channel-bridge/config";
 import type {
   AuthorizedParticipantContext,
@@ -38,11 +39,14 @@ import { ChannelDeliveryError } from "@codex-channel-bridge/core";
 import {
   ProfileStore,
   ProfileStoreError,
+  type AbandonArchiveAttachmentsInput,
   type AbandonApprovalRequestsInput,
   type AppendAuditRecordInput,
   type ApprovalRequestCommitResult,
   type ApprovalRequestRecord,
+  type ArchiveAttachmentRecord,
   type ArchiveCommitResult,
+  type ArchiveObservationCommitResult,
   type ClaimOutboxOptions,
   type ChannelTransportCheckpoint,
   type CodexInputUncertaintyCommitResult,
@@ -50,6 +54,7 @@ import {
   type CommitCodexInputUncertaintyInput,
   type CommitCodexTurnResultInput,
   type CommitApprovalRequestInput,
+  type CommitArchiveObservationInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -60,6 +65,7 @@ import {
   type OutboxSettlement,
   type OutboxSettlementResult,
   type SettleApprovalRequestInput,
+  type SettleArchiveAttachmentInput,
   type ThreadBindingCommitResult
 } from "@codex-channel-bridge/profile-store";
 import { QQChannelAdapter, type QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
@@ -80,6 +86,7 @@ import { CodexServerRequestRouter } from "./codex-server-request-router.js";
 import { ConversationTurnCoordinator } from "./conversation-turn-coordinator.js";
 import { DeliveryOutbox } from "./delivery-outbox.js";
 import { InboundPipeline, InboundPipelineError } from "./inbound-pipeline.js";
+import { MediaArchive } from "./media-archive.js";
 import { TurnCoordinator, type TurnResult } from "./turn-coordinator.js";
 
 export type { TurnResult } from "./turn-coordinator.js";
@@ -99,6 +106,7 @@ export interface ProfileWorkerConfig {
   readonly codexExecutable?: string;
   readonly admission?: AdmissionConfiguration;
   readonly approval?: ApprovalConfiguration;
+  readonly media?: MediaConfiguration;
   readonly drainTimeoutMs?: number;
   readonly childExitTimeoutMs?: number;
   readonly codexRestartCooldownMs?: number;
@@ -120,6 +128,11 @@ export interface ProfileWorkerDependencies {
 
 export interface ProfileStoreRuntime {
   commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
+  commitObservation?(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
+  archiveAttachments?(messageRecordId: string): Promise<readonly ArchiveAttachmentRecord[]>;
+  settleArchiveAttachment?(input: SettleArchiveAttachmentInput): Promise<ArchiveAttachmentRecord>;
+  mirroredMediaBytes?(): Promise<number>;
+  abandonPendingArchiveAttachments?(input: AbandonArchiveAttachmentsInput): Promise<number>;
   getChannelTransportCheckpoint(
     channelAccountId: string
   ): Promise<ChannelTransportCheckpoint | undefined>;
@@ -252,7 +265,28 @@ export class ProfileWorker extends EventEmitter {
           profileId: this.#config.profileId,
           databasePath: join(this.#config.stateDirectory, "bridge.sqlite")
         });
-        this.#inboundPipeline = new InboundPipeline(this.#store);
+        await this.#store.abandonPendingArchiveAttachments?.({
+          failureReason: "media_source_lost",
+          settledAtMs: Date.now()
+        });
+        const media = this.#store.mirroredMediaBytes && this.#store.settleArchiveAttachment
+          ? new MediaArchive(
+              {
+                mirroredMediaBytes: () => this.#store!.mirroredMediaBytes!(),
+                settleArchiveAttachment: (input) => this.#store!.settleArchiveAttachment!(input)
+              },
+              {
+                rootDirectory: join(this.#config.stateDirectory, "media"),
+                ...(this.#config.media
+                  ? {
+                      perAttachmentLimitBytes: this.#config.media.perAttachmentLimitBytes,
+                      profileQuotaBytes: this.#config.media.profileQuotaBytes
+                    }
+                  : {})
+              }
+            )
+          : undefined;
+        this.#inboundPipeline = new InboundPipeline(this.#store, media);
       } catch (error) {
         return this.#transition(
           "unavailable",

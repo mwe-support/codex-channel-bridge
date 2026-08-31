@@ -265,7 +265,23 @@ function normalizeQQMessage(
       conversationKind,
       providerConversationId,
       providerReplyEventId: message.messageId
-    }
+    },
+    ...(message.attachments?.length
+      ? {
+          attachments: message.attachments.map((attachment, index) => ({
+            providerAttachmentId: String(index),
+            contentType: attachment.content_type,
+            ...(attachment.filename ? { filename: attachment.filename } : {}),
+            ...(attachment.url ? { sourceUrl: attachment.url } : {}),
+            ...(attachment.size === undefined ? {} : { declaredSizeBytes: attachment.size }),
+            ...(attachment.width === undefined ? {} : { width: attachment.width }),
+            ...(attachment.height === undefined ? {} : { height: attachment.height }),
+            ...(attachment.asr_refer_text
+              ? { transcript: attachment.asr_refer_text }
+              : {})
+          }))
+        }
+      : {})
   };
 }
 
