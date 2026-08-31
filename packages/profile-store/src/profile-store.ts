@@ -16,7 +16,7 @@ import type {
 } from "@codex-channel-bridge/core";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -62,6 +62,14 @@ export interface OpenProfileStoreOptions {
 export interface ArchiveCommitResult {
   readonly recordId: string;
   readonly inserted: boolean;
+}
+
+export interface ChannelTransportCheckpoint {
+  readonly channelAccountId: string;
+  readonly provider: ChannelProvider;
+  readonly sessionId: string;
+  readonly sequence: number;
+  readonly updatedAtMs: number;
 }
 
 export interface ArchivedChannelMessage extends NormalizedChannelMessage {
@@ -479,6 +487,93 @@ export class SqliteProfileStore {
     } catch (error) {
       if (error instanceof ProfileStoreError) throw error;
       throw new ProfileStoreError("storage_failure", "Unable to commit Channel message");
+    }
+  }
+
+  public getChannelTransportCheckpoint(
+    channelAccountId: string
+  ): ChannelTransportCheckpoint | undefined {
+    this.#requireOpen();
+    validateExternalId(channelAccountId, "channelAccountId");
+    const row = this.#database
+      .prepare<
+        { profileId: string; channelAccountId: string },
+        {
+          channel_account_id: string;
+          provider: ChannelProvider;
+          session_id: string;
+          sequence_number: number;
+          updated_at_ms: number;
+        }
+      >(
+        `SELECT channel_account_id, provider, session_id, sequence_number, updated_at_ms
+           FROM channel_transport_checkpoints
+          WHERE profile_id = @profileId
+            AND channel_account_id = @channelAccountId`
+      )
+      .get({ profileId: this.#profileId, channelAccountId });
+    return row
+      ? {
+          channelAccountId: row.channel_account_id,
+          provider: row.provider,
+          sessionId: row.session_id,
+          sequence: row.sequence_number,
+          updatedAtMs: row.updated_at_ms
+        }
+      : undefined;
+  }
+
+  public putChannelTransportCheckpoint(
+    checkpoint: ChannelTransportCheckpoint
+  ): ChannelTransportCheckpoint {
+    this.#requireOpen();
+    validateChannelTransportCheckpoint(checkpoint);
+    try {
+      const existing = this.getChannelTransportCheckpoint(checkpoint.channelAccountId);
+      if (existing && existing.provider !== checkpoint.provider) {
+        throw new ProfileStoreError(
+          "invalid_channel_message",
+          "Channel transport checkpoint provider does not match its Channel Account"
+        );
+      }
+      this.#database
+        .prepare(
+          `INSERT INTO channel_transport_checkpoints (
+             profile_id, channel_account_id, provider, session_id, sequence_number, updated_at_ms
+           ) VALUES (@profileId, @channelAccountId, @provider, @sessionId, @sequence, @updatedAtMs)
+           ON CONFLICT(profile_id, channel_account_id) DO UPDATE SET
+             provider = excluded.provider,
+             session_id = excluded.session_id,
+             sequence_number = excluded.sequence_number,
+             updated_at_ms = excluded.updated_at_ms
+           WHERE excluded.provider = channel_transport_checkpoints.provider
+             AND (
+               excluded.session_id <> channel_transport_checkpoints.session_id
+               OR excluded.sequence_number >= channel_transport_checkpoints.sequence_number
+             )`
+        )
+        .run({ profileId: this.#profileId, ...checkpoint });
+      const persisted = this.getChannelTransportCheckpoint(checkpoint.channelAccountId);
+      if (!persisted) throw new Error("Channel transport checkpoint was not persisted");
+      return persisted;
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to persist Channel transport checkpoint");
+    }
+  }
+
+  public clearChannelTransportCheckpoint(channelAccountId: string): void {
+    this.#requireOpen();
+    validateExternalId(channelAccountId, "channelAccountId");
+    try {
+      this.#database
+        .prepare(
+          `DELETE FROM channel_transport_checkpoints
+            WHERE profile_id = @profileId AND channel_account_id = @channelAccountId`
+        )
+        .run({ profileId: this.#profileId, channelAccountId });
+    } catch {
+      throw new ProfileStoreError("storage_failure", "Unable to clear Channel transport checkpoint");
     }
   }
 
@@ -1960,6 +2055,17 @@ function createSchema(database: Database.Database, profileId: string): void {
 
       CREATE INDEX audit_records_profile_time
         ON audit_records (profile_id, at_ms DESC, row_id DESC);
+
+      CREATE TABLE channel_transport_checkpoints (
+        row_id INTEGER PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        channel_account_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('qq', 'whatsapp')),
+        session_id TEXT NOT NULL,
+        sequence_number INTEGER NOT NULL CHECK (sequence_number >= 0),
+        updated_at_ms INTEGER NOT NULL,
+        UNIQUE (profile_id, channel_account_id)
+      );
     `);
     database
       .prepare("INSERT INTO profile_metadata (singleton, profile_id) VALUES (1, ?)")
@@ -1967,6 +2073,20 @@ function createSchema(database: Database.Database, profileId: string): void {
     database.pragma(`user_version = ${SCHEMA_VERSION}`);
   });
   initialize.immediate();
+}
+
+function validateChannelTransportCheckpoint(checkpoint: ChannelTransportCheckpoint): void {
+  if (
+    !validExternalId(checkpoint.channelAccountId) ||
+    (checkpoint.provider !== "qq" && checkpoint.provider !== "whatsapp") ||
+    !validExternalId(checkpoint.sessionId) ||
+    !Number.isSafeInteger(checkpoint.sequence) ||
+    checkpoint.sequence < 0 ||
+    !Number.isSafeInteger(checkpoint.updatedAtMs) ||
+    checkpoint.updatedAtMs < 0
+  ) {
+    throw new ProfileStoreError("invalid_channel_message", "Channel transport checkpoint is invalid");
+  }
 }
 
 function validateMessage(message: NormalizedChannelMessage, profileId: string): void {

@@ -39,8 +39,10 @@ event that contains provider facts only:
 - C2C messages use `user_openid` as both the stable participant and provider
   conversation identity and are marked `direct`.
 - Group messages use `group_openid` for the conversation and `member_openid`
-  for the participant. `GROUP_AT_MESSAGE_CREATE` is marked `mention`, while
-  full-group events are marked `passive`.
+  for the participant. `GROUP_AT_MESSAGE_CREATE` is marked `mention`. The
+  official payload's `mentions[].is_you` flag is also authoritative because QQ
+  may deliver a desktop-client bot mention through `GROUP_MESSAGE_CREATE`.
+  Other full-group events are marked `passive`.
 - The durable provider-event key encodes the provider message ID together with
   `msg_idx` when present.
 - The event cannot declare its Profile, Channel Account, Account Epoch, or
@@ -51,18 +53,32 @@ event that contains provider facts only:
 - Provider identifiers remain internal data. Operational output must not log
   them or the message body.
 
-The SDK advances its Gateway resume sequence before awaiting application
-commit. This baseline therefore does not configure SDK session persistence and
-does not claim crash-safe Gateway acknowledgement. Closing that provider gap
-requires a pinned-version contract shim or an upstream post-commit cursor API.
+The pinned SDK advances its Gateway resume sequence before awaiting application
+commit. The Adapter therefore installs a narrow pinned-version coordinator at
+the SDK middleware and session-persistence seams. It stages the SDK's eager
+checkpoint, captures the sequence before middleware can yield, and persists it
+to the Profile SQLite database only after the Inbound Pipeline has committed
+the Message Archive. Concurrent messages are committed as an ordered prefix:
+a later completed archive operation cannot advance Resume beyond an earlier
+uncommitted message. Schema 7 stores one session-aware transport checkpoint per
+Channel Account. The sequence cannot move backwards within one Gateway Session;
+a confirmed replacement Session may start from a lower provider sequence. On
+restart, only that durable Session and sequence are supplied to SDK Resume, so
+an observed-but-uncommitted event remains replayable and is then deduplicated by
+the Archive provider-event key if it had already committed.
+
+This compatibility shim is specific to SDK `1.0.4`. It must be removed when the
+official SDK exposes an awaited post-commit cursor interface, and its contract
+tests must remain pinned to the installed SDK behavior.
 
 ## Text delivery
 
 `sendText` maps a normalized private target to the official C2C route and a
 group target to the official group route. A successful provider response
 becomes an `accepted` receipt. Definite non-rate-limit 4xx failures are
-`rejected`; rate limits, transport failures, and other uncertain outcomes are
-`ambiguous`.
+`rejected`; HTTP 429 is `deferred` so the durable Outbox applies bounded backoff
+and jitter. Transport failures and other outcomes where QQ may have accepted
+the request remain `ambiguous` and retry with the same Logical Result identity.
 
 Passive delivery requires the Outbox-allocated `providerReplySequence`. The
 Adapter passes the persisted `msg_id + msg_seq` through the SDK's explicit
@@ -81,11 +97,14 @@ delivery.
 
 Unit contracts cover the exact intent and transport, C2C/group provider-fact
 normalization, mention versus passive attention, accepted/rejected/ambiguous
-delivery mapping, stable passive sequence forwarding, narrow expired-anchor
+delivery mapping, rate-limit deferral, stable passive sequence forwarding,
+narrow expired-anchor
 fallback, unrelated-error rejection, and startup failure. Inbound Pipeline and
 Profile Worker contracts cover trusted authority injection,
 archive-before-routing, deduplication, provider mismatch isolation, independent
-adapter failure, and drain.
+adapter failure, durable checkpoint injection, and drain. Checkpoint contracts
+also cover restart restore, invalid-session clearing, commit failure, and
+out-of-order concurrent archive completion.
 
 An opt-in real test connects the configured robot, waits for one inbound event,
 and sends one fixed passive reply:

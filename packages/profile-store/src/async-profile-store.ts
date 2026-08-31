@@ -20,6 +20,7 @@ import {
   type ApprovalRequestRecord,
   type AuditRecord,
   type ClaimOutboxOptions,
+  type ChannelTransportCheckpoint,
   type CodexInputUncertaintyCommitResult,
   type CodexTurnResultCommitResult,
   type CommitCodexInputUncertaintyInput,
@@ -41,6 +42,9 @@ import {
 
 type StorageOperation =
   | { readonly name: "commitMessage"; readonly value: NormalizedChannelMessage }
+  | { readonly name: "getChannelTransportCheckpoint"; readonly channelAccountId: string }
+  | { readonly name: "putChannelTransportCheckpoint"; readonly value: ChannelTransportCheckpoint }
+  | { readonly name: "clearChannelTransportCheckpoint"; readonly channelAccountId: string }
   | { readonly name: "recentMessages"; readonly conversationKey: string; readonly limit?: number }
   | { readonly name: "searchText"; readonly query: ArchiveTextSearch }
   | { readonly name: "getThreadBinding"; readonly key: ThreadBindingKey }
@@ -129,6 +133,22 @@ export class ProfileStore {
 
   public commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult> {
     return this.#request({ name: "commitMessage", value: message });
+  }
+
+  public getChannelTransportCheckpoint(
+    channelAccountId: string
+  ): Promise<ChannelTransportCheckpoint | undefined> {
+    return this.#request({ name: "getChannelTransportCheckpoint", channelAccountId });
+  }
+
+  public putChannelTransportCheckpoint(
+    checkpoint: ChannelTransportCheckpoint
+  ): Promise<ChannelTransportCheckpoint> {
+    return this.#request({ name: "putChannelTransportCheckpoint", value: checkpoint });
+  }
+
+  public clearChannelTransportCheckpoint(channelAccountId: string): Promise<void> {
+    return this.#request({ name: "clearChannelTransportCheckpoint", channelAccountId });
   }
 
   public recentMessages(

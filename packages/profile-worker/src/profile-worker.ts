@@ -42,6 +42,7 @@ import {
   type ApprovalRequestRecord,
   type ArchiveCommitResult,
   type ClaimOutboxOptions,
+  type ChannelTransportCheckpoint,
   type CodexInputUncertaintyCommitResult,
   type CodexTurnResultCommitResult,
   type CommitCodexInputUncertaintyInput,
@@ -118,6 +119,13 @@ export interface ProfileWorkerDependencies {
 
 export interface ProfileStoreRuntime {
   commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
+  getChannelTransportCheckpoint(
+    channelAccountId: string
+  ): Promise<ChannelTransportCheckpoint | undefined>;
+  putChannelTransportCheckpoint(
+    checkpoint: ChannelTransportCheckpoint
+  ): Promise<ChannelTransportCheckpoint>;
+  clearChannelTransportCheckpoint(channelAccountId: string): Promise<void>;
   getThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined>;
   createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult>;
   acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult>;
@@ -720,7 +728,36 @@ export class ProfileWorker extends EventEmitter {
     return this.#dependencies.createQQAdapter({
       channelAccountId: account.id,
       appId,
-      appSecret
+      appSecret,
+      gatewaySessionRepository: {
+        load: async () => {
+          if (!this.#store) {
+            throw new Error("Profile store is unavailable for QQ Gateway checkpointing");
+          }
+          const checkpoint = await this.#store.getChannelTransportCheckpoint(account.id);
+          return checkpoint
+            ? { sessionId: checkpoint.sessionId, lastSeq: checkpoint.sequence }
+            : null;
+        },
+        save: async (session) => {
+          if (!this.#store || session.lastSeq === null) {
+            throw new Error("Profile store is unavailable for QQ Gateway checkpointing");
+          }
+          await this.#store.putChannelTransportCheckpoint({
+            channelAccountId: account.id,
+            provider: "qq",
+            sessionId: session.sessionId,
+            sequence: session.lastSeq,
+            updatedAtMs: Date.now()
+          });
+        },
+        clear: async () => {
+          if (!this.#store) {
+            throw new Error("Profile store is unavailable for QQ Gateway checkpointing");
+          }
+          await this.#store.clearChannelTransportCheckpoint(account.id);
+        }
+      }
     });
   }
 

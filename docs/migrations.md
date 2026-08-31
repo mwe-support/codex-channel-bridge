@@ -4,15 +4,19 @@ Normal Supervisor startup never changes an existing Profile database schema.
 An older database keeps only that Profile `unavailable: migration_required`;
 the Supervisor and sibling Profiles remain live.
 
-The current binary supports Bridge Profile schema version 5 to version 6 and
-composed version 3 or 4 to version 6 paths. Unknown versions and inconsistent
+The current binary supports Bridge Profile schema version 6 to version 7 and
+composed version 3, 4, or 5 to version 7 paths. Unknown versions and inconsistent
 schema shapes fail closed. Version 3 to 4 adds and backfills durable QQ passive
 reply sequences. Version 4 to 5 retains the provider conversation target in the
 Message Archive and generalizes Logical Result source identity so restart
 uncertainty and its Channel notification can commit atomically. Version 5 to 6
 adds the Approval Request source kind, durable Approval lifecycle state, and
-body-free Audit Records. Every path verifies Profile ownership, the resulting
-schema, foreign keys, and SQLite `quick_check`.
+body-free Audit Records. Version 6 to 7 adds one session-aware Channel transport
+checkpoint per Channel Account so QQ Gateway Resume advances only after the
+Message Archive commit. Its sequence is monotonic within one Gateway Session;
+a confirmed new Session replaces the old Session and may restart the provider
+sequence. Every path verifies Profile ownership, the resulting schema, foreign
+keys, and SQLite `quick_check`.
 
 ## Plan
 

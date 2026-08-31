@@ -22,7 +22,7 @@ The current runtime slices establish these explicit package boundaries:
    lexical search, Thread Bindings, Codex input correlations, atomic Logical
    Result commits, and durable Outbox state transitions. Its asynchronous
    interface dispatches synchronous SQLite work to a dedicated Worker thread.
-   Its explicit migration edge currently supports schema 3, 4, or 5 to 6.
+   Its explicit migration edge currently supports schema 3, 4, 5, or 6 to 7.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy. It serializes stopped Profile
@@ -249,7 +249,7 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - The Profile Store implements persistence, an off-event-loop storage Worker,
   and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
   MCP Server, Archive Purge, and media persistence are not implemented yet.
-  Explicit migration currently supports only the known schema 3, 4, or 5 to 6 spans;
+  Explicit migration currently supports only the known schema 3, 4, 5, or 6 to 7 spans;
   other version spans remain unsupported and fail closed.
 - The QQ Adapter emits only C2C/group provider facts. The Profile-local Inbound
   Pipeline injects Profile, Channel Account, and Account Epoch authority,

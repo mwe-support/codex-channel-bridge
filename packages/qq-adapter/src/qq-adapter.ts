@@ -9,6 +9,10 @@ import {
   type ChannelTextDelivery,
   type ProviderInboundEvent
 } from "@codex-channel-bridge/core";
+import {
+  QQGatewaySessionCoordinator,
+  type QQGatewaySessionRepository
+} from "./qq-gateway-session.js";
 
 const GROUP_AND_C2C_INTENT = 1 << 25;
 const MAX_CHANNEL_TEXT_CHARACTERS = 5_000;
@@ -23,6 +27,7 @@ export interface QQChannelAdapterOptions {
   readonly channelAccountId: string;
   readonly appId: string;
   readonly appSecret: string;
+  readonly gatewaySessionRepository: QQGatewaySessionRepository;
 }
 
 export type QQAdapterReadiness = ChannelAdapterReadiness;
@@ -33,8 +38,8 @@ interface QQMessageContext {
 
 interface QQBotClient {
   use(...middleware: Parameters<QQBot["use"]>): this;
-  on(event: "ready", handler: (data: unknown) => void): this;
-  on(event: "resumed", handler: (data: unknown) => void): this;
+  on(event: "ready", handler: (data: unknown) => void | Promise<void>): this;
+  on(event: "resumed", handler: (data: unknown) => void | Promise<void>): this;
   on(event: "error", handler: (error: Error) => void): this;
   on(
     event: "message",
@@ -54,6 +59,7 @@ type QQBotFactory = (options: QQBotOptions) => QQBotClient;
 export class QQChannelAdapter implements ChannelAdapter {
   readonly #options: QQChannelAdapterOptions;
   readonly #bot: QQBotClient;
+  readonly #gatewaySession: QQGatewaySessionCoordinator;
   #readiness: QQAdapterReadiness = "stopped";
   #run?: Promise<void>;
   #stopping = false;
@@ -65,6 +71,10 @@ export class QQChannelAdapter implements ChannelAdapter {
   ) {
     validateOptions(options);
     this.#options = options;
+    this.#gatewaySession = new QQGatewaySessionCoordinator(
+      options.gatewaySessionRepository,
+      () => this.#setReadiness("degraded")
+    );
     this.#bot = botFactory({
       appId: options.appId,
       appSecret: options.appSecret,
@@ -72,9 +82,17 @@ export class QQChannelAdapter implements ChannelAdapter {
       intents: GROUP_AND_C2C_INTENT,
       logger: CONTENT_FREE_LOGGER,
       tokenPrefetch: "sync",
-      transport: "websocket"
+      transport: "websocket",
+      sessionPersistence: this.#gatewaySession.sdkPort
     });
-    this.#bot.use(contentSanitizer());
+    this.#bot.use(
+      async (_context, next) => {
+        const checkpoint = this.#gatewaySession.claimMessage();
+        await next();
+        await this.#gatewaySession.commitMessage(checkpoint);
+      },
+      contentSanitizer()
+    );
   }
 
   public readiness(): QQAdapterReadiness {
@@ -101,11 +119,21 @@ export class QQChannelAdapter implements ChannelAdapter {
       rejectReady = reject;
     });
 
-    const markReady = (): void => {
-      this.#setReadiness("ready");
-      if (!readySettled) {
-        readySettled = true;
-        resolveReady();
+    const markReady = async (): Promise<void> => {
+      try {
+        await this.#gatewaySession.commitControl();
+        this.#setReadiness("ready");
+        if (!readySettled) {
+          readySettled = true;
+          resolveReady();
+        }
+      } catch {
+        this.#setReadiness("degraded");
+        if (!readySettled) {
+          readySettled = true;
+          rejectReady(new Error("QQ Channel Adapter could not persist its Gateway session"));
+        }
+        this.#bot.stop();
       }
     };
     this.#bot.on("ready", markReady);
@@ -125,6 +153,7 @@ export class QQChannelAdapter implements ChannelAdapter {
       if (normalized) await onEvent(normalized);
     });
 
+    await this.#gatewaySession.restore();
     this.#run = this.#bot.start().then(
       () => {
         if (this.#stopping) return;
@@ -192,6 +221,7 @@ export class QQChannelAdapter implements ChannelAdapter {
     this.#stopping = true;
     this.#bot.stop();
     await this.#run.catch(() => undefined);
+    await this.#gatewaySession.settled();
     this.#run = undefined;
     this.#setReadiness("stopped");
     this.#stopping = false;
@@ -227,7 +257,8 @@ function normalizeQQMessage(
     attention:
       message.kind === "c2c"
         ? "direct"
-        : message.rawEventType === "GROUP_AT_MESSAGE_CREATE"
+        : message.rawEventType === "GROUP_AT_MESSAGE_CREATE" ||
+            message.mentions?.some((mention) => mention.is_you === true)
           ? "mention"
           : "passive",
     replyTarget: {
@@ -278,6 +309,9 @@ function isExpiredReplyAnchor(error: unknown): boolean {
 
 function mapDeliveryError(error: unknown): ChannelDeliveryError {
   if (error instanceof ChannelDeliveryError) return error;
+  if (error instanceof ApiError && error.httpStatus === 429) {
+    return new ChannelDeliveryError("deferred", "QQ rate limited the message delivery");
+  }
   if (
     error instanceof ApiError &&
     error.httpStatus >= 400 &&

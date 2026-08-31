@@ -362,7 +362,9 @@ The initial adapter should enforce these gates:
 4. Normalize only the provider fields named above; retain raw platform payloads
    only where the Message Archive contract explicitly permits them.
 5. Commit inbound identity/dedup state before accepting Codex work.
-6. Do not rely on SDK session persistence as the durable processing cursor.
+6. Do not rely on the SDK's eager session persistence directly. The pinned
+   `1.0.4` adapter must translate it into a post-archive, ordered-prefix durable
+   checkpoint and remove the shim when upstream exposes an awaited cursor.
 7. Persist passive `msg_id` and `msg_seq` in the outbox; use provider response
    `id` and `ext_info.ref_idx` as delivery receipts.
 8. Keep provider throttling and bounded jitter in the adapter; the SDK's fixed

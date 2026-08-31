@@ -15,7 +15,12 @@ import {
 const options: QQChannelAdapterOptions = {
   channelAccountId: "qq-primary",
   appId: "test-app",
-  appSecret: "test-secret"
+  appSecret: "test-secret",
+  gatewaySessionRepository: {
+    load: async () => null,
+    save: async () => undefined,
+    clear: async () => undefined
+  }
 };
 
 class FakeBot implements QQBotClient {
@@ -121,7 +126,7 @@ test("starts with the narrow QQ intent and normalizes C2C messages", async () =>
   assert.equal(fake.factoryOptions?.intents, 1 << 25);
   assert.equal(fake.factoryOptions?.transport, "websocket");
   assert.equal(fake.factoryOptions?.tokenPrefetch, "sync");
-  assert.equal(fake.middlewareCount, 1);
+  assert.equal(fake.middlewareCount, 2);
 
   await fake.emitMessage(1, inbound({ msgIdx: "7" }));
   assert.deepEqual(events[0], {
@@ -166,6 +171,13 @@ test("distinguishes mentioned and passive QQ group messages", async () => {
   assert.equal(events[0]?.message.providerIdentity, "member-openid");
   assert.equal(events[0]?.replyTarget.providerConversationId, "group-openid");
   assert.equal(events[1]?.attention, "passive");
+  await fake.emitMessage(1, {
+    ...group,
+    rawEventType: "GROUP_MESSAGE_CREATE",
+    messageId: "message-3",
+    mentions: [{ is_you: true, bot: true }]
+  });
+  assert.equal(events[2]?.attention, "mention");
   await channel.stop();
 });
 
@@ -204,6 +216,11 @@ test("maps accepted, rejected, and ambiguous QQ delivery outcomes", async () => 
   await assert.rejects(
     channel.sendText(delivery),
     (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "ambiguous"
+  );
+  fake.rawSendFailure = new ApiError("rate limited", 429, "/messages");
+  await assert.rejects(
+    channel.sendText(delivery),
+    (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "deferred"
   );
   await channel.stop();
 });

@@ -59,10 +59,10 @@ stable reason codes instead.
 
 ## Schema and current limits
 
-New databases use Bridge schema version 6. Older databases fail closed with
+New databases use Bridge schema version 7. Older databases fail closed with
 Profile reason `migration_required`; normal service startup does not alter
 them. The host-local [`migrations.md`](migrations.md) workflow explicitly
-supports schema 3, 4, or 5 to 6 with snapshot evidence, full-plan confirmation,
+supports schema 3, 4, 5, or 6 to 7 with snapshot evidence, full-plan confirmation,
 transactional backfill/rebuild, verification, and body-free audit records.
 
 The current Outbox provides durable generic delivery and crash-safe lease

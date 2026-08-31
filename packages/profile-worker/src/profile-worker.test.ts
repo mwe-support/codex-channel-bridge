@@ -116,10 +116,29 @@ class FakeStore implements ProfileStoreRuntime {
   binding?: Awaited<ReturnType<ProfileStoreRuntime["getThreadBinding"]>>;
   correlationSequence = 0;
   pendingApprovalLease?: OutboxDeliveryLease;
+  readonly transportCheckpoints = new Map<
+    string,
+    import("@codex-channel-bridge/profile-store").ChannelTransportCheckpoint
+  >();
 
   async commitMessage(message: NormalizedChannelMessage) {
     this.messages.push(message);
     return { recordId: `record-${this.messages.length}`, inserted: true };
+  }
+
+  async getChannelTransportCheckpoint(channelAccountId: string) {
+    return this.transportCheckpoints.get(channelAccountId);
+  }
+
+  async putChannelTransportCheckpoint(
+    checkpoint: import("@codex-channel-bridge/profile-store").ChannelTransportCheckpoint
+  ) {
+    this.transportCheckpoints.set(checkpoint.channelAccountId, checkpoint);
+    return checkpoint;
+  }
+
+  async clearChannelTransportCheckpoint(channelAccountId: string) {
+    this.transportCheckpoints.delete(channelAccountId);
   }
 
   async getThreadBinding(_key: ThreadBindingKey) {
@@ -621,6 +640,14 @@ test("resolves QQ Secret References, starts the adapter, and archives inbound ev
   assert.deepEqual(resolved.sort(), ["env:QQ_APP_ID", "env:QQ_APP_SECRET"]);
   assert.equal(adapterOptions?.appId, "resolved:env:QQ_APP_ID");
   assert.equal(adapterOptions?.appSecret, "resolved:env:QQ_APP_SECRET");
+  await adapterOptions?.gatewaySessionRepository.save({ sessionId: "gateway-session", lastSeq: 42 });
+  assert.deepEqual(await adapterOptions?.gatewaySessionRepository.load(), {
+    sessionId: "gateway-session",
+    lastSeq: 42
+  });
+  assert.equal(store.transportCheckpoints.get("qq-primary")?.provider, "qq");
+  await adapterOptions?.gatewaySessionRepository.clear();
+  assert.equal(await adapterOptions?.gatewaySessionRepository.load(), null);
   await adapter.receive(inboundEvent());
   assert.deepEqual(store.messages, [
     {

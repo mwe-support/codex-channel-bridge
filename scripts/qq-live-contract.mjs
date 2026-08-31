@@ -26,7 +26,8 @@ async function run() {
   const adapter = new QQChannelAdapter({
     channelAccountId: "qq-live-contract",
     appId,
-    appSecret
+    appSecret,
+    gatewaySessionRepository: memoryGatewaySessionRepository()
   });
 
   let settled = false;
@@ -79,6 +80,19 @@ async function run() {
     clearTimeout(timer);
     await adapter.stop();
   }
+}
+
+function memoryGatewaySessionRepository() {
+  let session = null;
+  return {
+    load: async () => session,
+    save: async (value) => {
+      session = { ...value };
+    },
+    clear: async () => {
+      session = null;
+    }
+  };
 }
 
 async function resolveCredentialPair(secretResolver) {

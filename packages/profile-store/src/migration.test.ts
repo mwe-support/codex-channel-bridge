@@ -13,7 +13,7 @@ import {
 } from "./migration.js";
 import { SqliteProfileStore } from "./profile-store.js";
 
-test("plans and applies the explicit schema 3 to 6 migration", async (context) => {
+test("plans and applies the explicit schema 3 to 7 migration", async (context) => {
   const fixture = await schemaThreeFixture(context);
   const target = {
     profileId: "alpha",
@@ -23,10 +23,10 @@ test("plans and applies the explicit schema 3 to 6 migration", async (context) =
 
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 3);
-  assert.equal(plan.targetVersion, 6);
+  assert.equal(plan.targetVersion, 7);
   assert.equal(plan.migrationRequired, true);
-  assert.equal(plan.operations.length, 14);
-  assert.equal(plan.irreversibleSteps.length, 6);
+  assert.equal(plan.operations.length, 17);
+  assert.equal(plan.irreversibleSteps.length, 7);
   assert.ok(plan.estimatedAdditionalBytes >= 1024 * 1024);
 
   const result = await applyProfileStoreMigration({
@@ -36,7 +36,7 @@ test("plans and applies the explicit schema 3 to 6 migration", async (context) =
     nowMs: 10_000
   });
   assert.equal(result.fromVersion, 3);
-  assert.equal(result.toVersion, 6);
+  assert.equal(result.toVersion, 7);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
   const current = await planProfileStoreMigration(target);
   assert.equal(current.migrationRequired, false);
@@ -52,12 +52,14 @@ test("plans and applies the explicit schema 3 to 6 migration", async (context) =
     "succeeded",
     "started",
     "succeeded",
+    "started",
+    "succeeded",
     "succeeded"
   ]);
   assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
 });
 
-test("plans and applies the explicit schema 4 to 6 migration", async (context) => {
+test("plans and applies the explicit schema 4 to 7 migration", async (context) => {
   const fixture = await schemaFourFixture(context);
   const target = {
     profileId: "alpha",
@@ -66,20 +68,20 @@ test("plans and applies the explicit schema 4 to 6 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 4);
-  assert.equal(plan.targetVersion, 6);
-  assert.equal(plan.operations.length, 10);
-  assert.equal(plan.irreversibleSteps.length, 5);
+  assert.equal(plan.targetVersion, 7);
+  assert.equal(plan.operations.length, 13);
+  assert.equal(plan.irreversibleSteps.length, 6);
   const result = await applyProfileStoreMigration({
     ...target,
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 4);
-  assert.equal(result.toVersion, 6);
+  assert.equal(result.toVersion, 7);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
-test("plans and applies the explicit schema 5 to 6 migration", async (context) => {
+test("plans and applies the explicit schema 5 to 7 migration", async (context) => {
   const fixture = await currentFixture(context);
   const target = {
     profileId: "alpha",
@@ -88,16 +90,41 @@ test("plans and applies the explicit schema 5 to 6 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 5);
-  assert.equal(plan.targetVersion, 6);
-  assert.equal(plan.operations.length, 5);
-  assert.equal(plan.irreversibleSteps.length, 3);
+  assert.equal(plan.targetVersion, 7);
+  assert.equal(plan.operations.length, 8);
+  assert.equal(plan.irreversibleSteps.length, 4);
   const result = await applyProfileStoreMigration({
     ...target,
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 5);
-  assert.equal(result.toVersion, 6);
+  assert.equal(result.toVersion, 7);
+  SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
+});
+
+test("plans and applies the explicit schema 6 to 7 migration", async (context) => {
+  const fixture = await schemaSixFixture(context);
+  const target = {
+    profileId: "alpha",
+    databasePath: fixture.databasePath,
+    auditPath: join(fixture.directory, "audit.jsonl")
+  };
+  const plan = await planProfileStoreMigration(target);
+  assert.equal(plan.currentVersion, 6);
+  assert.equal(plan.targetVersion, 7);
+  assert.deepEqual(plan.operations, [
+    "create durable Channel transport checkpoints",
+    "set SQLite user_version to 7",
+    "verify profile ownership, schema shape, foreign keys, and quick_check"
+  ]);
+  const result = await applyProfileStoreMigration({
+    ...target,
+    expectedPlanDigest: plan.planDigest,
+    expectedSourceDigest: plan.sourceDigest
+  });
+  assert.equal(result.fromVersion, 6);
+  assert.equal(result.toVersion, 7);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
@@ -243,6 +270,22 @@ async function schemaFourFixture(context: test.TestContext): Promise<{
   return fixture;
 }
 
+async function schemaSixFixture(context: test.TestContext): Promise<{
+  directory: string;
+  databasePath: string;
+}> {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-migration-test-"));
+  await chmod(directory, 0o700);
+  context.after(async () => rm(directory, { recursive: true, force: true }));
+  const databasePath = join(directory, "bridge.sqlite");
+  SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
+  const database = new Database(databasePath);
+  database.exec("DROP TABLE channel_transport_checkpoints");
+  database.pragma("user_version = 6");
+  database.close();
+  return { directory, databasePath };
+}
+
 async function currentFixture(context: test.TestContext): Promise<{
   directory: string;
   databasePath: string;
@@ -261,6 +304,7 @@ async function currentFixture(context: test.TestContext): Promise<{
 function downgradeSixToFive(database: Database.Database): void {
   database.pragma("foreign_keys = OFF");
   database.exec(`
+    DROP TABLE channel_transport_checkpoints;
     DROP TABLE audit_records;
     DROP TABLE approval_requests;
 

@@ -124,7 +124,7 @@ profiles:
   assert.deepEqual(result, {
     ...result,
     fromVersion: 3,
-    toVersion: 6
+    toVersion: 7
   });
   SqliteProfileStore.open({
     profileId: "alpha",
@@ -272,6 +272,7 @@ async function schemaThreeState(context: test.TestContext): Promise<string> {
 function downgradeFiveToFour(database: Database.Database): void {
   database.pragma("foreign_keys = OFF");
   database.exec(`
+    DROP TABLE channel_transport_checkpoints;
     DROP TABLE audit_records;
     DROP TABLE approval_requests;
 

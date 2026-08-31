@@ -319,7 +319,8 @@ Outbox State、Retry、Provider Receipt 与 Restart Reconciliation。
 4. 只规范化上文列出的 Provider Field；Raw Platform Payload 只在 Message Archive
    Contract 明确允许时保留。
 5. 接受 Codex Work 前提交 Inbound Identity/Dedup State。
-6. 不依赖 SDK Session Persistence 作为 Durable Processing Cursor。
+6. 不直接依赖 SDK 提前写入的 Session Persistence。固定 `1.0.4` Adapter 必须把它转换为
+   Archive 提交后的有序前缀 Durable Checkpoint；上游提供可等待 Cursor 后移除 Shim。
 7. 在 Outbox 持久化被动 `msg_id` 与 `msg_seq`；使用 Provider Response `id` 和
    `ext_info.ref_idx` 作为 Delivery Receipt。
 8. Provider Throttling 与 Bounded Jitter 保持在 Adapter 内；SDK 固定 Reconnect

@@ -29,6 +29,7 @@ export type {
   ArchiveTextSearch,
   ArchiveTextSearchHit,
   ClaimOutboxOptions,
+  ChannelTransportCheckpoint,
   CodexInputUncertaintyCommitResult,
   CodexTurnResultCommitResult,
   CommitCodexInputUncertaintyInput,

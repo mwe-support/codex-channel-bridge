@@ -45,6 +45,12 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
   switch (operation.name) {
     case "commitMessage":
       return store.commitMessage(operation.value);
+    case "getChannelTransportCheckpoint":
+      return store.getChannelTransportCheckpoint(operation.channelAccountId);
+    case "putChannelTransportCheckpoint":
+      return store.putChannelTransportCheckpoint(operation.value);
+    case "clearChannelTransportCheckpoint":
+      return store.clearChannelTransportCheckpoint(operation.channelAccountId);
     case "recentMessages":
       return store.recentMessages(operation.conversationKey, operation.limit);
     case "searchText":
@@ -94,6 +100,9 @@ function isStorageRequest(value: unknown): value is StorageRequest {
     Number.isSafeInteger(value.id) &&
     isRecord(value.operation) &&
     (value.operation.name === "commitMessage" ||
+      value.operation.name === "getChannelTransportCheckpoint" ||
+      value.operation.name === "putChannelTransportCheckpoint" ||
+      value.operation.name === "clearChannelTransportCheckpoint" ||
       value.operation.name === "recentMessages" ||
       value.operation.name === "searchText" ||
       value.operation.name === "getThreadBinding" ||

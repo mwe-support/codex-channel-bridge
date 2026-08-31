@@ -4,13 +4,16 @@ Supervisor 正常启动绝不修改现有 Profile Database Schema。旧 Database
 Profile 保持 `unavailable: migration_required`；Supervisor 与 Sibling Profile 继续
 保持 Live。
 
-当前 Binary 支持 Bridge Profile Schema 5→6，以及串联的 3→6 与 4→6 Path。未知
+当前 Binary 支持 Bridge Profile Schema 6→7，以及串联的 3、4 或 5→7 Path。未知
 Version 或不一致的 Schema Shape 都会失败关闭。3→4 会增加并回填持久 QQ Passive
 Reply Sequence；4→5 会在 Message Archive 保留 Provider Conversation Target，并泛化
 Logical Result Source Identity，使 Restart Uncertainty 与其 Channel Notification 能在
 同一 Transaction 提交；5→6 增加 Approval Request Source Kind、持久 Approval
-Lifecycle State 与不含正文的 Audit Record。所有 Path 都会验证 Profile Ownership、
-迁移后 Schema、Foreign Key 与 SQLite `quick_check`。
+Lifecycle State 与不含正文的 Audit Record。6→7 为每个 Channel Account 增加一个
+Session-aware Channel Transport Checkpoint，使 QQ Gateway Resume 只在 Message Archive
+提交后推进。Sequence 在同一个 Gateway Session 内单调递增；确认新的 Session 后会替换
+旧 Session，Provider Sequence 可以重新从较小值开始。所有 Path 都会验证 Profile
+Ownership、迁移后 Schema、Foreign Key 与 SQLite `quick_check`。
 
 ## Plan
 

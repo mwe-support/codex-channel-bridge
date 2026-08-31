@@ -72,6 +72,66 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
   reopened.close();
 });
 
+test("persists session-aware Channel transport checkpoints across restarts", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const first = store.putChannelTransportCheckpoint({
+    channelAccountId: "qq-primary",
+    provider: "qq",
+    sessionId: "session-a",
+    sequence: 7,
+    updatedAtMs: 1_000
+  });
+  assert.deepEqual(first, {
+    channelAccountId: "qq-primary",
+    provider: "qq",
+    sessionId: "session-a",
+    sequence: 7,
+    updatedAtMs: 1_000
+  });
+  assert.equal(
+    store.putChannelTransportCheckpoint({ ...first, sequence: 6, updatedAtMs: 2_000 }).sequence,
+    7
+  );
+  assert.deepEqual(
+    store.putChannelTransportCheckpoint({
+      ...first,
+      sessionId: "session-b",
+      sequence: 1,
+      updatedAtMs: 3_000
+    }),
+    {
+      ...first,
+      sessionId: "session-b",
+      sequence: 1,
+      updatedAtMs: 3_000
+    }
+  );
+  assert.throws(
+    () =>
+      store.putChannelTransportCheckpoint({
+        ...first,
+        provider: "whatsapp",
+        sessionId: "session-c",
+        sequence: 1,
+        updatedAtMs: 4_000
+      }),
+    /provider does not match/
+  );
+  store.close();
+
+  const reopened = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  assert.deepEqual(reopened.getChannelTransportCheckpoint("qq-primary"), {
+    ...first,
+    sessionId: "session-b",
+    sequence: 1,
+    updatedAtMs: 3_000
+  });
+  reopened.clearChannelTransportCheckpoint("qq-primary");
+  assert.equal(reopened.getChannelTransportCheckpoint("qq-primary"), undefined);
+  reopened.close();
+});
+
 test("returns the bounded recent window in chronological order", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });

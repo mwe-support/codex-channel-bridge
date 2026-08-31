@@ -35,8 +35,9 @@ Adapter 只接受 C2C 与 QQ 群消息 Event。它先应用官方 SDK Content Sa
 - C2C 消息使用 `user_openid` 同时作为稳定 Participant 与 Provider Conversation
   Identity，并标记为 `direct`。
 - 群消息使用 `group_openid` 表示 Conversation，使用 `member_openid` 表示
-  Participant。`GROUP_AT_MESSAGE_CREATE` 标记为 `mention`，全量群消息 Event
-  标记为 `passive`。
+  Participant。`GROUP_AT_MESSAGE_CREATE` 标记为 `mention`。官方 Payload 中的
+  `mentions[].is_you` 也具有权威性，因为 QQ 可能通过 `GROUP_MESSAGE_CREATE` 投递
+  Desktop Client 的机器人 Mention。其他全量群消息 Event 标记为 `passive`。
 - Durable Provider-event Key 编码 Provider Message ID，并在存在时同时编码
   `msg_idx`。
 - 该 Event 无法声明自身的 Profile、Channel Account、Account Epoch 或 Bridge
@@ -46,17 +47,27 @@ Adapter 只接受 C2C 与 QQ 群消息 Event。它先应用官方 SDK Content Sa
 - Provider Identifier 始终是内部数据。Operational Output 不得记录这些标识或
   Message Body。
 
-SDK 在等待应用提交之前就推进 Gateway Resume Sequence。因此当前基线不配置 SDK
-Session Persistence，也不宣称具备 Crash-safe Gateway Acknowledgement。要关闭这一
-Provider 缺口，需要针对固定版本的 Contract Shim，或上游提供 Post-commit Cursor
-API。
+固定版本 SDK 会在等待应用提交前推进 Gateway Resume Sequence。因此 Adapter 在 SDK
+Middleware 与 Session Persistence Seam 上安装一个窄范围的固定版本 Coordinator。它先
+暂存 SDK 提前产生的 Checkpoint，在 Middleware 发生 Yield 前捕获对应 Sequence，并且
+只有在 Inbound Pipeline 已提交 Message Archive 后，才把 Sequence 写入 Profile SQLite。
+并发消息按有序前缀提交：后一个 Archive Operation 即使先完成，也不能越过前一个尚未
+提交的消息推进 Resume。Schema 7 为每个 Channel Account 保存一个 Session-aware
+Transport Checkpoint。Sequence 在同一个 Gateway Session 内不能后退；确认替换 Session
+后可以从较小的 Provider Sequence 开始。重启时只把这个 Durable Session 与 Sequence
+提供给 SDK Resume；已观察但未提交的 Event 仍可被重放，而已经提交 Archive 的 Event
+会由 Provider-event Key 去重。
+
+该 Compatibility Shim 只适用于 SDK `1.0.4`。官方 SDK 提供可等待的 Post-commit Cursor
+Interface 后必须移除，并且其 Contract Test 必须继续绑定已安装 SDK 的准确行为。
 
 ## 文本投递
 
 `sendText` 把规范化 Private Target 映射到官方 C2C Route，把 Group Target 映射到
 官方 Group Route。Provider 成功响应会生成 `accepted` Receipt。明确且非限流的
-4xx Failure 归类为 `rejected`；Rate Limit、Transport Failure 及其他不确定结果
-归类为 `ambiguous`。
+4xx Failure 归类为 `rejected`；HTTP 429 归类为 `deferred`，由 Durable Outbox 执行
+有界 Backoff 与 Jitter。Transport Failure 及 QQ 可能已经接受请求的其他结果归类为
+`ambiguous`，并使用同一个 Logical Result Identity 重试。
 
 被动投递必须携带 Outbox 分配的 `providerReplySequence`。Adapter 通过 SDK 的显式
 `send`/Raw Path 传递已持久化的 `msg_id + msg_seq`，因此 Ambiguous Outbox Retry 不会
@@ -72,10 +83,13 @@ Delivery。
 
 Unit Contract 覆盖精确 Intent 与 Transport、C2C/Group Provider-fact
 Normalization、Mention 与 Passive Attention、Accepted/Rejected/Ambiguous Delivery
-Mapping、稳定被动序号传递、窄范围过期 Anchor 降级、无关错误拒绝以及启动失败。
+Mapping、Rate-limit Deferral、稳定被动序号传递、窄范围过期 Anchor 降级、无关错误
+拒绝以及启动失败。
 Inbound Pipeline 与 Profile Worker Contract 覆盖 Trusted
 Authority Injection、Archive-before-routing、Deduplication、Provider Mismatch
-Isolation、Adapter 独立失败和 Drain。
+Isolation、Adapter 独立失败、Durable Checkpoint Injection 和 Drain。Checkpoint Contract
+还覆盖 Restart Restore、Invalid-session Clearing、Commit Failure 与并发 Archive
+乱序完成。
 
 可选真实测试会连接已配置 Robot，等待一条 Inbound Event，并发送一条固定的被动
 回复：
