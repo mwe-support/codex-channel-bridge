@@ -79,12 +79,16 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.abandonPendingApprovalRequests(operation.value);
     case "auditRecords":
       return store.auditRecords(operation.limit);
+    case "appendAuditRecord":
+      return store.appendAuditRecord(operation.value);
     case "claimOutbox":
       return store.claimOutbox(operation.options);
     case "settleOutbox":
       return store.settleOutbox(operation.settlement);
     case "outboxCounts":
       return store.outboxCounts();
+    case "outboxCountsForChannelAccount":
+      return store.outboxCountsForChannelAccount(operation.channelAccountId);
     case "journalMode":
       return store.journalMode();
     case "close":
@@ -117,9 +121,11 @@ function isStorageRequest(value: unknown): value is StorageRequest {
       value.operation.name === "settleApprovalRequest" ||
       value.operation.name === "abandonPendingApprovalRequests" ||
       value.operation.name === "auditRecords" ||
+      value.operation.name === "appendAuditRecord" ||
       value.operation.name === "claimOutbox" ||
       value.operation.name === "settleOutbox" ||
       value.operation.name === "outboxCounts" ||
+      value.operation.name === "outboxCountsForChannelAccount" ||
       value.operation.name === "journalMode" ||
       value.operation.name === "close")
   );

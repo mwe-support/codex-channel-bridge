@@ -200,6 +200,30 @@ a remaining platform edge before release. A Windows named-pipe endpoint shape
 exists, but strict ACL provisioning and verification have not yet been tested
 on Windows and are not claimed complete.
 
+### WhatsApp account lifecycle
+
+The same owner-only endpoint carries a closed set of typed WhatsApp lifecycle
+operations. Every operation names one Profile and one exclusively bound Channel
+Account. Pairing requires an interactive TTY; its raw expiring QR value exists
+only on that request connection and is rendered locally. Lifecycle changes fail
+while the account has active or queued work, pending Approval Requests, or
+pending Outbox delivery.
+
+```sh
+bridge whatsapp pair --profile alpha --account wa-primary
+bridge channel disconnect --profile alpha --account wa-primary
+bridge channel connect --profile alpha --account wa-primary
+bridge whatsapp logout --profile alpha --account wa-primary
+bridge whatsapp forget-local \
+  --profile alpha --account wa-primary --confirm wa-primary
+```
+
+`disconnect` is reversible. The pinned provider API cannot confirm remote
+logout independently, so `logout` returns `logout_uncertain`, stops automatic
+reconnect, and preserves local state. `forget-local` is available only after
+that outcome, requires the complete account ID, and does not claim remote
+invalidation. Each attempt writes body-free Profile-local Audit Records.
+
 ## Explicit runtime configuration apply
 
 Runtime configuration changes use two CLI invocations. The first rereads the

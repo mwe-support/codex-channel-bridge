@@ -59,11 +59,16 @@ stable reason codes instead.
 
 ## Schema and current limits
 
-New databases use Bridge schema version 7. Older databases fail closed with
+New databases use Bridge schema version 8. Older databases fail closed with
 Profile reason `migration_required`; normal service startup does not alter
 them. The host-local [`migrations.md`](migrations.md) workflow explicitly
-supports schema 3, 4, 5, or 6 to 7 with snapshot evidence, full-plan confirmation,
+supports schema 3, 4, 5, 6, or 7 to 8 with snapshot evidence, full-plan confirmation,
 transactional backfill/rebuild, verification, and body-free audit records.
+
+Schema version 8 extends each Outbox target with optional WhatsApp quoted-reply
+participant and original-text facts. These fields are included in the Logical
+Result digest and survive restart. The adapter reconstructs only the minimal
+Baileys quote object at send time; QQ ignores these optional fields.
 
 The current Outbox provides durable generic delivery and crash-safe lease
 recovery. For QQ passive delivery, the same transaction allocates and stores a

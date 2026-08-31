@@ -20,6 +20,7 @@ class FakeRuntime implements ProfileRuntime {
   #health: ProfileHealth;
   starts = 0;
   stops = 0;
+  readonly whatsappActions: unknown[] = [];
 
   public constructor(
     readonly profile: ProfileConfiguration,
@@ -40,6 +41,11 @@ class FakeRuntime implements ProfileRuntime {
   async stop(): Promise<ProfileHealth> {
     this.stops += 1;
     return this.#transition({ profileId: this.profile.id, readiness: "stopped", reason: null });
+  }
+
+  async executeWhatsAppAccountAction(_channelAccountId: string, action: unknown) {
+    this.whatsappActions.push(action);
+    return { kind: "connected" as const };
   }
 
   health(): ProfileHealth {
@@ -156,6 +162,21 @@ test("configuration planning has no runtime side effects", () => {
   ]);
 });
 
+test("forwards a WhatsApp lifecycle action only to the selected live Profile", async () => {
+  const factory = new FakeFactory();
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(candidate());
+  assert.deepEqual(
+    await supervisor.executeWhatsAppAccountAction("alpha", "wa-primary", { kind: "connect" }),
+    { kind: "connected" }
+  );
+  assert.deepEqual(factory.created.find((runtime) => runtime.profile.id === "alpha")?.whatsappActions, [
+    { kind: "connect" }
+  ]);
+  assert.deepEqual(factory.created.find((runtime) => runtime.profile.id === "beta")?.whatsappActions, []);
+  await supervisor.stop();
+});
+
 test("removing an already disabled Profile removes only its runtime status", async () => {
   const factory = new FakeFactory();
   const supervisor = new Supervisor(factory);
@@ -259,6 +280,9 @@ test("runs Profile maintenance only behind a stopped migration boundary", async 
         current = { profileId: "alpha", readiness: "stopped", reason: null };
         for (const listener of listeners) listener({ ...current });
         return { ...current };
+      },
+      async executeWhatsAppAccountAction(): Promise<never> {
+        throw new Error("not configured in this test");
       },
       health: () => ({ ...current }),
       subscribe(listener) {

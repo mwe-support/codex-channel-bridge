@@ -60,6 +60,7 @@ export type {
 export type {
   ProfileWorkerConfig,
   ProfileWorkerDependencies,
+  ManagedWhatsAppChannelAccount,
   ProfileStoreRuntime,
   TurnResult
 } from "./profile-worker.js";
@@ -84,6 +85,11 @@ export {
   isSupervisorToWorkerMessage,
   isWorkerToSupervisorMessage
 } from "./worker-ipc.js";
+export type {
+  WhatsAppChannelAccountAction,
+  WhatsAppChannelAccountEvent,
+  WhatsAppChannelAccountResult
+} from "@codex-channel-bridge/whatsapp-adapter";
 export type {
   SupervisorToWorkerMessage,
   WorkerToSupervisorMessage

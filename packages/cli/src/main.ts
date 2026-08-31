@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { stdin, stdout } from "node:process";
+import qrcode from "qrcode-terminal";
 
 import { probeCodexProtocol } from "@codex-channel-bridge/codex-app-server";
 import {
@@ -108,6 +109,57 @@ try {
       snapshotConfirmed: true
     });
     stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+  } else if (area === "channel" && (action === "connect" || action === "disconnect")) {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "account", "endpoint"]);
+    const client = new ControlPlaneClient(options.endpoint);
+    const result = await client.request(`channel/${action}`, {
+      profileId: required(options, "profile"),
+      channelAccountId: required(options, "account")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "whatsapp" && action === "pair") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "account", "timeout-ms", "endpoint"]);
+    if (!stdout.isTTY) throw new Error("WhatsApp pairing requires an interactive terminal");
+    const timeoutMs = options["timeout-ms"] === undefined
+      ? undefined
+      : boundedInteger(options["timeout-ms"], "--timeout-ms", 1_000, 300_000);
+    const client = new ControlPlaneClient(options.endpoint);
+    const result = await client.request(
+      "whatsapp/pair",
+      {
+        profileId: required(options, "profile"),
+        channelAccountId: required(options, "account"),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      },
+      (event) => {
+        if (event.kind !== "pairing_material" || event.material.kind !== "qr") return;
+        stdout.write(`Scan this expiring WhatsApp QR code before ${new Date(event.material.expiresAtMs).toISOString()}:\n`);
+        qrcode.generate(event.material.value, { small: true }, (rendered) => {
+          stdout.write(`${rendered}\n`);
+        });
+      }
+    );
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "whatsapp" && action === "logout") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "account", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request("whatsapp/logout", {
+      profileId: required(options, "profile"),
+      channelAccountId: required(options, "account")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "whatsapp" && action === "forget-local") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "account", "confirm", "endpoint"]);
+    const accountId = required(options, "account");
+    const result = await new ControlPlaneClient(options.endpoint).request("whatsapp/forget-local", {
+      profileId: required(options, "profile"),
+      channelAccountId: accountId,
+      confirmChannelAccountId: required(options, "confirm")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (area === "supervisor" && action === "run") {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config", "endpoint"]);
@@ -209,6 +261,14 @@ function required(options: Record<string, string>, key: string): string {
   return value;
 }
 
+function boundedInteger(value: string, name: string, minimum: number, maximum: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return parsed;
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of stdin) chunks.push(Buffer.from(chunk));
@@ -236,6 +296,11 @@ function usage(): never {
       "  bridge config apply --config /absolute/path/config.yaml [--confirm FULL_REVISION] [--endpoint PATH]",
       "  bridge migrate plan --profile ID [--endpoint PATH]",
       "  bridge migrate apply --profile ID --backup-manifest /absolute/path/manifest.json --confirm FULL_PLAN_DIGEST --snapshot-confirmed yes [--endpoint PATH]",
+      "  bridge channel connect --profile ID --account ID [--endpoint PATH]",
+      "  bridge channel disconnect --profile ID --account ID [--endpoint PATH]",
+      "  bridge whatsapp pair --profile ID --account ID [--timeout-ms 120000] [--endpoint PATH]",
+      "  bridge whatsapp logout --profile ID --account ID [--endpoint PATH]",
+      "  bridge whatsapp forget-local --profile ID --account ID --confirm FULL_ACCOUNT_ID [--endpoint PATH]",
       "  bridge supervisor run --config /absolute/path/config.yaml [--endpoint PATH]",
       "  bridge codex probe [--codex /absolute/path/to/codex]",
       "  printf 'message' | bridge codex turn --profile ID --workspace /absolute/path --codex-home /absolute/path --state-directory /absolute/path [--thread ID] [--codex PATH]"

@@ -486,6 +486,36 @@ test("leases Outbox segments in order and retries ambiguous delivery durably", a
   reopened.close();
 });
 
+test("persists WhatsApp quoted-reply facts through an Outbox restart boundary", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  let store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  store.commitLogicalResult(logicalResult({
+    provider: "whatsapp",
+    channelAccountId: "wa-primary",
+    target: {
+      conversationKey: "whatsapp:wa-primary:group:120363000000000000@g.us",
+      conversationKind: "group",
+      providerConversationId: "120363000000000000@g.us",
+      providerReplyEventId: "message-1",
+      providerReplyParticipantId: "15553334444@s.whatsapp.net",
+      providerReplyText: "original message"
+    }
+  }));
+  store.close();
+
+  store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const [lease] = store.claimOutbox({ nowMs: 1_000, leaseDurationMs: 100 });
+  assert.deepEqual(lease?.target, {
+    conversationKey: "whatsapp:wa-primary:group:120363000000000000@g.us",
+    conversationKind: "group",
+    providerConversationId: "120363000000000000@g.us",
+    providerReplyEventId: "message-1",
+    providerReplyParticipantId: "15553334444@s.whatsapp.net",
+    providerReplyText: "original message"
+  });
+  store.close();
+});
+
 test("allocates QQ passive reply sequences durably across Logical Results", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });

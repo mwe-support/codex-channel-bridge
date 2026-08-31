@@ -31,7 +31,11 @@ group conversation JIDs remain distinct from participant JIDs. Group messages
 are active only when Baileys context identifies a mention of the connected
 account; other group messages are archived as passive observations.
 
-Outbound text uses the existing `ChannelTextDelivery` contract. A response with
+Outbound text uses the existing `ChannelTextDelivery` contract. When an inbound
+text message is the delivery anchor, the Inbound Pipeline carries its provider
+message ID, participant identity, and bounded original text through the
+transactional Outbox. After restart the adapter reconstructs the pinned
+Baileys `quoted` input without persisting a Baileys runtime object. A response with
 no provider message ID and every thrown send error are treated as ambiguous,
 because the Web protocol does not provide the Bridge an idempotent send key or
 a definitive reconciliation lookup. Retry therefore retains the documented
@@ -68,6 +72,36 @@ connection failure preserves the old Active Marker and removes the staged
 Generation. Raw QR and Provider Identity values are sensitive and are never
 logged or written to Audit or Message Archive by this module.
 
+## Host-local lifecycle control
+
+`WhatsAppChannelAccount` is the deep lifecycle boundary above the inner
+adapter. The Profile Worker first proves that the selected account has no
+active or queued input, pending Approval Request, or pending, leased, or
+retry-wait Outbox record. It then records a body-free `started` Audit Record and
+executes one typed action: connect, disconnect, pair, logout, or forget-local.
+
+Pairing uses the staged transaction and replaces only this account's inner
+adapter. Its expiring QR event follows the correlated Worker IPC request and the
+same Unix-socket JSONL connection to the initiating interactive CLI. The CLI
+renders a scannable QR without printing the raw value. Disconnect preserves the
+binding and auth state.
+
+The pinned Baileys `logout()` implementation sends a
+`remove-companion-device` node but exposes no separate remote-confirmation
+receipt. A successful call is therefore recorded as `logout_uncertain`, the
+adapter remains stopped, and ordinary reconnect is blocked by an owner-only
+revocation marker. `forget-local` is allowed only in that uncertain state and
+requires the complete Channel Account ID; it atomically removes only the local
+Baileys account root and explicitly does not prove remote invalidation.
+
+```sh
+bridge whatsapp pair --profile PROFILE --account ACCOUNT
+bridge channel disconnect --profile PROFILE --account ACCOUNT
+bridge channel connect --profile PROFILE --account ACCOUNT
+bridge whatsapp logout --profile PROFILE --account ACCOUNT
+bridge whatsapp forget-local --profile PROFILE --account ACCOUNT --confirm ACCOUNT
+```
+
 ## Reconnect supervision
 
 An unexpected retryable close discards the old Socket and creates a new one for
@@ -88,12 +122,11 @@ later return to `ready` without treating the Worker as failed.
 
 ## Current limits
 
-- The staged pairing transaction is implemented, but is not connected to the
-  authenticated host-local control plane or single-adapter restart yet. No real
-  WhatsApp account is paired by repository acceptance tests.
-- Logout and revoke are not connected to the host-local control plane yet.
-- Text is implemented. Media decryption, bounded content-addressed mirroring,
-  quoted replies, and receipts beyond send acceptance remain future slices.
+- Pairing, single-adapter replacement, disconnect, logout uncertainty,
+  forget-local, and durable text quotes are implemented. No real WhatsApp
+  account is paired by repository acceptance tests.
+- Media decryption and bounded content-addressed mirroring remain in the
+  Archive/media stage. Receipts beyond send acceptance remain future work.
 - The pinned Baileys declaration bundle contains upstream NodeNext declaration
   defects. Only this package enables `skipLibCheck`; its public declarations use
   Bridge-owned structural types so the exception does not propagate to other

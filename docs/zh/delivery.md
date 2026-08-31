@@ -30,7 +30,9 @@ Provider Message ID 和 Delivery Body 只保留在 Profile Database 内。Operat
 
 ## Schema 与当前限制
 
-新数据库使用 Bridge Schema Version 7。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务化 Backfill/Rebuild、验证和不含内容的 Audit Record，显式支持 Schema 3、4、5 或 6→7。
+新数据库使用 Bridge Schema Version 8。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务化 Backfill/Rebuild、验证和不含内容的 Audit Record，显式支持 Schema 3、4、5、6 或 7→8。
+
+Schema Version 8 为每个 Outbox Target 增加可选的 WhatsApp Quoted-reply Participant 与 Original-text Fact。这些 Field 进入 Logical Result Digest 并跨 Restart 保留。Adapter 只在 Send 时重建最小 Baileys Quote Object；QQ 忽略这些 Optional Field。
 
 Approval Prompt 是第三种 Logical Result Source Kind。Approval Request、Prompt Logical Result、Outbox Record 与不含正文的 Requested Audit Record 在同一 Transaction 提交。Presentation Settlement 会在 Outbox Transaction 内更新 Approval Record；Terminal Callback、Timeout 与 App Server Generation Loss 会拒绝尚未发送的 Approval Outbox Work，避免 Native Request 消失后继续展示失效 Token。
 

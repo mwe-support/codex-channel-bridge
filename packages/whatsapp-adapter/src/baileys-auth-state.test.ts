@@ -8,9 +8,14 @@ import type { AuthenticationState } from "baileys";
 
 import {
   activateBaileysAuthGeneration,
+  clearBaileysAuthRevocationState,
   createStagedBaileysAuthState,
+  forgetBaileysAuthState,
+  markBaileysAuthRevocationUncertain,
   openActiveBaileysAuthState,
-  openBaileysAuthState
+  openBaileysAuthState,
+  readActiveBaileysProviderIdentity,
+  readBaileysAuthRevocationState
 } from "./baileys-auth-state.js";
 
 test("creates owner-only Baileys state and persists credentials and Signal keys", async () => {
@@ -116,6 +121,60 @@ test("rejects an unregistered generation without replacing active auth", async (
       /not registered/
     );
     assert.equal((await openActiveBaileysAuthState({ rootDirectoryPath })).generationId, first.generationId);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("persists an uncertain revocation lock without exposing the provider identity", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-revocation-"));
+  const rootDirectoryPath = join(parent, "wa-primary");
+  try {
+    const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
+    const state = generation.state as AuthenticationState;
+    state.creds.registered = true;
+    state.creds.me = { id: "15551112222:7@s.whatsapp.net", name: "test" };
+    await generation.saveCredentials();
+    await activateBaileysAuthGeneration({
+      rootDirectoryPath,
+      generationId: generation.generationId
+    });
+    assert.equal(
+      await readActiveBaileysProviderIdentity({ rootDirectoryPath }),
+      "15551112222@s.whatsapp.net"
+    );
+    assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "clear");
+    await markBaileysAuthRevocationUncertain({ rootDirectoryPath });
+    assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "uncertain");
+    assert.equal(
+      (await lstat(join(rootDirectoryPath, "revocation-state.json"))).mode & 0o777,
+      0o600
+    );
+    await clearBaileysAuthRevocationState({ rootDirectoryPath });
+    assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "clear");
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("forgets only the selected local Baileys account root", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-forget-"));
+  const rootDirectoryPath = join(parent, "wa-primary");
+  const siblingPath = join(parent, "preserve-sibling");
+  try {
+    await mkdir(siblingPath, { mode: 0o700 });
+    const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
+    (generation.state as AuthenticationState).creds.registered = true;
+    await generation.saveCredentials();
+    await activateBaileysAuthGeneration({
+      rootDirectoryPath,
+      generationId: generation.generationId
+    });
+    await forgetBaileysAuthState({ rootDirectoryPath });
+    await assert.rejects(lstat(rootDirectoryPath), (error: unknown) =>
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    );
+    assert.equal((await lstat(siblingPath)).isDirectory(), true);
   } finally {
     await rm(parent, { recursive: true, force: true });
   }

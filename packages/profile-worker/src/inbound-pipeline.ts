@@ -88,6 +88,14 @@ function normalizeInboundEvent(
     providerConversationId: providerEvent.replyTarget.providerConversationId,
     ...(providerEvent.replyTarget.providerReplyEventId
       ? { providerReplyEventId: providerEvent.replyTarget.providerReplyEventId }
+      : {}),
+    ...(context.provider === "whatsapp" && providerEvent.replyTarget.providerReplyEventId
+      ? {
+          providerReplyParticipantId: providerEvent.message.providerIdentity,
+          ...(providerEvent.message.text === null
+            ? {}
+            : { providerReplyText: providerEvent.message.text })
+        }
       : {})
   };
 

@@ -22,7 +22,7 @@ The current runtime slices establish these explicit package boundaries:
    lexical search, Thread Bindings, Codex input correlations, atomic Logical
    Result commits, and durable Outbox state transitions. Its asynchronous
    interface dispatches synchronous SQLite work to a dedicated Worker thread.
-   Its explicit migration edge currently supports schema 3, 4, 5, or 6 to 7.
+   Its explicit migration edge currently supports schema 3, 4, 5, 6, or 7 to 8.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy. It serializes stopped Profile
@@ -249,7 +249,7 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - The Profile Store implements persistence, an off-event-loop storage Worker,
   and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
   MCP Server, Archive Purge, and media persistence are not implemented yet.
-  Explicit migration currently supports only the known schema 3, 4, 5, or 6 to 7 spans;
+  Explicit migration currently supports only the known schema 3, 4, 5, 6, or 7 to 8 spans;
   other version spans remain unsupported and fail closed.
 - The QQ Adapter emits only C2C/group provider facts. The Profile-local Inbound
   Pipeline injects Profile, Channel Account, and Account Epoch authority,
@@ -272,9 +272,9 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   a disclosed duplicate window.
 - The WhatsApp Adapter handles live text, mention/passive distinction, send
   acceptance, an atomic Profile-local Auth Generation Store, staged pairing,
-  and Provider Identity verification. Host-local pairing control,
-  single-adapter restart, logout/revoke, media, and durable quoted-reply
-  semantics are not implemented yet. Retryable disconnects replace the Socket
+  Provider Identity verification, host-local lifecycle control, single-adapter
+  replacement, durable revocation uncertainty, and restart-safe quoted replies.
+  Media is not implemented yet. Retryable disconnects replace the Socket
   through a bounded three-attempt backoff; administrative disconnect reasons
   and exhaustion degrade only that adapter. The Channel-neutral readiness edge
   projects later degradation and recovery into Profile Health. Missing or

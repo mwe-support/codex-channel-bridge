@@ -39,6 +39,46 @@ test("serves one structured request per owner-only Unix socket connection", asyn
   }
 });
 
+test("streams pairing material only on its initiating control connection before the final result", async (context) => {
+  if (process.platform === "win32") {
+    context.skip("Unix socket test");
+    return;
+  }
+  const root = await mkdtemp(join(tmpdir(), "bridge-control-test-"));
+  const endpoint = join(root, "control.sock");
+  const handler: AdministrationHandler = {
+    handle: async (_request, emitEvent) => {
+      await emitEvent?.({
+        kind: "pairing_material",
+        material: { kind: "qr", value: "sensitive-test-qr", expiresAtMs: 123 }
+      });
+      return { kind: "paired", generationId: "generation-1" };
+    }
+  };
+  const server = new ControlPlaneServer({ endpoint, handler });
+  try {
+    await server.start();
+    const events: unknown[] = [];
+    assert.deepEqual(
+      await new ControlPlaneClient(endpoint).request(
+        "whatsapp/pair",
+        { profileId: "alpha", channelAccountId: "wa-primary" },
+        (event) => {
+          events.push(event);
+        }
+      ),
+      { kind: "paired", generationId: "generation-1" }
+    );
+    assert.deepEqual(events, [{
+      kind: "pairing_material",
+      material: { kind: "qr", value: "sensitive-test-qr", expiresAtMs: 123 }
+    }]);
+  } finally {
+    await server.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("fails closed when per-request authorization denies access", async (context) => {
   if (process.platform === "win32") {
     context.skip("Unix socket test");

@@ -1,6 +1,6 @@
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 
-import { ProfileWorker } from "./profile-worker.js";
+import { ProfileUnavailableError, ProfileWorker } from "./profile-worker.js";
 import {
   isSupervisorToWorkerMessage,
   type WorkerToSupervisorMessage
@@ -16,8 +16,10 @@ process.on("message", (message: unknown) => {
     worker = new ProfileWorker(message.config);
     worker.on("health", (health: ProfileHealth) => void send({ type: "health", health }));
     void worker.start().catch(() => fatal());
-  } else {
+  } else if (message.type === "stop") {
     void stopAndExit();
+  } else {
+    void handleWhatsAppAction(message);
   }
 });
 
@@ -40,6 +42,64 @@ async function fatal(): Promise<void> {
   if (worker) await worker.stop().catch(() => undefined);
   process.exitCode = 1;
   if (process.connected) process.disconnect();
+}
+
+async function handleWhatsAppAction(
+  message: Extract<
+    import("./worker-ipc.js").SupervisorToWorkerMessage,
+    { readonly type: "whatsapp_action" }
+  >
+): Promise<void> {
+  const active = worker;
+  if (!active || stopping) {
+    await send({
+      type: "whatsapp_action_error",
+      requestId: message.requestId,
+      error: { code: "profile_unavailable", message: "Profile worker is unavailable" }
+    }).catch(() => undefined);
+    return;
+  }
+  try {
+    const result = await active.executeWhatsAppAccountAction(
+      message.channelAccountId,
+      message.action,
+      async (event) => send({
+        type: "whatsapp_action_event",
+        requestId: message.requestId,
+        event
+      })
+    );
+    await send({ type: "whatsapp_action_result", requestId: message.requestId, result });
+  } catch (error) {
+    await send({
+      type: "whatsapp_action_error",
+      requestId: message.requestId,
+      error: classifyWhatsAppActionError(error)
+    }).catch(() => undefined);
+  }
+}
+
+function classifyWhatsAppActionError(error: unknown): Extract<
+  WorkerToSupervisorMessage,
+  { readonly type: "whatsapp_action_error" }
+>["error"] {
+  if (error instanceof ProfileUnavailableError) {
+    return { code: "profile_unavailable", message: "Profile worker is unavailable" };
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("not configured")) {
+    return { code: "channel_account_not_found", message: "WhatsApp Channel Account is not configured" };
+  }
+  if (message.includes("live work")) {
+    return { code: "channel_account_busy", message: "WhatsApp Channel Account has live work" };
+  }
+  if (message.includes("revocation is uncertain")) {
+    return { code: "auth_revoke_uncertain", message: "WhatsApp authentication revocation is uncertain" };
+  }
+  if (message.includes("confirmation did not match")) {
+    return { code: "confirmation_mismatch", message: "Complete Channel Account ID confirmation did not match" };
+  }
+  return { code: "action_failed", message: "WhatsApp Channel Account action failed" };
 }
 
 async function send(message: WorkerToSupervisorMessage): Promise<void> {

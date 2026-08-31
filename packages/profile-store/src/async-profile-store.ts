@@ -12,6 +12,7 @@ import type {
 import {
   ProfileStoreError,
   type ArchiveCommitResult,
+  type AppendAuditRecordInput,
   type ArchivedChannelMessage,
   type ArchiveTextSearch,
   type ArchiveTextSearchHit,
@@ -59,9 +60,11 @@ type StorageOperation =
   | { readonly name: "settleApprovalRequest"; readonly value: SettleApprovalRequestInput }
   | { readonly name: "abandonPendingApprovalRequests"; readonly value: AbandonApprovalRequestsInput }
   | { readonly name: "auditRecords"; readonly limit?: number }
+  | { readonly name: "appendAuditRecord"; readonly value: AppendAuditRecordInput }
   | { readonly name: "claimOutbox"; readonly options: ClaimOutboxOptions }
   | { readonly name: "settleOutbox"; readonly settlement: OutboxSettlement }
   | { readonly name: "outboxCounts" }
+  | { readonly name: "outboxCountsForChannelAccount"; readonly channelAccountId: string }
   | { readonly name: "journalMode" }
   | { readonly name: "close" };
 
@@ -224,6 +227,10 @@ export class ProfileStore {
     return this.#request({ name: "auditRecords", ...(limit !== undefined ? { limit } : {}) });
   }
 
+  public appendAuditRecord(input: AppendAuditRecordInput): Promise<AuditRecord> {
+    return this.#request({ name: "appendAuditRecord", value: input });
+  }
+
   public claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]> {
     return this.#request({ name: "claimOutbox", options });
   }
@@ -234,6 +241,10 @@ export class ProfileStore {
 
   public outboxCounts(): Promise<OutboxCounts> {
     return this.#request({ name: "outboxCounts" });
+  }
+
+  public outboxCountsForChannelAccount(channelAccountId: string): Promise<OutboxCounts> {
+    return this.#request({ name: "outboxCountsForChannelAccount", channelAccountId });
   }
 
   public journalMode(): Promise<string> {

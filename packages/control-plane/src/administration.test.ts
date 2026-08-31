@@ -16,6 +16,7 @@ import type { ProfileHealth } from "@codex-channel-bridge/core";
 import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 import {
   Supervisor,
+  type WhatsAppChannelAccountEvent,
   type ProfileRuntime,
   type ProfileRuntimeFactory
 } from "@codex-channel-bridge/supervisor";
@@ -26,6 +27,7 @@ import type { AdministrationMethod } from "./protocol.js";
 class ReadyRuntime implements ProfileRuntime {
   readonly #listeners = new Set<(health: ProfileHealth) => void>();
   #health: ProfileHealth;
+  readonly whatsappActions: unknown[] = [];
 
   public constructor(profileId: string) {
     this.#health = { profileId, readiness: "stopped", reason: null };
@@ -37,6 +39,22 @@ class ReadyRuntime implements ProfileRuntime {
 
   async stop(): Promise<ProfileHealth> {
     return this.#set({ ...this.#health, readiness: "stopped", reason: null });
+  }
+
+  async executeWhatsAppAccountAction(
+    _channelAccountId: string,
+    action: unknown,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ) {
+    this.whatsappActions.push(action);
+    if ((action as { kind?: string }).kind === "pair") {
+      await onEvent?.({
+        kind: "pairing_material",
+        material: { kind: "qr", value: "sensitive-test-qr", expiresAtMs: 10_000 }
+      });
+      return { kind: "paired" as const, generationId: "generation-1" };
+    }
+    return { kind: "connected" as const };
   }
 
   health(): ProfileHealth {
@@ -124,7 +142,7 @@ profiles:
   assert.deepEqual(result, {
     ...result,
     fromVersion: 3,
-    toVersion: 7
+    toVersion: 8
   });
   SqliteProfileStore.open({
     profileId: "alpha",
@@ -253,6 +271,36 @@ test("rejects an expired or stale plan without changing runtime state", async ()
   await supervisor.stop();
 });
 
+test("forwards only short-lived WhatsApp pairing material to the initiating administration call", async () => {
+  const runtimes: ReadyRuntime[] = [];
+  const supervisor = new Supervisor({
+    create: (profile) => {
+      const runtime = new ReadyRuntime(profile.id);
+      runtimes.push(runtime);
+      return runtime;
+    }
+  });
+  await supervisor.apply(candidate("/srv/alpha/workspace"));
+  const administration = new SupervisorAdministration(supervisor);
+  const events: WhatsAppChannelAccountEvent[] = [];
+  assert.deepEqual(
+    await administration.handle(
+      request("whatsapp/pair", {
+        profileId: "alpha",
+        channelAccountId: "wa-primary",
+        timeoutMs: 5_000
+      }),
+      async (event) => {
+        events.push(event);
+      }
+    ),
+    { kind: "paired", generationId: "generation-1" }
+  );
+  assert.equal(events[0]?.material.value, "sensitive-test-qr");
+  assert.deepEqual(runtimes[0]?.whatsappActions, [{ kind: "pair", timeoutMs: 5_000 }]);
+  await supervisor.stop();
+});
+
 async function schemaThreeState(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-control-migration-"));
   await chmod(directory, 0o700);
@@ -260,6 +308,8 @@ async function schemaThreeState(context: test.TestContext): Promise<string> {
   const databasePath = join(directory, "bridge.sqlite");
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
   const database = new Database(databasePath);
+  database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_text_body");
+  database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_participant_id");
   downgradeFiveToFour(database);
   database.exec("DROP TABLE delivery_reply_sequences");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_sequence");

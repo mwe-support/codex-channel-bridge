@@ -19,6 +19,7 @@ export type {
 } from "./migration.js";
 export type {
   AbandonApprovalRequestsInput,
+  AppendAuditRecordInput,
   ApprovalOperationKind,
   ApprovalPresentationState,
   ApprovalRequestCommitResult,

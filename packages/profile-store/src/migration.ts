@@ -16,7 +16,7 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 const MIN_ESTIMATED_ADDITIONAL_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
@@ -90,31 +90,45 @@ export async function planProfileStoreMigration(
     currentVersion = Number(database.pragma("user_version", { simple: true }));
     requireProfile(database, target.profileId);
     if (currentVersion === CURRENT_SCHEMA_VERSION) {
-      requireVersionSevenShape(database);
+      requireVersionEightShape(database);
       operations = [];
       irreversibleSteps = [];
+    } else if (currentVersion === 7) {
+      requireVersionSevenShape(database);
+      operations = versionSevenToEightOperations();
+      irreversibleSteps = versionSevenToEightIrreversibleSteps();
     } else if (currentVersion === 6) {
       requireVersionSixShape(database);
-      operations = versionSixToSevenOperations();
-      irreversibleSteps = versionSixToSevenIrreversibleSteps();
+      operations = [...versionSixToSevenOperations(), ...versionSevenToEightOperations()];
+      irreversibleSteps = [
+        ...versionSixToSevenIrreversibleSteps(),
+        ...versionSevenToEightIrreversibleSteps()
+      ];
     } else if (currentVersion === 5) {
       requireVersionFiveShape(database);
-      operations = [...versionFiveToSixOperations(), ...versionSixToSevenOperations()];
+      operations = [
+        ...versionFiveToSixOperations(),
+        ...versionSixToSevenOperations(),
+        ...versionSevenToEightOperations()
+      ];
       irreversibleSteps = [
         ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps()
+        ...versionSixToSevenIrreversibleSteps(),
+        ...versionSevenToEightIrreversibleSteps()
       ];
     } else if (currentVersion === 4) {
       requireVersionFourShape(database);
       operations = [
         ...versionFourToFiveOperations(),
         ...versionFiveToSixOperations(),
-        ...versionSixToSevenOperations()
+        ...versionSixToSevenOperations(),
+        ...versionSevenToEightOperations()
       ];
       irreversibleSteps = [
         ...versionFourToFiveIrreversibleSteps(),
         ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps()
+        ...versionSixToSevenIrreversibleSteps(),
+        ...versionSevenToEightIrreversibleSteps()
       ];
     } else if (currentVersion === 3) {
       requireVersionThreeShape(database);
@@ -125,13 +139,15 @@ export async function planProfileStoreMigration(
         "set SQLite user_version to 4",
         ...versionFourToFiveOperations(),
         ...versionFiveToSixOperations(),
-        ...versionSixToSevenOperations()
+        ...versionSixToSevenOperations(),
+        ...versionSevenToEightOperations()
       ];
       irreversibleSteps = [
         "rebuild delivery_outbox to add provider reply sequencing for schema version 4",
         ...versionFourToFiveIrreversibleSteps(),
         ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps()
+        ...versionSixToSevenIrreversibleSteps(),
+        ...versionSevenToEightIrreversibleSteps()
       ];
     } else {
       throw new ProfileMigrationError(
@@ -235,15 +251,27 @@ export async function applyProfileStoreMigration(
       appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 5, 6, "succeeded");
       activeStep = undefined;
     }
-    requireVersionSixShape(database);
-    activeStep = { fromVersion: 6, toVersion: 7 };
-    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "started");
-    migrateSixToSeven(database);
-    requireVersionSevenShape(database);
+    if (Number(database.pragma("user_version", { simple: true })) === 6) {
+      requireVersionSixShape(database);
+      activeStep = { fromVersion: 6, toVersion: 7 };
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "started");
+      migrateSixToSeven(database);
+      requireVersionSevenShape(database);
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "succeeded");
+      activeStep = undefined;
+    }
+    if (Number(database.pragma("user_version", { simple: true })) === 7) {
+      requireVersionSevenShape(database);
+      activeStep = { fromVersion: 7, toVersion: 8 };
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 7, 8, "started");
+      migrateSevenToEight(database);
+      requireVersionEightShape(database);
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 7, 8, "succeeded");
+      activeStep = undefined;
+    }
+    requireVersionEightShape(database);
     const quickCheck = String(database.pragma("quick_check", { simple: true }));
     if (quickCheck !== "ok") throw new Error("SQLite quick_check failed");
-    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "succeeded");
-    activeStep = undefined;
   } catch {
     if (activeStep) {
       appendMigrationStepAudit(
@@ -557,6 +585,18 @@ function versionSixToSevenIrreversibleSteps(): readonly string[] {
   return ["create durable Channel transport checkpoint state"];
 }
 
+function versionSevenToEightOperations(): readonly string[] {
+  return [
+    "add durable WhatsApp quoted-reply participant and text fields",
+    "set SQLite user_version to 8",
+    "verify profile ownership, schema shape, foreign keys, and quick_check"
+  ];
+}
+
+function versionSevenToEightIrreversibleSteps(): readonly string[] {
+  return ["extend delivery Outbox records with WhatsApp quoted-reply facts"];
+}
+
 function migrateSixToSeven(database: Database.Database): void {
   const migrate = database.transaction(() => {
     database.exec(`
@@ -572,6 +612,17 @@ function migrateSixToSeven(database: Database.Database): void {
       );
     `);
     database.pragma("user_version = 7");
+  });
+  migrate.immediate();
+}
+
+function migrateSevenToEight(database: Database.Database): void {
+  const migrate = database.transaction(() => {
+    database.exec(`
+      ALTER TABLE delivery_outbox ADD COLUMN provider_reply_participant_id TEXT;
+      ALTER TABLE delivery_outbox ADD COLUMN provider_reply_text_body TEXT;
+    `);
+    database.pragma("user_version = 8");
   });
   migrate.immediate();
 }
@@ -847,7 +898,7 @@ function requireVersionSixShape(database: Database.Database): void {
 }
 
 function requireVersionSevenShape(database: Database.Database): void {
-  requireVersionSixCompatibleShape(database, CURRENT_SCHEMA_VERSION);
+  requireVersionSixCompatibleShape(database, 7);
   const checkpointColumns = tableColumns(database, "channel_transport_checkpoints");
   if (
     !checkpointColumns.includes("profile_id") ||
@@ -858,6 +909,24 @@ function requireVersionSevenShape(database: Database.Database): void {
     !checkpointColumns.includes("updated_at_ms")
   ) {
     throw new ProfileMigrationError("schema_mismatch", "Schema version 7 shape is inconsistent");
+  }
+}
+
+function requireVersionEightShape(database: Database.Database): void {
+  requireVersionSixCompatibleShape(database, CURRENT_SCHEMA_VERSION);
+  const checkpointColumns = tableColumns(database, "channel_transport_checkpoints");
+  const outboxColumns = tableColumns(database, "delivery_outbox");
+  if (
+    !checkpointColumns.includes("profile_id") ||
+    !checkpointColumns.includes("channel_account_id") ||
+    !checkpointColumns.includes("provider") ||
+    !checkpointColumns.includes("session_id") ||
+    !checkpointColumns.includes("sequence_number") ||
+    !checkpointColumns.includes("updated_at_ms") ||
+    !outboxColumns.includes("provider_reply_participant_id") ||
+    !outboxColumns.includes("provider_reply_text_body")
+  ) {
+    throw new ProfileMigrationError("schema_mismatch", "Schema version 8 shape is inconsistent");
   }
 }
 

@@ -11,6 +11,7 @@ import {
   type AdministrationMethod,
   type AdministrationResults
 } from "./protocol.js";
+import type { WhatsAppChannelAccountEvent } from "@codex-channel-bridge/supervisor";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -34,14 +35,17 @@ export class ControlPlaneClient {
 
   public async request<TMethod extends AdministrationMethod>(
     method: TMethod,
-    params?: unknown
+    params?: unknown,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
   ): Promise<AdministrationResults[TMethod]> {
     if (process.platform !== "win32") await verifyUnixControlSocket(this.#endpoint);
     const id = randomUUID();
     const socket = createConnection({ path: this.#endpoint });
     socket.setEncoding("utf8");
-    socket.setTimeout(30_000, () => socket.destroy(new Error("Control request timed out")));
+    socket.setTimeout(330_000, () => socket.destroy(new Error("Control request timed out")));
     let input = "";
+    let receivedBytes = 0;
+    let settled = false;
     const response = new Promise<AdministrationResults[TMethod]>((resolve, reject) => {
       socket.on("connect", () => {
         socket.write(
@@ -54,34 +58,48 @@ export class ControlPlaneClient {
         );
       });
       socket.on("data", (chunk: string) => {
+        receivedBytes += Buffer.byteLength(chunk, "utf8");
         input += chunk;
-        if (Buffer.byteLength(input, "utf8") > MAX_RESPONSE_BYTES) {
+        if (receivedBytes > MAX_RESPONSE_BYTES) {
           reject(new Error("Control response exceeded limit"));
           socket.destroy();
           return;
         }
-        const newline = input.indexOf("\n");
-        if (newline === -1) return;
-        let value: unknown;
-        try {
-          value = JSON.parse(input.slice(0, newline));
-        } catch {
-          reject(new Error("Control response was not JSON"));
+        for (;;) {
+          const newline = input.indexOf("\n");
+          if (newline === -1) return;
+          const line = input.slice(0, newline);
+          input = input.slice(newline + 1);
+          let value: unknown;
+          try {
+            value = JSON.parse(line);
+          } catch {
+            reject(new Error("Control response was not JSON"));
+            socket.destroy();
+            return;
+          }
+          if (!isAdministrationResponse(value) || value.id !== id) {
+            reject(new Error("Control response did not match the request"));
+            socket.destroy();
+            return;
+          }
+          if ("event" in value) {
+            Promise.resolve(onEvent?.(value.event)).catch(() => undefined);
+            continue;
+          }
+          settled = true;
+          if ("error" in value) {
+            reject(new AdministrationResponseError(value.error.code, value.error.message, value.error.data));
+          } else {
+            resolve(value.result as AdministrationResults[TMethod]);
+          }
           socket.destroy();
           return;
         }
-        if (!isAdministrationResponse(value) || value.id !== id) {
-          reject(new Error("Control response did not match the request"));
-        } else if ("error" in value) {
-          reject(new AdministrationResponseError(value.error.code, value.error.message, value.error.data));
-        } else {
-          resolve(value.result as AdministrationResults[TMethod]);
-        }
-        socket.destroy();
       });
       socket.once("error", reject);
       socket.once("end", () => {
-        if (input.length === 0) reject(new Error("Control connection closed without a response"));
+        if (!settled) reject(new Error("Control connection closed without a final response"));
       });
     });
     return response;

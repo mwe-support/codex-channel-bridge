@@ -12,7 +12,11 @@ import {
   planProfileStoreMigration,
   type ProfileMigrationPlan
 } from "@codex-channel-bridge/profile-store";
-import type { Supervisor } from "@codex-channel-bridge/supervisor";
+import {
+  ProfileRuntimeActionError,
+  type Supervisor,
+  type WhatsAppChannelAccountEvent
+} from "@codex-channel-bridge/supervisor";
 
 import {
   asRecord,
@@ -23,7 +27,10 @@ import {
 import { readMigrationBackupManifest } from "./migration-backup.js";
 
 export interface AdministrationHandler {
-  handle(request: AdministrationRequest): Promise<unknown>;
+  handle(
+    request: AdministrationRequest,
+    emitEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void>
+  ): Promise<unknown>;
 }
 
 export class AdministrationError extends Error {
@@ -68,13 +75,77 @@ export class SupervisorAdministration implements AdministrationHandler {
     this.#loadCandidate = options.loadCandidate ?? ((path) => loadConfiguration(path));
   }
 
-  public async handle(request: AdministrationRequest): Promise<unknown> {
+  public async handle(
+    request: AdministrationRequest,
+    emitEvent: (event: WhatsAppChannelAccountEvent) => Promise<void> = async () => undefined
+  ): Promise<unknown> {
     this.#expirePlans();
     if (request.method === "status/get") return this.#supervisor.status();
     if (request.method === "config/plan") return this.#plan(request.params);
     if (request.method === "config/apply") return this.#apply(request.params);
     if (request.method === "migrate/plan") return this.#planMigration(request.params);
-    return this.#applyMigration(request.params);
+    if (request.method === "migrate/apply") return this.#applyMigration(request.params);
+    return this.#channelAction(request.method, request.params, emitEvent);
+  }
+
+  async #channelAction(
+    method: Extract<
+      AdministrationRequest["method"],
+      "channel/connect" | "channel/disconnect" | "whatsapp/pair" | "whatsapp/logout" | "whatsapp/forget-local"
+    >,
+    params: unknown,
+    emitEvent: (event: WhatsAppChannelAccountEvent) => Promise<void>
+  ): Promise<unknown> {
+    const record = asRecord(params);
+    if (!record || typeof record.profileId !== "string" || typeof record.channelAccountId !== "string") {
+      throw new AdministrationError("invalid_params", `${method} requires profileId and channelAccountId`);
+    }
+    let action;
+    if (method === "channel/connect") action = { kind: "connect" } as const;
+    else if (method === "channel/disconnect") action = { kind: "disconnect" } as const;
+    else if (method === "whatsapp/logout") action = { kind: "logout" } as const;
+    else if (method === "whatsapp/pair") {
+      if (record.timeoutMs !== undefined && (
+        typeof record.timeoutMs !== "number" ||
+        !Number.isInteger(record.timeoutMs) ||
+        record.timeoutMs < 1_000 ||
+        record.timeoutMs > 300_000
+      )) {
+        throw new AdministrationError("invalid_params", "whatsapp/pair timeoutMs must be 1000..300000");
+      }
+      action = {
+        kind: "pair" as const,
+        ...(record.timeoutMs === undefined ? {} : { timeoutMs: record.timeoutMs })
+      };
+    } else {
+      if (typeof record.confirmChannelAccountId !== "string") {
+        throw new AdministrationError(
+          "invalid_params",
+          "whatsapp/forget-local requires confirmChannelAccountId"
+        );
+      }
+      action = {
+        kind: "forget_local" as const,
+        confirmChannelAccountId: record.confirmChannelAccountId
+      };
+    }
+    try {
+      return await this.#supervisor.executeWhatsAppAccountAction(
+        record.profileId,
+        record.channelAccountId,
+        action,
+        emitEvent
+      );
+    } catch (error) {
+      if (error instanceof ProfileRuntimeActionError) {
+        throw new AdministrationError(error.code, error.message);
+      }
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("not enabled") || message.includes("unavailable")) {
+        throw new AdministrationError("profile_unavailable", "Profile worker is unavailable");
+      }
+      throw error;
+    }
   }
 
   async #plan(params: unknown): Promise<ConfigurationPlanResult> {

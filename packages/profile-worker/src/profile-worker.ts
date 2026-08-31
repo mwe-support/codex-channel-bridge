@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 
 import {
@@ -38,6 +39,7 @@ import {
   ProfileStore,
   ProfileStoreError,
   type AbandonApprovalRequestsInput,
+  type AppendAuditRecordInput,
   type ApprovalRequestCommitResult,
   type ApprovalRequestRecord,
   type ArchiveCommitResult,
@@ -62,11 +64,11 @@ import {
 } from "@codex-channel-bridge/profile-store";
 import { QQChannelAdapter, type QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
 import {
-  WhatsAppChannelAdapter,
-  openActiveBaileysAuthState,
-  type BaileysAuthStateHandle,
-  type OpenBaileysAuthStateOptions,
-  type WhatsAppChannelAdapterOptions
+  WhatsAppChannelAccount,
+  type WhatsAppChannelAccountAction,
+  type WhatsAppChannelAccountEvent,
+  type WhatsAppChannelAccountOptions,
+  type WhatsAppChannelAccountResult
 } from "@codex-channel-bridge/whatsapp-adapter";
 import { AdmissionController } from "./admission-controller.js";
 import { formatApprovalPrompt } from "./channel-approval-transport.js";
@@ -108,10 +110,9 @@ export interface ProfileWorkerDependencies {
   readonly createStore: (options: OpenProfileStoreOptions) => Promise<ProfileStoreRuntime>;
   readonly createSecretResolver: (secretsFile: string) => Promise<ProfileSecretResolver>;
   readonly createQQAdapter: (options: QQChannelAdapterOptions) => ChannelAdapter;
-  readonly openWhatsAppAuthState: (
-    options: OpenBaileysAuthStateOptions
-  ) => Promise<BaileysAuthStateHandle>;
-  readonly createWhatsAppAdapter: (options: WhatsAppChannelAdapterOptions) => ChannelAdapter;
+  readonly createWhatsAppAccount: (
+    options: WhatsAppChannelAccountOptions
+  ) => ManagedWhatsAppChannelAccount;
   readonly sleep?: (delayMs: number) => Promise<void>;
   readonly codexRestartDelaysMs?: readonly number[];
   readonly codexRestartCooldownMs?: number;
@@ -141,14 +142,23 @@ export interface ProfileStoreRuntime {
   abandonPendingApprovalRequests(
     input: AbandonApprovalRequestsInput
   ): Promise<readonly ApprovalRequestRecord[]>;
+  appendAuditRecord(input: AppendAuditRecordInput): Promise<import("@codex-channel-bridge/profile-store").AuditRecord>;
   claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]>;
   settleOutbox(settlement: OutboxSettlement): Promise<OutboxSettlementResult>;
   outboxCounts(): Promise<OutboxCounts>;
+  outboxCountsForChannelAccount(channelAccountId: string): Promise<OutboxCounts>;
   close(): Promise<void>;
 }
 
 export interface ProfileSecretResolver {
   resolve(reference: string): Promise<string>;
+}
+
+export interface ManagedWhatsAppChannelAccount extends ChannelAdapter {
+  execute(
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult>;
 }
 
 const defaultDependencies: ProfileWorkerDependencies = {
@@ -157,10 +167,7 @@ const defaultDependencies: ProfileWorkerDependencies = {
   createStore: (options) => ProfileStore.open(options),
   createSecretResolver: (secretsFile) => SecretResolver.open({ secretsFile }),
   createQQAdapter: (options) => new QQChannelAdapter(options),
-  openWhatsAppAuthState: (options) => openActiveBaileysAuthState({
-    rootDirectoryPath: options.directoryPath
-  }),
-  createWhatsAppAdapter: (options) => new WhatsAppChannelAdapter(options)
+  createWhatsAppAccount: (options) => new WhatsAppChannelAccount(options)
 };
 
 export class ProfileUnavailableError extends Error {
@@ -184,6 +191,7 @@ export class ProfileWorker extends EventEmitter {
   #inboundPipeline?: InboundPipeline;
   readonly #channelIngress: ChannelIngressController;
   readonly #channelAdapters = new Map<string, ChannelAdapter>();
+  readonly #whatsappAccounts = new Map<string, ManagedWhatsAppChannelAccount>();
   readonly #channelAdapterReadiness = new Map<string, ReturnType<NonNullable<ChannelAdapter["readiness"]>>>();
   readonly #channelAdapterUnsubscribe = new Map<string, () => void>();
   readonly #codexRestartController: CodexRestartController;
@@ -490,6 +498,55 @@ export class ProfileWorker extends EventEmitter {
     }
   }
 
+  public async executeWhatsAppAccountAction(
+    channelAccountId: string,
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult> {
+    if (this.#stopping || this.#health.readiness === "stopped") {
+      throw new ProfileUnavailableError(this.health());
+    }
+    const configured = this.#config.channelAccounts?.[channelAccountId];
+    const account = this.#whatsappAccounts.get(channelAccountId);
+    if (!configured?.enabled || configured.provider !== "whatsapp" || !account) {
+      throw new Error("WhatsApp Channel Account is not configured in this Profile");
+    }
+    await this.#requireChannelAccountQuiescent(channelAccountId);
+    const store = this.#store;
+    if (!store) throw new ProfileUnavailableError(this.health());
+    const correlationId = randomUUID();
+    const auditAction = `whatsapp_${action.kind}`;
+    await store.appendAuditRecord({
+      correlationId,
+      action: auditAction,
+      result: "started",
+      targetReference: channelAccountId,
+      atMs: Date.now()
+    });
+    try {
+      const result = await account.execute(action, onEvent);
+      await store.appendAuditRecord({
+        correlationId,
+        action: auditAction,
+        result: result.kind,
+        targetReference: channelAccountId,
+        atMs: Date.now()
+      });
+      this.#channelAdapterReadiness.set(channelAccountId, account.readiness?.() ?? "degraded");
+      this.#refreshChannelAdapterHealth();
+      return result;
+    } catch (error) {
+      await store.appendAuditRecord({
+        correlationId,
+        action: auditAction,
+        result: "failed",
+        targetReference: channelAccountId,
+        atMs: Date.now()
+      });
+      throw error;
+    }
+  }
+
   public async stop(): Promise<ProfileHealth> {
     if (this.#stopPromise) return this.#stopPromise;
     this.#stopPromise = this.#drainAndStop();
@@ -711,14 +768,12 @@ export class ProfileWorker extends EventEmitter {
     resolver: ProfileSecretResolver | undefined
   ): Promise<ChannelAdapter> {
     if (account.provider === "whatsapp") {
-      const auth = await this.#dependencies.openWhatsAppAuthState({
-        directoryPath: join(this.#config.stateDirectory, "channel-auth", account.id)
-      });
-      return this.#dependencies.createWhatsAppAdapter({
+      const managed = this.#dependencies.createWhatsAppAccount({
         channelAccountId: account.id,
-        auth: auth.state,
-        saveCredentials: auth.saveCredentials
+        rootDirectoryPath: join(this.#config.stateDirectory, "channel-auth", account.id)
       });
+      this.#whatsappAccounts.set(account.id, managed);
+      return managed;
     }
     if (!resolver) throw new Error("QQ Secret Resolver is unavailable");
     const [appId, appSecret] = await Promise.all([
@@ -1052,7 +1107,21 @@ export class ProfileWorker extends EventEmitter {
     this.#channelAdapterUnsubscribe.clear();
     this.#channelAdapterReadiness.clear();
     this.#channelAdapters.clear();
+    this.#whatsappAccounts.clear();
     await Promise.allSettled(adapters.map((adapter) => adapter.stop()));
+  }
+
+  async #requireChannelAccountQuiescent(channelAccountId: string): Promise<void> {
+    const store = this.#store;
+    if (!store) throw new ProfileUnavailableError(this.health());
+    const ingress = this.#channelIngress.snapshotForChannelAccount(channelAccountId);
+    const pendingApprovals =
+      this.#serverRequestRouter?.pendingCountForChannelAccount(channelAccountId) ?? 0;
+    const outbox = await store.outboxCountsForChannelAccount(channelAccountId);
+    const pendingOutbox = outbox.pending + outbox.leased + outbox.retryWait;
+    if (ingress.active > 0 || ingress.queued > 0 || pendingApprovals > 0 || pendingOutbox > 0) {
+      throw new Error("Channel Account has live work and cannot change lifecycle state");
+    }
   }
 
   #detachChannelAdapter(channelAccountId: string): void {

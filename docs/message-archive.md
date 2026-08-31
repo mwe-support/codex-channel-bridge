@@ -31,11 +31,11 @@ fails with `profile_mismatch`; data is never silently adopted or moved.
 
 - `better-sqlite3` is pinned to `13.0.3` and requires Node.js 22 or newer.
 - WAL journal mode, foreign keys, `synchronous=FULL`, and FTS5 are required.
-- A new empty database initializes Bridge schema version 7.
+- A new empty database initializes Bridge schema version 8.
 - An unknown or older schema returns `migration_required`; normal startup does
   not migrate it. The affected Profile reports `migration_required` without
   starting Codex. The explicit host-local migration workflow currently supports
-  only the known version 3, 4, 5, or 6 to 7 spans; see [`migrations.md`](migrations.md).
+  only the known version 3, 4, 5, 6, or 7 to 8 spans; see [`migrations.md`](migrations.md).
 - The deduplication identity is
   `(Channel Account Epoch ID, provider event ID)`.
 - Recent reads return at most 500 records and preserve chronological order

@@ -10,3 +10,7 @@ reviewed and attributed here as required by its license.
 Codex and OpenAI are trademarks of OpenAI. QQ is a trademark of Tencent.
 WhatsApp is a trademark of Meta Platforms, Inc. This project is independent and
 is not endorsed by or affiliated with those trademark owners.
+
+This product includes qrcode-terminal 0.12.0, distributed under the Apache
+License, Version 2.0. qrcode-terminal includes QRCode for JavaScript, Copyright
+(c) 2009 Kazuhiko Arase, distributed under the MIT License.

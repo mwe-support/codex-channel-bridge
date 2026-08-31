@@ -11,6 +11,7 @@
     "@codex-channel-bridge/config": "0.1.0-dev",
     "@codex-channel-bridge/control-plane": "0.1.0-dev",
     "@codex-channel-bridge/profile-worker": "0.1.0-dev",
-    "@codex-channel-bridge/supervisor": "0.1.0-dev"
+    "@codex-channel-bridge/supervisor": "0.1.0-dev",
+    "qrcode-terminal": "0.12.0"
   }
 }

@@ -30,8 +30,14 @@ import {
   type OutboxSettlement
 } from "@codex-channel-bridge/profile-store";
 import type { QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
+import type {
+  WhatsAppChannelAccountAction,
+  WhatsAppChannelAccountEvent,
+  WhatsAppChannelAccountResult
+} from "@codex-channel-bridge/whatsapp-adapter";
 import {
   ProfileWorker,
+  type ManagedWhatsAppChannelAccount,
   type ProfileStoreRuntime,
   type ProfileWorkerDependencies
 } from "./profile-worker.js";
@@ -116,6 +122,11 @@ class FakeStore implements ProfileStoreRuntime {
   binding?: Awaited<ReturnType<ProfileStoreRuntime["getThreadBinding"]>>;
   correlationSequence = 0;
   pendingApprovalLease?: OutboxDeliveryLease;
+  readonly accountOutboxCounts = new Map<
+    string,
+    { pending: number; leased: number; retryWait: number; accepted: number; rejected: number }
+  >();
+  readonly auditRecords: import("@codex-channel-bridge/profile-store").AppendAuditRecordInput[] = [];
   readonly transportCheckpoints = new Map<
     string,
     import("@codex-channel-bridge/profile-store").ChannelTransportCheckpoint
@@ -307,6 +318,18 @@ class FakeStore implements ProfileStoreRuntime {
     return { pending: 0, leased: 0, retryWait: 0, accepted: 0, rejected: 0 };
   }
 
+  async outboxCountsForChannelAccount(channelAccountId: string) {
+    return this.accountOutboxCounts.get(channelAccountId) ?? this.outboxCounts();
+  }
+
+  async appendAuditRecord(input: import("@codex-channel-bridge/profile-store").AppendAuditRecordInput) {
+    this.auditRecords.push(input);
+    return {
+      auditRecordId: `audit-${this.auditRecords.length}`,
+      ...input
+    };
+  }
+
   async close(): Promise<void> {
     this.closed = true;
   }
@@ -364,6 +387,28 @@ class FakeAdapter implements ChannelAdapter {
   }
 }
 
+class FakeWhatsAppAccount extends FakeAdapter implements ManagedWhatsAppChannelAccount {
+  readonly actions: WhatsAppChannelAccountAction[] = [];
+
+  async execute(
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult> {
+    this.actions.push(action);
+    if (action.kind === "pair") {
+      await onEvent?.({
+        kind: "pairing_material",
+        material: { kind: "qr", value: "sensitive-test-qr", expiresAtMs: 123 }
+      });
+      return { kind: "paired", generationId: "generation-1" };
+    }
+    if (action.kind === "connect") return { kind: "connected" };
+    if (action.kind === "disconnect") return { kind: "disconnected" };
+    if (action.kind === "logout") return { kind: "logout_uncertain" };
+    return { kind: "local_auth_forgotten" };
+  }
+}
+
 function dependencies(runtime: FakeRuntime, store = new FakeStore()): ProfileWorkerDependencies {
   return {
     probe: async () => testedProbe,
@@ -371,11 +416,7 @@ function dependencies(runtime: FakeRuntime, store = new FakeStore()): ProfileWor
     createStore: async () => store,
     createSecretResolver: async () => ({ resolve: async (reference) => `resolved:${reference}` }),
     createQQAdapter: () => new FakeAdapter(),
-    openWhatsAppAuthState: async () => ({
-      state: {} as never,
-      saveCredentials: async () => undefined
-    }),
-    createWhatsAppAdapter: () => new FakeAdapter()
+    createWhatsAppAccount: () => new FakeWhatsAppAccount()
   };
 }
 
@@ -668,10 +709,10 @@ test("resolves QQ Secret References, starts the adapter, and archives inbound ev
   assert.equal(adapter.stopped, true);
 });
 
-test("opens fixed Profile-local Baileys auth and supervises WhatsApp independently", async () => {
+test("opens a fixed Profile-local WhatsApp account and supervises it independently", async () => {
   const runtime = new FakeRuntime();
   const store = new FakeStore();
-  const adapter = new FakeAdapter();
+  const adapter = new FakeWhatsAppAccount();
   let authDirectory = "";
   let secretResolverCalled = false;
   const worker = new ProfileWorker(
@@ -701,11 +742,10 @@ test("opens fixed Profile-local Baileys auth and supervises WhatsApp independent
         secretResolverCalled = true;
         throw new Error("not needed");
       },
-      openWhatsAppAuthState: async (options) => {
-        authDirectory = options.directoryPath;
-        return { state: {} as never, saveCredentials: async () => undefined };
-      },
-      createWhatsAppAdapter: () => adapter
+      createWhatsAppAccount: (options) => {
+        authDirectory = options.rootDirectoryPath;
+        return adapter;
+      }
     }
   );
   const health = await worker.start();
@@ -740,6 +780,71 @@ test("opens fixed Profile-local Baileys auth and supervises WhatsApp independent
   assert.equal(store.messages[0]?.provider, "whatsapp");
   await worker.stop();
   assert.equal(adapter.stopped, true);
+});
+
+test("executes a WhatsApp lifecycle action only while its Channel Account is quiescent", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const account = new FakeWhatsAppAccount();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      channelAccounts: {
+        "wa-primary": {
+          id: "wa-primary",
+          provider: "whatsapp",
+          enabled: true,
+          epochId: "epoch-1",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "deny", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    { ...dependencies(runtime, store), createWhatsAppAccount: () => account }
+  );
+  await worker.start();
+
+  const events: WhatsAppChannelAccountEvent[] = [];
+  assert.deepEqual(
+    await worker.executeWhatsAppAccountAction(
+      "wa-primary",
+      { kind: "pair" },
+      (event) => {
+        events.push(event);
+      }
+    ),
+    { kind: "paired", generationId: "generation-1" }
+  );
+  assert.equal(events[0]?.kind, "pairing_material");
+  assert.deepEqual(store.auditRecords.map(({ action, result, targetReference }) => ({
+    action,
+    result,
+    targetReference
+  })), [
+    { action: "whatsapp_pair", result: "started", targetReference: "wa-primary" },
+    { action: "whatsapp_pair", result: "paired", targetReference: "wa-primary" }
+  ]);
+
+  store.accountOutboxCounts.set("wa-primary", {
+    pending: 1,
+    leased: 0,
+    retryWait: 0,
+    accepted: 0,
+    rejected: 0
+  });
+  await assert.rejects(
+    worker.executeWhatsAppAccountAction("wa-primary", { kind: "disconnect" }),
+    /live work/
+  );
+  assert.equal(account.actions.length, 1);
+  await worker.stop();
 });
 
 test("routes an allowed QQ message through Codex correlation into the durable Outbox", async () => {

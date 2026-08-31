@@ -86,7 +86,7 @@ export class ControlPlaneServer {
 
   #accept(socket: Socket): void {
     socket.setEncoding("utf8");
-    socket.setTimeout(30_000, () => socket.destroy());
+    socket.setTimeout(330_000, () => socket.destroy());
     let input = "";
     let handled = false;
     socket.on("data", (chunk: string) => {
@@ -133,7 +133,9 @@ export class ControlPlaneServer {
       return;
     }
     try {
-      const result = await this.#handler.handle(value);
+      const result = await this.#handler.handle(value, (event) =>
+        writeEvent(socket, { version: CONTROL_PROTOCOL_VERSION, id: value.id, event })
+      );
       await writeResponse(socket, {
         version: CONTROL_PROTOCOL_VERSION,
         id: value.id,
@@ -152,6 +154,16 @@ export class ControlPlaneServer {
       error: { code, message }
     });
   }
+}
+
+async function writeEvent(
+  socket: Socket,
+  response: Extract<AdministrationResponse, { readonly event: unknown }>
+): Promise<void> {
+  if (socket.destroyed || !socket.writable) throw new Error("Control connection closed");
+  await new Promise<void>((resolve, reject) => {
+    socket.write(`${JSON.stringify(response)}\n`, (error) => error ? reject(error) : resolve());
+  });
 }
 
 function errorResponse(id: string, error: unknown): AdministrationErrorResponse {

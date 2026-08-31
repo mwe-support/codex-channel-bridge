@@ -5,6 +5,11 @@ import type {
   ProfileConfiguration
 } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
+import type {
+  WhatsAppChannelAccountAction,
+  WhatsAppChannelAccountEvent,
+  WhatsAppChannelAccountResult
+} from "@codex-channel-bridge/profile-worker";
 
 import {
   ForkedProfileRuntimeFactory,
@@ -127,6 +132,20 @@ export class Supervisor extends EventEmitter {
     const maintenance = this.#operation.then(() => this.#maintainProfile(profileId, operation));
     this.#operation = maintenance.catch(() => undefined);
     return maintenance;
+  }
+
+  public executeWhatsAppAccountAction(
+    profileId: string,
+    channelAccountId: string,
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    const profile = this.#candidate?.configuration.profiles[profileId];
+    if (!profile?.enabled) throw new Error("Profile is not enabled");
+    const runtime = this.#runtimes.get(profileId);
+    if (!runtime) throw new Error("Profile worker is unavailable");
+    return runtime.executeWhatsAppAccountAction(channelAccountId, action, onEvent);
   }
 
   public stop(): Promise<SupervisorStatus> {

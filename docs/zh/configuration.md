@@ -122,6 +122,21 @@ node packages/cli/dist/main.js status \
 
 当前 Node.js Runtime 不暴露 Unix Peer Credential。因此，本阶段把通过经过验证的 Owner-only Directory 和 Socket 成功访问视为本地 System Administrator Identity，同时仍对每个 Request 执行 Authorization Hook。Native Peer-credential Verification 是发布前尚待完成的平台边缘。Windows Named-pipe Endpoint 的结构已经存在，但严格 ACL 的配置和验证尚未在 Windows 上测试，因此不宣称已经完成。
 
+### WhatsApp Account Lifecycle
+
+同一个 Owner-only Endpoint 承载一组封闭的 Typed WhatsApp Lifecycle Operation。每个 Operation 都明确指定一个 Profile 与其独占绑定的 Channel Account。Pairing 要求 Interactive TTY；Raw Expiring QR Value 只存在于该 Request Connection，并由本地 CLI 渲染。Account 存在 Active/Queued Work、Pending Approval Request 或 Pending Outbox Delivery 时，Lifecycle Change 会失败关闭。
+
+```sh
+bridge whatsapp pair --profile alpha --account wa-primary
+bridge channel disconnect --profile alpha --account wa-primary
+bridge channel connect --profile alpha --account wa-primary
+bridge whatsapp logout --profile alpha --account wa-primary
+bridge whatsapp forget-local \
+  --profile alpha --account wa-primary --confirm wa-primary
+```
+
+`disconnect` 可逆。固定 Provider API 不能独立确认 Remote Logout，因此 `logout` 返回 `logout_uncertain`，停止 Automatic Reconnect，并保留 Local State。只有该结果之后才能执行 `forget-local`；它要求完整 Account ID，且不宣称 Remote Invalidation。每次 Attempt 都写入不含正文的 Profile-local Audit Record。
+
 ## 显式应用运行时配置
 
 运行时配置变更使用两次 CLI 调用。第一次在运行中的 Supervisor 进程内重新读取 Candidate、应用其 Environment，并返回脱敏 Transition Plan，不改变 Runtime State：

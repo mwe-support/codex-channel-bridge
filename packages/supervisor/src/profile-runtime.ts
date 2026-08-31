@@ -1,11 +1,16 @@
 import { fork, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import type { ProfileConfiguration, SupervisorConfiguration } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 import {
   isWorkerToSupervisorMessage,
-  type SupervisorToWorkerMessage
+  type SupervisorToWorkerMessage,
+  type WhatsAppChannelAccountAction,
+  type WhatsAppChannelAccountEvent,
+  type WhatsAppChannelAccountResult,
+  type WorkerToSupervisorMessage
 } from "@codex-channel-bridge/profile-worker";
 
 export interface ProfileRuntime {
@@ -13,6 +18,18 @@ export interface ProfileRuntime {
   stop(): Promise<ProfileHealth>;
   health(): ProfileHealth;
   subscribe(listener: (health: ProfileHealth) => void): () => void;
+  executeWhatsAppAccountAction(
+    channelAccountId: string,
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult>;
+}
+
+export class ProfileRuntimeActionError extends Error {
+  public constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "ProfileRuntimeActionError";
+  }
 }
 
 export interface ProfileRuntimeFactory {
@@ -45,6 +62,12 @@ class ForkedProfileRuntime implements ProfileRuntime {
   #child?: ChildProcess;
   #health: ProfileHealth;
   #expectedExit = false;
+  readonly #pendingActions = new Map<string, {
+    readonly resolve: (result: WhatsAppChannelAccountResult) => void;
+    readonly reject: (error: Error) => void;
+    readonly onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void;
+    readonly timer: NodeJS.Timeout;
+  }>();
 
   public constructor(
     profile: ProfileConfiguration,
@@ -86,11 +109,13 @@ class ForkedProfileRuntime implements ProfileRuntime {
     child.on("message", (message: unknown) => {
       if (!isWorkerToSupervisorMessage(message)) return;
       if (message.type === "health") this.#transition(message.health);
-      else this.#transitionUnavailable("worker_start_failed");
+      else if (message.type === "fatal") this.#transitionUnavailable("worker_start_failed");
+      else this.#handleActionMessage(message);
     });
     child.once("error", () => this.#transitionUnavailable("worker_start_failed"));
     child.once("exit", () => {
       this.#child = undefined;
+      this.#rejectPendingActions(new ProfileRuntimeActionError("profile_unavailable", "Profile worker exited"));
       if (!this.#expectedExit) this.#transitionUnavailable("worker_process_exit");
     });
     await onceSpawned(child);
@@ -160,6 +185,62 @@ class ForkedProfileRuntime implements ProfileRuntime {
     }
     this.#child = undefined;
     return this.#transition({ ...this.#health, readiness: "stopped", reason: null });
+  }
+
+  public async executeWhatsAppAccountAction(
+    channelAccountId: string,
+    action: WhatsAppChannelAccountAction,
+    onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
+  ): Promise<WhatsAppChannelAccountResult> {
+    const child = this.#child;
+    if (!child || this.#expectedExit) {
+      throw new ProfileRuntimeActionError("profile_unavailable", "Profile worker is unavailable");
+    }
+    const requestId = randomUUID();
+    const timeoutMs = action.kind === "pair" ? (action.timeoutMs ?? 120_000) + 10_000 : 30_000;
+    return new Promise<WhatsAppChannelAccountResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pendingActions.delete(requestId);
+        reject(new ProfileRuntimeActionError("action_timeout", "WhatsApp action timed out"));
+      }, timeoutMs);
+      timer.unref();
+      this.#pendingActions.set(requestId, {
+        resolve,
+        reject,
+        ...(onEvent ? { onEvent } : {}),
+        timer
+      });
+      void send(child, { type: "whatsapp_action", requestId, channelAccountId, action }).catch((error) => {
+        const pending = this.#pendingActions.get(requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.#pendingActions.delete(requestId);
+        pending.reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+  }
+
+  #handleActionMessage(
+    message: Exclude<WorkerToSupervisorMessage, { readonly type: "health" | "fatal" }>
+  ): void {
+    const pending = this.#pendingActions.get(message.requestId);
+    if (!pending) return;
+    if (message.type === "whatsapp_action_event") {
+      Promise.resolve(pending.onEvent?.(message.event)).catch(() => undefined);
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.#pendingActions.delete(message.requestId);
+    if (message.type === "whatsapp_action_result") pending.resolve(message.result);
+    else pending.reject(new ProfileRuntimeActionError(message.error.code, message.error.message));
+  }
+
+  #rejectPendingActions(error: Error): void {
+    for (const pending of this.#pendingActions.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.#pendingActions.clear();
   }
 
   #transitionUnavailable(reason: "worker_process_exit" | "worker_start_failed"): void {

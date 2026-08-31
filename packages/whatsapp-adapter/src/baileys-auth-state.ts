@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import {
   BufferJSON,
   initAuthCreds,
+  jidNormalizedUser,
   proto,
   type AuthenticationCreds,
   type AuthenticationState,
@@ -24,6 +25,7 @@ import {
 const MAX_AUTH_FILE_BYTES = 16 * 1024 * 1024;
 const CREDS_FILE = "creds.json";
 const ACTIVE_GENERATION_FILE = "active-generation.json";
+const REVOCATION_STATE_FILE = "revocation-state.json";
 const GENERATIONS_DIRECTORY = "generations";
 const GENERATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -45,6 +47,8 @@ export interface BaileysAuthGenerationHandle extends BaileysAuthStateHandle {
 export interface BaileysAuthGenerationRootOptions {
   readonly rootDirectoryPath: string;
 }
+
+export type BaileysAuthRevocationState = "clear" | "uncertain";
 
 /** Create an unpaired generation without changing the active authentication. */
 export async function createStagedBaileysAuthState(
@@ -90,6 +94,65 @@ export async function activateBaileysAuthGeneration(
     generationId: options.generationId
   });
   return { previousGenerationId };
+}
+
+/** Read the normalized identity proved by the currently active generation. */
+export async function readActiveBaileysProviderIdentity(
+  options: BaileysAuthGenerationRootOptions
+): Promise<string | null> {
+  const handle = await openActiveBaileysAuthState(options);
+  const identity = (handle.state as AuthenticationState).creds.me?.id;
+  return identity ? jidNormalizedUser(identity) : null;
+}
+
+/** A durable uncertain logout blocks ordinary reconnect until administrator action. */
+export async function readBaileysAuthRevocationState(
+  options: BaileysAuthGenerationRootOptions
+): Promise<BaileysAuthRevocationState> {
+  const marker = await readJson<{ readonly state?: unknown }>(
+    join(options.rootDirectoryPath, REVOCATION_STATE_FILE)
+  );
+  if (!marker) return "clear";
+  if (marker.state !== "uncertain") {
+    throw new Error("Baileys authentication revocation state is malformed");
+  }
+  return "uncertain";
+}
+
+export async function markBaileysAuthRevocationUncertain(
+  options: BaileysAuthGenerationRootOptions
+): Promise<void> {
+  await prepareGenerationRoot(options.rootDirectoryPath, false);
+  await writeJsonAtomically(join(options.rootDirectoryPath, REVOCATION_STATE_FILE), {
+    state: "uncertain"
+  });
+}
+
+export async function clearBaileysAuthRevocationState(
+  options: BaileysAuthGenerationRootOptions
+): Promise<void> {
+  await prepareGenerationRoot(options.rootDirectoryPath, false);
+  await removeRegularFile(join(options.rootDirectoryPath, REVOCATION_STATE_FILE));
+}
+
+/**
+ * Remove only this account's local Generation Store after an explicit
+ * administrator decision. Atomic rename makes the active path disappear before
+ * recursive cleanup; it does not claim remote logout.
+ */
+export async function forgetBaileysAuthState(
+  options: BaileysAuthGenerationRootOptions
+): Promise<void> {
+  await prepareGenerationRoot(options.rootDirectoryPath, false);
+  const parent = dirname(options.rootDirectoryPath);
+  const forgottenPath = join(
+    parent,
+    `.${basename(options.rootDirectoryPath)}.forgotten.${randomUUID()}`
+  );
+  await rename(options.rootDirectoryPath, forgottenPath);
+  await syncDirectory(parent);
+  await rm(forgottenPath, { recursive: true, force: false });
+  await syncDirectory(parent);
 }
 
 /** Delete only a non-active staged generation created inside this auth root. */
@@ -294,12 +357,17 @@ async function writeJsonAtomically(path: string, value: unknown): Promise<void> 
     throw error;
   }
   if (process.platform !== "win32") {
-    const directory = await open(dirname(path), constants.O_RDONLY);
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
+    await syncDirectory(dirname(path));
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const directory = await open(path, constants.O_RDONLY);
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
   }
 }
 

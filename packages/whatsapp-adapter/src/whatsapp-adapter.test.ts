@@ -20,16 +20,23 @@ class FakeSocket {
   readonly emitter = new EventEmitter();
   readonly ev = this.emitter as unknown as AdapterSocket["ev"];
   readonly user = { id: "15550000000:1@s.whatsapp.net" };
-  readonly sends: Array<{ jid: string; content: unknown }> = [];
+  readonly sends: Array<{ jid: string; content: unknown; options?: unknown }> = [];
   ended = false;
+  logoutCount = 0;
+  logoutFailure = false;
 
-  async sendMessage(jid: string, content: unknown): Promise<WAMessage> {
-    this.sends.push({ jid, content });
+  async sendMessage(jid: string, content: unknown, options?: unknown): Promise<WAMessage> {
+    this.sends.push({ jid, content, ...(options ? { options } : {}) });
     return { key: { id: `out-${this.sends.length}` } } as WAMessage;
   }
 
   async end(): Promise<void> {
     this.ended = true;
+  }
+
+  async logout(): Promise<void> {
+    this.logoutCount += 1;
+    if (this.logoutFailure) throw new Error("logout failed");
   }
 }
 
@@ -126,6 +133,51 @@ test("maps a successful WhatsApp send to the Channel delivery receipt", async ()
   assert.deepEqual(socket.sends, [
     { jid: "15551112222@s.whatsapp.net", content: { text: "done" } }
   ]);
+  await adapter.stop();
+});
+
+test("reconstructs a durable WhatsApp group quote from channel-neutral reply facts", async () => {
+  const socket = new FakeSocket();
+  const adapter = new WhatsAppChannelAdapter(
+    {
+      channelAccountId: "wa-primary",
+      auth,
+      saveCredentials: async () => undefined
+    },
+    () => socket as unknown as AdapterSocket
+  );
+  const started = adapter.start(async () => undefined);
+  socket.emitter.emit("connection.update", { connection: "open" });
+  await started;
+  await adapter.sendText({
+    logicalResultId: "result-quote",
+    segmentIndex: 0,
+    target: {
+      conversationKey: "whatsapp:wa-primary:group:120363000000000000@g.us",
+      conversationKind: "group",
+      providerConversationId: "120363000000000000@g.us",
+      providerReplyEventId: "in-1",
+      providerReplyParticipantId: "15553334444@s.whatsapp.net",
+      providerReplyText: "original message"
+    },
+    text: "reply"
+  });
+  assert.deepEqual(socket.sends[0], {
+    jid: "120363000000000000@g.us",
+    content: { text: "reply" },
+    options: {
+      quoted: {
+        key: {
+          id: "in-1",
+          remoteJid: "120363000000000000@g.us",
+          fromMe: false,
+          participant: "15553334444@s.whatsapp.net"
+        },
+        participant: "15553334444@s.whatsapp.net",
+        message: { conversation: "original message" }
+      }
+    }
+  });
   await adapter.stop();
 });
 
@@ -227,6 +279,32 @@ test("bounds retryable reconnect attempts", async () => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(socketCount, 3);
   assert.equal(adapter.readiness(), "degraded");
+  await adapter.stop();
+});
+
+test("reports a sent logout request as uncertain without reconnecting", async () => {
+  const socket = new FakeSocket();
+  const adapter = new WhatsAppChannelAdapter(
+    {
+      channelAccountId: "wa-primary",
+      auth,
+      saveCredentials: async () => undefined,
+      reconnectDelaysMs: [0]
+    },
+    () => socket as unknown as AdapterSocket
+  );
+  const started = adapter.start(async () => undefined);
+  socket.emitter.emit("connection.update", { connection: "open" });
+  await started;
+  assert.equal(await adapter.requestLogout(), "uncertain");
+  assert.equal(socket.logoutCount, 1);
+  assert.equal(adapter.readiness(), "degraded");
+  socket.emitter.emit("connection.update", {
+    connection: "close",
+    lastDisconnect: { error: { output: { statusCode: 428 } } }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(socket.logoutCount, 1);
   await adapter.stop();
 });
 

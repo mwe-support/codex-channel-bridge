@@ -25,6 +25,7 @@ export type {
   AdministrationMethod,
   AdministrationRequest,
   AdministrationResponse,
+  AdministrationEventResponse,
   AdministrationResults,
   ConfigurationPlanResult,
   MigrationPlanResult

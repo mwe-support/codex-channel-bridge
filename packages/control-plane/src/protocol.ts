@@ -1,7 +1,9 @@
 import type {
   ConfigurationApplyEntry,
   ConfigurationApplyResult,
-  SupervisorStatus
+  SupervisorStatus,
+  WhatsAppChannelAccountEvent,
+  WhatsAppChannelAccountResult
 } from "@codex-channel-bridge/supervisor";
 import type { ProfileMigrationPlan, ProfileMigrationResult } from "@codex-channel-bridge/profile-store";
 
@@ -12,7 +14,12 @@ export type AdministrationMethod =
   | "config/plan"
   | "config/apply"
   | "migrate/plan"
-  | "migrate/apply";
+  | "migrate/apply"
+  | "channel/connect"
+  | "channel/disconnect"
+  | "whatsapp/pair"
+  | "whatsapp/logout"
+  | "whatsapp/forget-local";
 
 export interface AdministrationRequest {
   readonly version: typeof CONTROL_PROTOCOL_VERSION;
@@ -37,9 +44,16 @@ export interface AdministrationErrorResponse {
   };
 }
 
+export interface AdministrationEventResponse {
+  readonly version: typeof CONTROL_PROTOCOL_VERSION;
+  readonly id: string;
+  readonly event: WhatsAppChannelAccountEvent;
+}
+
 export type AdministrationResponse =
   | AdministrationSuccessResponse
-  | AdministrationErrorResponse;
+  | AdministrationErrorResponse
+  | AdministrationEventResponse;
 
 export interface ConfigurationPlanResult {
   readonly planToken: string;
@@ -68,6 +82,11 @@ export interface AdministrationResults {
   readonly "config/apply": ConfigurationApplyResult;
   readonly "migrate/plan": MigrationPlanResult;
   readonly "migrate/apply": ProfileMigrationResult;
+  readonly "channel/connect": WhatsAppChannelAccountResult;
+  readonly "channel/disconnect": WhatsAppChannelAccountResult;
+  readonly "whatsapp/pair": WhatsAppChannelAccountResult;
+  readonly "whatsapp/logout": WhatsAppChannelAccountResult;
+  readonly "whatsapp/forget-local": WhatsAppChannelAccountResult;
 }
 
 export function isAdministrationRequest(value: unknown): value is AdministrationRequest {
@@ -80,7 +99,12 @@ export function isAdministrationRequest(value: unknown): value is Administration
       value.method === "config/plan" ||
       value.method === "config/apply" ||
       value.method === "migrate/plan" ||
-      value.method === "migrate/apply")
+      value.method === "migrate/apply" ||
+      value.method === "channel/connect" ||
+      value.method === "channel/disconnect" ||
+      value.method === "whatsapp/pair" ||
+      value.method === "whatsapp/logout" ||
+      value.method === "whatsapp/forget-local")
   );
 }
 
@@ -89,12 +113,23 @@ export function isAdministrationResponse(value: unknown): value is Administratio
   return (
     value.version === CONTROL_PROTOCOL_VERSION &&
     typeof value.id === "string" &&
-    (("result" in value && !("error" in value)) ||
+    (("result" in value && !("error" in value) && !("event" in value)) ||
+      ("event" in value && !("result" in value) && !("error" in value) && isWhatsAppEvent(value.event)) ||
       ("error" in value &&
+        !("event" in value) &&
         isRecord(value.error) &&
         typeof value.error.code === "string" &&
         typeof value.error.message === "string"))
   );
+}
+
+function isWhatsAppEvent(value: unknown): value is WhatsAppChannelAccountEvent {
+  if (!isRecord(value) || value.kind !== "pairing_material" || !isRecord(value.material)) {
+    return false;
+  }
+  return value.material.kind === "qr" &&
+    typeof value.material.value === "string" &&
+    typeof value.material.expiresAtMs === "number";
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | null {

@@ -24,9 +24,12 @@ Audit Records survive process restart.
 App Server generations now restart behind a Profile-local circuit, resume and
 read nonterminal Codex correlations without replaying them, and participate in
 bounded Profile drain. Recovery-discovered uncertainty is atomically committed
-with a durable Channel notification. Host-local WhatsApp pairing control/media
-behavior and production packaging remain incomplete, so the Bridge is not ready
-for deployment.
+with a durable Channel notification. WhatsApp lifecycle operations now cross
+the owner-only local control plane, stream expiring QR material only to the
+initiating interactive CLI, replace only the selected adapter, retain durable
+revocation uncertainty, and preserve quoted-reply facts in schema version 8.
+WhatsApp media behavior and production packaging remain incomplete, so the
+Bridge is not ready for deployment.
 
 ## First-release direction
 
@@ -106,7 +109,7 @@ runtime state. See [Configuration and Supervisor operation](docs/configuration.m
 for endpoint and platform limits.
 
 An older Profile database is never migrated during startup. Inspect and apply
-the currently supported schema 3, 4, or 5 to 6 migration through the same host-local
+the currently supported schema 3, 4, 5, 6, or 7 to 8 migration through the same host-local
 control plane:
 
 ```sh

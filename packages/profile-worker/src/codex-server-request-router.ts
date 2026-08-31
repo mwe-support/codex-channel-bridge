@@ -153,6 +153,12 @@ export class CodexServerRequestRouter {
     return this.#pendingByRequest.size;
   }
 
+  public pendingCountForChannelAccount(channelAccountId: string): number {
+    return [...this.#pendingByRequest.values()].filter(
+      (pending) => pending.approval.context.channelAccountId === channelAccountId
+    ).length;
+  }
+
   public approvalForRequest(requestId: JsonRpcId): RoutedApprovalRequest | undefined {
     return this.#pendingByRequest.get(requestKey(requestId))?.approval;
   }

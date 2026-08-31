@@ -16,7 +16,7 @@ import type {
 } from "@codex-channel-bridge/core";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -41,6 +41,7 @@ export type ProfileStoreReason =
   | "outbox_lease_conflict"
   | "invalid_approval_request"
   | "approval_request_conflict"
+  | "invalid_audit_record"
   | "storage_failure";
 
 export class ProfileStoreError extends Error {
@@ -172,6 +173,8 @@ export interface OutboxDeliveryLease {
     readonly conversationKind: ChannelConversationKind;
     readonly providerConversationId: string;
     readonly providerReplyEventId?: string;
+    readonly providerReplyParticipantId?: string;
+    readonly providerReplyText?: string;
   };
   readonly providerReplySequence?: number;
   readonly text: string;
@@ -282,6 +285,14 @@ export interface AuditRecord {
   readonly atMs: number;
 }
 
+export interface AppendAuditRecordInput {
+  readonly correlationId: string;
+  readonly action: string;
+  readonly result: string;
+  readonly targetReference: string;
+  readonly atMs: number;
+}
+
 interface ArchiveRow {
   readonly record_id: string;
   readonly profile_id: string;
@@ -327,6 +338,8 @@ interface OutboxClaimRow {
   readonly conversation_kind: ChannelConversationKind;
   readonly provider_conversation_id: string;
   readonly provider_reply_event_id: string | null;
+  readonly provider_reply_participant_id: string | null;
+  readonly provider_reply_text_body: string | null;
   readonly provider_reply_sequence: number | null;
   readonly text_body: string;
   readonly attempt_count: number;
@@ -1028,7 +1041,13 @@ export class SqliteProfileStore {
           conversationKey: archive.conversation_key,
           conversationKind: archive.conversation_kind,
           providerConversationId: archive.provider_conversation_id,
-          providerReplyEventId: archive.provider_event_id
+          providerReplyEventId: archive.provider_event_id,
+          ...(archive.provider === "whatsapp"
+            ? {
+                providerReplyParticipantId: archive.provider_identity,
+                ...(archive.text_body === null ? {} : { providerReplyText: archive.text_body })
+              }
+            : {})
         },
         completedAtMs: input.completedAtMs,
         segments: [{ text: input.text }]
@@ -1247,6 +1266,32 @@ export class SqliteProfileStore {
       .map(toAuditRecord);
   }
 
+  public appendAuditRecord(input: AppendAuditRecordInput): AuditRecord {
+    this.#requireOpen();
+    if (
+      !validExternalId(input.correlationId) ||
+      !validExternalId(input.action) ||
+      !validExternalId(input.result) ||
+      !validExternalId(input.targetReference) ||
+      !validTimestamp(input.atMs)
+    ) {
+      throw new ProfileStoreError("invalid_audit_record", "Audit Record is invalid");
+    }
+    try {
+      this.#appendAudit(
+        input.correlationId,
+        input.action,
+        input.result,
+        input.targetReference,
+        input.atMs
+      );
+      return this.auditRecords(1)[0]!;
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to append Audit Record");
+    }
+  }
+
   #commitDurableResult(input: DurableResultInput): LogicalResultCommitResult {
     const payloadDigest = durableResultDigest(input);
     const existing = this.#database
@@ -1315,6 +1360,8 @@ export class SqliteProfileStore {
            conversation_kind,
            provider_conversation_id,
            provider_reply_event_id,
+           provider_reply_participant_id,
+           provider_reply_text_body,
            provider_reply_sequence,
            text_body,
            status,
@@ -1322,7 +1369,7 @@ export class SqliteProfileStore {
            next_attempt_at_ms,
            created_at_ms,
            updated_at_ms
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
     );
     const replySequences = allocateReplySequences(this.#database, input);
     const outboxRecordIds = input.segments.map((segment, segmentIndex) => {
@@ -1339,6 +1386,8 @@ export class SqliteProfileStore {
         input.target.conversationKind,
         input.target.providerConversationId,
         input.target.providerReplyEventId ?? null,
+        input.target.providerReplyParticipantId ?? null,
+        input.target.providerReplyText ?? null,
         replySequences[segmentIndex],
         segment.text,
         input.completedAtMs,
@@ -1387,6 +1436,8 @@ export class SqliteProfileStore {
                   current.conversation_kind,
                   current.provider_conversation_id,
                   current.provider_reply_event_id,
+                  current.provider_reply_participant_id,
+                  current.provider_reply_text_body,
                   current.provider_reply_sequence,
                   current.text_body,
                   current.attempt_count
@@ -1584,15 +1635,25 @@ export class SqliteProfileStore {
   }
 
   public outboxCounts(): OutboxCounts {
+    return this.#outboxCounts();
+  }
+
+  public outboxCountsForChannelAccount(channelAccountId: string): OutboxCounts {
+    validateExternalId(channelAccountId, "channelAccountId");
+    return this.#outboxCounts(channelAccountId);
+  }
+
+  #outboxCounts(channelAccountId?: string): OutboxCounts {
     this.#requireOpen();
     const rows = this.#database
-      .prepare<{ profileId: string }, OutboxCountRow>(
+      .prepare<{ profileId: string; channelAccountId?: string }, OutboxCountRow>(
         `SELECT status, count(*) AS count
            FROM delivery_outbox
           WHERE profile_id = @profileId
+            ${channelAccountId === undefined ? "" : "AND channel_account_id = @channelAccountId"}
           GROUP BY status`
       )
-      .all({ profileId: this.#profileId });
+      .all({ profileId: this.#profileId, ...(channelAccountId ? { channelAccountId } : {}) });
     const counts = new Map(rows.map((row) => [row.status, row.count] as const));
     return {
       pending: counts.get("pending") ?? 0,
@@ -1966,6 +2027,8 @@ function createSchema(database: Database.Database, profileId: string): void {
         conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
         provider_conversation_id TEXT NOT NULL,
         provider_reply_event_id TEXT,
+        provider_reply_participant_id TEXT,
+        provider_reply_text_body TEXT,
         provider_reply_sequence INTEGER CHECK (
           provider_reply_sequence IS NULL OR provider_reply_sequence > 0
         ),
@@ -2242,7 +2305,8 @@ function validateLogicalResult(input: LogicalResultInput, profileId: string): vo
     validExternalId(input.target.conversationKey) &&
     validExternalId(input.target.providerConversationId) &&
     (input.target.providerReplyEventId === undefined ||
-      validExternalId(input.target.providerReplyEventId));
+      validExternalId(input.target.providerReplyEventId)) &&
+    validReplyQuote(input.provider, input.target);
   if (!valid) {
     throw new ProfileStoreError("invalid_logical_result", "Logical Result is invalid");
   }
@@ -2278,6 +2342,7 @@ function validateApprovalRequest(input: CommitApprovalRequestInput, profileId: s
     validExternalId(input.target.providerConversationId) &&
     (input.target.providerReplyEventId === undefined ||
       validExternalId(input.target.providerReplyEventId)) &&
+    validReplyQuote(input.provider, input.target) &&
     typeof input.prompt === "string" &&
     input.prompt.length > 0 &&
     Buffer.byteLength(input.prompt, "utf8") <= MAX_TEXT_BYTES &&
@@ -2287,6 +2352,24 @@ function validateApprovalRequest(input: CommitApprovalRequestInput, profileId: s
   if (!valid) {
     throw new ProfileStoreError("invalid_approval_request", "Approval Request is invalid");
   }
+}
+
+function validReplyQuote(
+  provider: ChannelProvider,
+  target: {
+    readonly providerReplyEventId?: string;
+    readonly providerReplyParticipantId?: string;
+    readonly providerReplyText?: string;
+  }
+): boolean {
+  const hasParticipant = target.providerReplyParticipantId !== undefined;
+  const hasText = target.providerReplyText !== undefined;
+  if (!hasParticipant && !hasText) return true;
+  return provider === "whatsapp" &&
+    validExternalId(target.providerReplyEventId) &&
+    validExternalId(target.providerReplyParticipantId) &&
+    typeof target.providerReplyText === "string" &&
+    Buffer.byteLength(target.providerReplyText, "utf8") <= MAX_TEXT_BYTES;
 }
 
 function validateApprovalSettlement(input: SettleApprovalRequestInput): void {
@@ -2344,6 +2427,8 @@ function durableResultDigest(input: DurableResultInput): string {
     input.target.conversationKind,
     input.target.providerConversationId,
     input.target.providerReplyEventId ?? null,
+    input.target.providerReplyParticipantId ?? null,
+    input.target.providerReplyText ?? null,
     input.segments.map((segment) => segment.text)
   ]);
   return createHash("sha256").update(canonical).digest("hex");
@@ -2478,6 +2563,12 @@ function toOutboxLease(
       providerConversationId: row.provider_conversation_id,
       ...(row.provider_reply_event_id
         ? { providerReplyEventId: row.provider_reply_event_id }
+        : {}),
+      ...(row.provider_reply_participant_id
+        ? { providerReplyParticipantId: row.provider_reply_participant_id }
+        : {}),
+      ...(row.provider_reply_text_body !== null
+        ? { providerReplyText: row.provider_reply_text_body }
         : {})
     },
     ...(row.provider_reply_sequence !== null

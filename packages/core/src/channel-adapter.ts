@@ -11,6 +11,10 @@ export interface ChannelReplyTarget {
   readonly conversationKind: NormalizedChannelMessage["conversationKind"];
   readonly providerConversationId: string;
   readonly providerReplyEventId?: string;
+  /** Provider-stable sender used when a provider requires it for a quoted reply. */
+  readonly providerReplyParticipantId?: string;
+  /** Bounded original Channel text required to reconstruct provider quote context. */
+  readonly providerReplyText?: string;
 }
 
 export interface ProviderReplyTarget {

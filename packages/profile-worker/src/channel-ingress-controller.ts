@@ -163,6 +163,19 @@ export class ChannelIngressController {
     return this.#admission.snapshot();
   }
 
+  public snapshotForChannelAccount(
+    channelAccountId: string
+  ): { readonly active: number; readonly queued: number } {
+    return {
+      active: [...this.#active.values()].filter(
+        (work) => work.event.message.channelAccountId === channelAccountId
+      ).length,
+      queued: [...this.#queued.values()].filter(
+        (work) => work.event.message.channelAccountId === channelAccountId
+      ).length
+    };
+  }
+
   public controllerForTurn(
     threadId: string,
     turnId: string

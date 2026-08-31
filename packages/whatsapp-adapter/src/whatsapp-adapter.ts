@@ -62,10 +62,26 @@ export interface AdapterSocket {
     }) => void): void;
   };
   readonly user?: { readonly id?: string | null };
-  sendMessage(jid: string, content: { readonly text: string }): Promise<{
+  sendMessage(
+    jid: string,
+    content: { readonly text: string },
+    options?: { readonly quoted: WhatsAppQuotedMessage }
+  ): Promise<{
     readonly key: { readonly id?: string | null };
   } | undefined>;
+  logout(message?: string): Promise<void>;
   end(error: Error | undefined): Promise<void>;
+}
+
+export interface WhatsAppQuotedMessage {
+  readonly key: {
+    readonly id: string;
+    readonly remoteJid: string;
+    readonly fromMe: false;
+    readonly participant?: string;
+  };
+  readonly participant?: string;
+  readonly message: { readonly conversation: string };
 }
 
 export type BaileysSocketFactory = (config: BaileysSocketConfiguration) => AdapterSocket;
@@ -260,7 +276,8 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
     try {
       const response = await socket.sendMessage(
         delivery.target.providerConversationId,
-        { text: delivery.text }
+        { text: delivery.text },
+        quotedMessage(delivery)
       );
       const providerMessageId = response?.key.id;
       if (!providerMessageId) {
@@ -280,6 +297,32 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
       if (error instanceof ChannelDeliveryError) throw error;
       throw new ChannelDeliveryError("ambiguous", "WhatsApp delivery outcome is ambiguous");
     }
+  }
+
+  /**
+   * Ask Baileys to remove this companion device. The pinned implementation
+   * provides no remote-confirmation receipt, so a successful call is still
+   * deliberately reported as uncertain to the account lifecycle module.
+   */
+  public async requestLogout(): Promise<"uncertain"> {
+    const socket = this.#socket;
+    if (!socket || this.#readiness !== "ready") {
+      throw new Error("WhatsApp Channel Adapter is not ready for logout");
+    }
+    this.#stopping = true;
+    this.#reconnectAbort?.abort();
+    this.#reconnectAbort = undefined;
+    try {
+      await socket.logout("Codex Channel Bridge administrator logout");
+    } catch {
+      this.#stopping = false;
+      throw new Error("WhatsApp logout request could not be sent");
+    }
+    this.#generation += 1;
+    this.#socket = undefined;
+    this.#setReadiness("degraded");
+    this.#stopping = false;
+    return "uncertain";
   }
 
   public async stop(): Promise<void> {
@@ -308,6 +351,25 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
     this.#readiness = readiness;
     for (const listener of this.#readinessListeners) listener(readiness);
   }
+}
+
+function quotedMessage(
+  delivery: ChannelTextDelivery
+): { readonly quoted: WhatsAppQuotedMessage } | undefined {
+  const target = delivery.target;
+  if (!target.providerReplyEventId || target.providerReplyText === undefined) return undefined;
+  const participant = target.providerReplyParticipantId;
+  const quoted = {
+    key: {
+      id: target.providerReplyEventId,
+      remoteJid: target.providerConversationId,
+      fromMe: false as const,
+      ...(target.conversationKind === "group" && participant ? { participant } : {})
+    },
+    ...(participant ? { participant } : {}),
+    message: { conversation: target.providerReplyText }
+  };
+  return { quoted };
 }
 
 function disconnectStatusCode(error: unknown): number | undefined {
