@@ -54,11 +54,27 @@ Expiry returns native `cancel`. A definite or deferred presentation failure
 also cancels immediately. An ambiguous provider send remains pending until the
 initiator responds or the timeout expires because the prompt may have arrived.
 
-## Current limit
+## Durable transport and generation boundary
 
-This phase establishes native correlation, minimal QQ presentation, authorized
-Channel callback, and timeout handling. Approval presentation is not yet in a
-durable outbox, and body-free audit persistence is not implemented. A worker or
-App Server restart cancels process-scoped pending state rather than replaying
-it. These remaining durability and audit contracts must be completed before
-Channel approval is a complete release feature.
+The Profile Store commits the bounded Approval prompt, its Approval Request
+record, one Logical Result, initial Outbox records, and a body-free requested
+Audit Record in one SQLite transaction. Normal delivery leasing, receipt
+validation, ambiguous retry, and provider-specific reply identity therefore
+apply to Approval presentation as well as terminal results.
+
+Accepted, ambiguous, and rejected presentation outcomes update durable state.
+An authorized Channel decision answers the original process-scoped request and
+then terminalizes the durable Approval record with another body-free Audit
+Record. Timeout sends native `cancel`, expires the record, and rejects any
+unsent presentation.
+
+App Server request IDs remain generation-local and are never persisted for
+replay. At a protocol fault, stop, or before a replacement generation becomes
+ready, every still-pending durable Approval is cancelled with reason
+`app_server_generation_lost`, and its unsent Outbox records are rejected. This
+retains evidence without presenting a token that can no longer reach Codex.
+
+Audit rows contain only internal Approval references, action, result, and time.
+They contain no request parameters, prompt text, provider identity, receipt,
+Channel body, or Codex output. Host-local Audit query/export authorization is a
+separate administration slice.

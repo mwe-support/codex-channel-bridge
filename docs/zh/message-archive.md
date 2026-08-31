@@ -19,7 +19,7 @@ Profile Worker 在启动时打开 `stateDirectory/bridge.sqlite`，并在 Drain 
 - `better-sqlite3` 固定为 `13.0.3`，要求 Node.js 22 或更高版本。
 - 必须启用 WAL Journal Mode、Foreign Key、`synchronous=FULL` 和 FTS5。
 - 新的空数据库初始化为 Bridge Schema Version 5。
-- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration，受影响的 Profile 不启动 Codex。显式 Host-local Migration Workflow 当前只支持已知的 Version 3 或 4→5；参见 [`migrations.md`](migrations.md)。
+- 未知或更旧的 Schema 返回 `migration_required`；正常启动不执行 Migration，受影响的 Profile 不启动 Codex。显式 Host-local Migration Workflow 当前只支持已知的 Version 3、4 或 5→6；参见 [`migrations.md`](migrations.md)。
 - Deduplication Identity 是 `(Channel Account Epoch ID, Provider Event ID)`。
 - Recent Read 最多返回 500 条记录，并在所选近期窗口内保持时间正序。
 - FTS5 Search 把输入视为以空白分隔并用 `AND` 连接的 Literal Token；不暴露 Raw FTS Query Syntax，也不是 Semantic Search。

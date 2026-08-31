@@ -18,12 +18,8 @@ export type {
   CodexInputReconciliationResult,
   CodexInputReconciliationStore
 } from "./codex-input-reconciler.js";
-export { ChannelApprovalTransport, formatApprovalPrompt } from "./channel-approval-transport.js";
-export type { ChannelApprovalPresentation } from "./channel-approval-transport.js";
-export type {
-  ApprovalDetailLevel,
-  ChannelApprovalTransportOptions
-} from "./channel-approval-transport.js";
+export { formatApprovalPrompt } from "./channel-approval-transport.js";
+export type { ApprovalDetailLevel } from "./channel-approval-transport.js";
 export type {
   ApprovalControllerContext,
   CodexServerRequestRouterOptions,

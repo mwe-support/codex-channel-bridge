@@ -114,6 +114,48 @@ test("executes Logical Result and Outbox transitions through the storage Worker"
   await store.close();
 });
 
+test("executes durable Approval and Audit transitions through the storage Worker", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = await ProfileStore.open({ profileId: "alpha", databasePath });
+  const committed = await store.commitApprovalRequest({
+    approvalToken: "approval-async-1",
+    operationKind: "file_change",
+    codexThreadId: "thread-1",
+    codexTurnId: "turn-1",
+    provider: "qq",
+    channelAccountId: "qq-primary",
+    channelAccountEpochId: "epoch-1",
+    providerIdentity: "participant-1",
+    target: {
+      conversationKey: "qq:private:conversation-1",
+      conversationKind: "private",
+      providerConversationId: "conversation-1"
+    },
+    prompt: "approval prompt",
+    createdAtMs: 1_000,
+    expiresAtMs: 2_000
+  });
+  assert.equal(committed.approval.state, "pending");
+  const [lease] = await store.claimOutbox({ nowMs: 1_000, leaseDurationMs: 100 });
+  assert.ok(lease);
+  await store.settleOutbox({
+    outboxRecordId: lease.outboxRecordId,
+    leaseToken: lease.leaseToken,
+    outcome: "accepted",
+    providerMessageId: "provider-approval-1",
+    acceptedAtMs: 1_010
+  });
+  const resolved = await store.settleApprovalRequest({
+    approvalToken: "approval-async-1",
+    state: "responded",
+    decision: "decline",
+    settledAtMs: 1_020
+  });
+  assert.equal(resolved.presentationState, "accepted");
+  assert.equal((await store.auditRecords()).length, 3);
+  await store.close();
+});
+
 test("preserves typed store failures across the Worker-thread seam", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = await ProfileStore.open({ profileId: "alpha", databasePath });

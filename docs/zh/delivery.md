@@ -30,7 +30,9 @@ Provider Message ID 和 Delivery Body 只保留在 Profile Database 内。Operat
 
 ## Schema 与当前限制
 
-新数据库使用 Bridge Schema Version 5。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务化 Backfill/Rebuild、验证和不含内容的 Audit Record，显式支持 Schema 3 或 4→5。
+新数据库使用 Bridge Schema Version 6。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务化 Backfill/Rebuild、验证和不含内容的 Audit Record，显式支持 Schema 3、4 或 5→6。
+
+Approval Prompt 是第三种 Logical Result Source Kind。Approval Request、Prompt Logical Result、Outbox Record 与不含正文的 Requested Audit Record 在同一 Transaction 提交。Presentation Settlement 会在 Outbox Transaction 内更新 Approval Record；Terminal Callback、Timeout 与 App Server Generation Loss 会拒绝尚未发送的 Approval Outbox Work，避免 Native Request 消失后继续展示失效 Token。
 
 当前 Outbox 已提供持久通用投递和 Crash-safe Lease Recovery。对于 QQ 被动投递，同一 Transaction 会为每个 `msg_id` 分配并保存正整数 `msg_seq`；后续共享该 Anchor 的 Logical Result 会继续递增。所有 Ambiguous Retry 都复用同一个 Pair，QQ Adapter 使用显式 Raw-send Path，不再允许 SDK Helper 临时生成新序号。
 

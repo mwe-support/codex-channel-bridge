@@ -17,8 +17,10 @@ pass through fail-closed access, bounded admission, durable Thread Binding,
 native Turn start/steer, Logical Result commit, and Outbox delivery.
 The control plane supports status and explicitly confirmed runtime
 configuration changes without TCP or HTTP. Stable Codex command and file-change
-Approval Requests are correlated to the exact initiating Channel participant,
-but their durable provider presentation and callback path remain incomplete.
+Approval Requests are correlated to the exact initiating Channel participant.
+Their bounded prompt is committed through the durable Outbox, provider
+presentation and Channel callback state are persisted, and body-free Approval
+Audit Records survive process restart.
 App Server generations now restart behind a Profile-local circuit, resume and
 read nonterminal Codex correlations without replaying them, and participate in
 bounded Profile drain. Recovery-discovered uncertainty is atomically committed
@@ -104,7 +106,7 @@ runtime state. See [Configuration and Supervisor operation](docs/configuration.m
 for endpoint and platform limits.
 
 An older Profile database is never migrated during startup. Inspect and apply
-the currently supported schema 3 or 4 to 5 migration through the same host-local
+the currently supported schema 3, 4, or 5 to 6 migration through the same host-local
 control plane:
 
 ```sh

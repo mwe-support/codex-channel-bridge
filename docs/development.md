@@ -22,7 +22,7 @@ The current runtime slices establish these explicit package boundaries:
    lexical search, Thread Bindings, Codex input correlations, atomic Logical
    Result commits, and durable Outbox state transitions. Its asynchronous
    interface dispatches synchronous SQLite work to a dedicated Worker thread.
-   Its explicit migration edge currently supports schema 3 or 4 to 5.
+   Its explicit migration edge currently supports schema 3, 4, or 5 to 6.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy. It serializes stopped Profile
@@ -206,6 +206,12 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 
 - App Server stdout is protocol-only. Blank or non-JSON output is a protocol
   fault and rejects all pending requests.
+- The App Server child receives an explicit execution, locale, proxy, and CA
+  environment allowlist plus its Profile-local `CODEX_HOME`. The Bridge does
+  not forward Channel credentials, Bridge configuration overrides,
+  deployment-wide API keys, or an enclosing Codex Desktop session's tool pipe,
+  permission profile, Thread, or Session identifiers. Codex authentication for
+  this release must reside in the isolated Profile Codex home.
 - App Server stderr is consumed separately. The first slice retains only
   bounded content-free byte and chunk counts, never raw stderr text.
 - Experimental APIs are not enabled.
@@ -236,12 +242,14 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   waits for active Turns, process-scoped Approval Requests, and pending Outbox
   delivery. At its deadline it invokes native `turn/interrupt`, closes the
   generation-scoped routers, and stops adapters only after the delivery window.
-  Durable Approval persistence remains incomplete, so only requests known to
-  the current generation participate in the drain count.
+  Approval prompts use the same durable Outbox as terminal results. Request
+  state and body-free Audit Records are Profile-local; process-scoped native
+  request IDs are never replayed, and a generation boundary rejects stale
+  unsent presentation before the replacement generation accepts work.
 - The Profile Store implements persistence, an off-event-loop storage Worker,
   and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
   MCP Server, Archive Purge, and media persistence are not implemented yet.
-  Explicit migration currently supports only the known schema 3 or 4 to 5 spans;
+  Explicit migration currently supports only the known schema 3, 4, or 5 to 6 spans;
   other version spans remain unsupported and fail closed.
 - The QQ Adapter emits only C2C/group provider facts. The Profile-local Inbound
   Pipeline injects Profile, Channel Account, and Account Epoch authority,
@@ -256,7 +264,7 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   `thread/read(includeTurns)` before accepting new work. Recovered input is never
   replayed automatically. An uncertainty found during restart is atomically
   committed with its Channel Logical Result and durable Outbox records. The
-  other Channel commands and durable Approval presentation remain incomplete.
+  other Channel commands remain incomplete.
   Passive QQ reply
   sequences are now allocated with the Outbox transaction and forwarded through
   the explicit raw-send path. The QQ SDK still does not expose a

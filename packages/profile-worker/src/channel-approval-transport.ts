@@ -1,53 +1,6 @@
-import type {
-  ChannelAdapter,
-  ChannelDeliveryReceipt
-} from "@codex-channel-bridge/core";
-
 import type { RoutedApprovalRequest } from "./codex-server-request-router.js";
 
-export interface ChannelApprovalPresentation {
-  readonly approvalToken: string;
-  readonly receipt: ChannelDeliveryReceipt;
-}
-
 export type ApprovalDetailLevel = "minimal" | "summary" | "detailed";
-
-export interface ChannelApprovalTransportOptions {
-  readonly detail?: ApprovalDetailLevel;
-}
-
-/**
- * Minimal content-free projection of a native Codex Approval Request. It never
- * exposes the process-scoped JSON-RPC request ID or copies command/file bodies.
- */
-export class ChannelApprovalTransport {
-  readonly #detail: ApprovalDetailLevel;
-
-  public constructor(options: ChannelApprovalTransportOptions = {}) {
-    this.#detail = options.detail ?? "minimal";
-  }
-
-  public async present(
-    approval: RoutedApprovalRequest,
-    adapter: ChannelAdapter
-  ): Promise<ChannelApprovalPresentation> {
-    const logicalResultId = `approval:${approval.approvalToken}`;
-    const receipt = await adapter.sendText({
-      logicalResultId,
-      segmentIndex: 0,
-      target: approval.context.replyTarget,
-      text: formatApprovalPrompt(approval, this.#detail)
-    });
-    if (
-      receipt.logicalResultId !== logicalResultId ||
-      receipt.segmentIndex !== 0 ||
-      receipt.outcome !== "accepted"
-    ) {
-      throw new Error("Channel Adapter returned an invalid Approval delivery receipt");
-    }
-    return { approvalToken: approval.approvalToken, receipt };
-  }
-}
 
 export function formatApprovalPrompt(
   approval: RoutedApprovalRequest,

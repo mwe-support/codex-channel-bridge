@@ -59,10 +59,10 @@ stable reason codes instead.
 
 ## Schema and current limits
 
-New databases use Bridge schema version 5. Older databases fail closed with
+New databases use Bridge schema version 6. Older databases fail closed with
 Profile reason `migration_required`; normal service startup does not alter
 them. The host-local [`migrations.md`](migrations.md) workflow explicitly
-supports schema 3 or 4 to 5 with snapshot evidence, full-plan confirmation,
+supports schema 3, 4, or 5 to 6 with snapshot evidence, full-plan confirmation,
 transactional backfill/rebuild, verification, and body-free audit records.
 
 The current Outbox provides durable generic delivery and crash-safe lease
@@ -78,6 +78,13 @@ lookup API that proves whether the original send became visible. A fallback
 proactive send also has no documented idempotency identity. The project
 therefore still discloses the ambiguous/duplicate window and does not claim
 strict exactly-once QQ delivery.
+
+Approval prompts are a third Logical Result source kind. The Approval Request,
+prompt Logical Result, Outbox record, and body-free requested Audit Record are
+committed atomically. Presentation settlement updates the Approval record in
+the same Outbox transaction. Terminal callback, timeout, and App Server
+generation loss reject any unsent Approval Outbox work so a stale token is not
+presented after its native request disappears.
 
 ## Verification
 

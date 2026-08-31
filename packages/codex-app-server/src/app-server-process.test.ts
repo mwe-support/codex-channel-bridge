@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { once } from "node:events";
 import test from "node:test";
 
-import { CodexAppServerProcess } from "./app-server-process.js";
+import {
+  CodexAppServerProcess,
+  createCodexChildEnvironment
+} from "./app-server-process.js";
 import { ProtocolFaultError } from "./jsonl-rpc-client.js";
 
 test("emits one protocol fault when the App Server child exits unexpectedly", async (context) => {
@@ -45,6 +48,41 @@ test("does not report an intentional App Server stop as a protocol fault", async
   await runtime.stop();
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(faults, 0);
+});
+
+test("isolates the App Server child from Channel secrets and enclosing Codex sessions", () => {
+  const environment = createCodexChildEnvironment(
+    {
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/service",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+      HTTPS_PROXY: "http://proxy.invalid",
+      SystemRoot: "C:\\Windows",
+      CODEX_HOME: "/wrong",
+      CODEX_APP_TOOLS_PIPE_PATH: "/private/tool-pipe",
+      CODEX_PERMISSION_PROFILE: ":workspace",
+      CODEX_SESSION_ID: "session-id",
+      QQ_APP_SECRET: "channel-secret",
+      OPENAI_API_KEY: "deployment-wide-secret",
+      BRIDGE_CONFIG_OVERRIDES_JSON: "sensitive"
+    },
+    "/profiles/profile-a/codex-home"
+  );
+
+  assert.equal(environment.CODEX_HOME, "/profiles/profile-a/codex-home");
+  assert.equal(environment.PATH, "/usr/bin:/bin");
+  assert.equal(environment.HOME, "/Users/service");
+  assert.equal(environment.LANG, "en_US.UTF-8");
+  assert.equal(environment.LC_ALL, "en_US.UTF-8");
+  assert.equal(environment.HTTPS_PROXY, "http://proxy.invalid");
+  assert.equal(environment.SystemRoot, "C:\\Windows");
+  assert.equal(environment.CODEX_APP_TOOLS_PIPE_PATH, undefined);
+  assert.equal(environment.CODEX_PERMISSION_PROFILE, undefined);
+  assert.equal(environment.CODEX_SESSION_ID, undefined);
+  assert.equal(environment.QQ_APP_SECRET, undefined);
+  assert.equal(environment.OPENAI_API_KEY, undefined);
+  assert.equal(environment.BRIDGE_CONFIG_OVERRIDES_JSON, undefined);
 });
 
 async function fakeAppServerExecutable(

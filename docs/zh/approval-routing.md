@@ -32,6 +32,12 @@ Core Parser 将 `session` 映射为 Native `acceptForSession`。命令先经过 
 
 Response Window 默认五分钟，可按 Profile 配置。超时会返回 Native `cancel`。确定 Rejected 或 Deferred 的 Presentation Failure 也会立即 Cancel。Provider Send 结果 Ambiguous 时，Prompt 可能已经送达，因此 Request 保持 Pending，直到 Initiator 响应或超时。
 
-## 当前限制
+## 持久传输与 Generation Boundary
 
-本阶段建立 Native Correlation、最小 QQ Presentation、Authorized Channel Callback 与 Timeout Handling。Approval Presentation 尚未进入 Durable Outbox，也未实现 Body-free Audit Persistence。Worker 或 App Server Restart 会取消 Process-scoped Pending State，而不是重放。完成这些 Durability 与 Audit Contract 前，不把 Channel Approval 宣称为完整 Release Feature。
+Profile Store 会在一个 SQLite Transaction 中提交有界 Approval Prompt、Approval Request Record、一个 Logical Result、初始 Outbox Record 和不含正文的 Requested Audit Record。Approval Presentation 因而与 Terminal Result 共用 Delivery Lease、Receipt Validation、Ambiguous Retry 和 Provider-specific Reply Identity。
+
+Accepted、Ambiguous 与 Rejected Presentation Outcome 会更新持久状态。通过授权的 Channel Decision 先回应原始 Process-scoped Request，再把持久 Approval Record 终结，并写入另一条不含正文的 Audit Record。Timeout 会发送原生 `cancel`、把 Record 标记为 Expired，并拒绝尚未发送的 Presentation。
+
+App Server Request ID 始终只属于当前 Generation，绝不为了 Replay 而持久化。发生 Protocol Fault、停止或替换 Generation 进入 Ready 之前，所有仍 Pending 的持久 Approval 都会以 `app_server_generation_lost` 取消，并拒绝尚未发送的 Outbox Record。这样保留证据，同时避免发送已经无法到达 Codex 的 Token。
+
+Audit Row 只包含内部 Approval Reference、Action、Result 和时间，不包含 Request Parameter、Prompt Text、Provider Identity、Receipt、Channel Body 或 Codex Output。Host-local Audit Query/Export Authorization 属于后续 Administration Slice。

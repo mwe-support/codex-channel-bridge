@@ -16,7 +16,7 @@ import type {
 } from "@codex-channel-bridge/core";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -39,6 +39,8 @@ export type ProfileStoreReason =
   | "codex_input_conflict"
   | "invalid_outbox_operation"
   | "outbox_lease_conflict"
+  | "invalid_approval_request"
+  | "approval_request_conflict"
   | "storage_failure";
 
 export class ProfileStoreError extends Error {
@@ -208,6 +210,70 @@ export interface OutboxCounts {
   readonly rejected: number;
 }
 
+export type ApprovalOperationKind = "command_execution" | "file_change";
+export type ApprovalRequestState = "pending" | "responded" | "cancelled" | "expired" | "failed";
+export type ApprovalPresentationState = "pending" | "accepted" | "ambiguous" | "rejected";
+
+export interface CommitApprovalRequestInput {
+  readonly approvalToken: string;
+  readonly operationKind: ApprovalOperationKind;
+  readonly codexThreadId: string;
+  readonly codexTurnId: string;
+  readonly provider: ChannelProvider;
+  readonly channelAccountId: string;
+  readonly channelAccountEpochId: string;
+  readonly providerIdentity: string;
+  readonly target: LogicalResultInput["target"];
+  readonly prompt: string;
+  readonly createdAtMs: number;
+  readonly expiresAtMs: number;
+}
+
+export interface ApprovalRequestRecord {
+  readonly approvalToken: string;
+  readonly operationKind: ApprovalOperationKind;
+  readonly codexThreadId: string;
+  readonly codexTurnId: string;
+  readonly channelAccountId: string;
+  readonly channelAccountEpochId: string;
+  readonly conversationKey: string;
+  readonly providerIdentity: string;
+  readonly state: ApprovalRequestState;
+  readonly presentationState: ApprovalPresentationState;
+  readonly decision?: "accept" | "acceptForSession" | "decline" | "cancel";
+  readonly reasonCode?: string;
+  readonly createdAtMs: number;
+  readonly expiresAtMs: number;
+  readonly settledAtMs?: number;
+}
+
+export interface ApprovalRequestCommitResult {
+  readonly approval: ApprovalRequestRecord;
+  readonly logicalResult: LogicalResultCommitResult;
+}
+
+export interface SettleApprovalRequestInput {
+  readonly approvalToken: string;
+  readonly state: Exclude<ApprovalRequestState, "pending">;
+  readonly decision?: "accept" | "acceptForSession" | "decline" | "cancel";
+  readonly reasonCode?: string;
+  readonly settledAtMs: number;
+}
+
+export interface AbandonApprovalRequestsInput {
+  readonly reasonCode: string;
+  readonly settledAtMs: number;
+}
+
+export interface AuditRecord {
+  readonly auditRecordId: string;
+  readonly correlationId: string;
+  readonly action: string;
+  readonly result: string;
+  readonly targetReference: string;
+  readonly atMs: number;
+}
+
 interface ArchiveRow {
   readonly record_id: string;
   readonly profile_id: string;
@@ -233,7 +299,7 @@ interface LogicalResultRow {
 }
 
 type DurableResultInput = Omit<LogicalResultInput, "codexTurnId"> & {
-  readonly sourceKind: "codex_turn" | "codex_input_uncertainty";
+  readonly sourceKind: "codex_turn" | "codex_input_uncertainty" | "approval_request";
   readonly sourceId: string;
   readonly codexTurnId?: string;
 };
@@ -295,6 +361,33 @@ interface CodexInputRow {
   readonly reason_code: string | null;
   readonly accepted_at_ms: number;
   readonly updated_at_ms: number;
+}
+
+interface ApprovalRequestRow {
+  readonly approval_token: string;
+  readonly operation_kind: ApprovalOperationKind;
+  readonly codex_thread_id: string;
+  readonly codex_turn_id: string;
+  readonly channel_account_id: string;
+  readonly channel_account_epoch_id: string;
+  readonly conversation_key: string;
+  readonly provider_identity: string;
+  readonly state: ApprovalRequestState;
+  readonly presentation_state: ApprovalPresentationState;
+  readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+  readonly reason_code: string | null;
+  readonly created_at_ms: number;
+  readonly expires_at_ms: number;
+  readonly settled_at_ms: number | null;
+}
+
+interface AuditRecordRow {
+  readonly audit_record_id: string;
+  readonly correlation_id: string;
+  readonly action: string;
+  readonly result: string;
+  readonly target_reference: string;
+  readonly at_ms: number;
 }
 
 export class SqliteProfileStore {
@@ -862,6 +955,203 @@ export class SqliteProfileStore {
     }
   }
 
+  /** Atomically persists one process-scoped Approval projection and its Channel delivery. */
+  public commitApprovalRequest(input: CommitApprovalRequestInput): ApprovalRequestCommitResult {
+    this.#requireOpen();
+    validateApprovalRequest(input, this.#profileId);
+    const commit = this.#database.transaction((): ApprovalRequestCommitResult => {
+      const existing = this.#approvalByToken(input.approvalToken);
+      if (existing) {
+        if (!sameApprovalRequest(existing, input)) {
+          throw new ProfileStoreError(
+            "approval_request_conflict",
+            "Approval token already belongs to a different request"
+          );
+        }
+        const logical = this.#database
+          .prepare<{ profileId: string; sourceId: string }, LogicalResultRow>(
+            `SELECT logical_result_id, payload_digest
+               FROM logical_results
+              WHERE profile_id = @profileId
+                AND source_kind = 'approval_request'
+                AND source_id = @sourceId`
+          )
+          .get({ profileId: this.#profileId, sourceId: input.approvalToken });
+        if (!logical) throw new Error("Approval Logical Result was not found");
+        return {
+          approval: existing,
+          logicalResult: {
+            logicalResultId: logical.logical_result_id,
+            outboxRecordIds: this.#outboxIds(logical.logical_result_id),
+            inserted: false
+          }
+        };
+      }
+      this.#database
+        .prepare(
+          `INSERT INTO approval_requests (
+             approval_token, profile_id, operation_kind, codex_thread_id, codex_turn_id,
+             channel_account_id, channel_account_epoch_id, conversation_key,
+             provider_identity, state, presentation_state, created_at_ms, expires_at_ms
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)`
+        )
+        .run(
+          input.approvalToken,
+          this.#profileId,
+          input.operationKind,
+          input.codexThreadId,
+          input.codexTurnId,
+          input.channelAccountId,
+          input.channelAccountEpochId,
+          input.target.conversationKey,
+          input.providerIdentity,
+          input.createdAtMs,
+          input.expiresAtMs
+        );
+      const logicalResult = this.#commitDurableResult({
+        profileId: this.#profileId,
+        sourceKind: "approval_request",
+        sourceId: input.approvalToken,
+        codexThreadId: input.codexThreadId,
+        codexTurnId: input.codexTurnId,
+        provider: input.provider,
+        channelAccountId: input.channelAccountId,
+        channelAccountEpochId: input.channelAccountEpochId,
+        target: input.target,
+        completedAtMs: input.createdAtMs,
+        segments: [{ text: input.prompt }]
+      });
+      this.#appendAudit(
+        input.approvalToken,
+        "approval_requested",
+        "succeeded",
+        input.approvalToken,
+        input.createdAtMs
+      );
+      return { approval: this.#approvalByToken(input.approvalToken)!, logicalResult };
+    });
+    try {
+      return commit.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to commit Approval Request");
+    }
+  }
+
+  public settleApprovalRequest(input: SettleApprovalRequestInput): ApprovalRequestRecord {
+    this.#requireOpen();
+    validateApprovalSettlement(input);
+    const settle = this.#database.transaction((): ApprovalRequestRecord => {
+      const current = this.#approvalByToken(input.approvalToken);
+      if (!current) {
+        throw new ProfileStoreError("invalid_approval_request", "Approval Request was not found");
+      }
+      if (current.state !== "pending") {
+        if (
+          current.state === input.state &&
+          current.decision === input.decision &&
+          current.reasonCode === input.reasonCode
+        ) return current;
+        throw new ProfileStoreError(
+          "approval_request_conflict",
+          "Approval Request already has a different terminal outcome"
+        );
+      }
+      this.#database
+        .prepare(
+          `UPDATE approval_requests
+              SET state = @state,
+                  decision = @decision,
+                  reason_code = @reasonCode,
+                  settled_at_ms = @settledAtMs
+            WHERE profile_id = @profileId
+              AND approval_token = @approvalToken`
+        )
+        .run({
+          profileId: this.#profileId,
+          approvalToken: input.approvalToken,
+          state: input.state,
+          decision: input.decision ?? null,
+          reasonCode: input.reasonCode ?? null,
+          settledAtMs: input.settledAtMs
+        });
+      this.#rejectApprovalOutbox(input.approvalToken, input.reasonCode ?? input.state, input.settledAtMs);
+      this.#appendAudit(
+        input.approvalToken,
+        "approval_resolved",
+        input.state,
+        input.approvalToken,
+        input.settledAtMs
+      );
+      return this.#approvalByToken(input.approvalToken)!;
+    });
+    try {
+      return settle.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to settle Approval Request");
+    }
+  }
+
+  public abandonPendingApprovalRequests(
+    input: AbandonApprovalRequestsInput
+  ): readonly ApprovalRequestRecord[] {
+    this.#requireOpen();
+    if (!validExternalId(input.reasonCode) || !validTimestamp(input.settledAtMs)) {
+      throw new ProfileStoreError("invalid_approval_request", "Approval abandonment is invalid");
+    }
+    const abandon = this.#database.transaction(() => {
+      const pending = this.#database
+        .prepare<{ profileId: string }, ApprovalRequestRow>(
+          "SELECT * FROM approval_requests WHERE profile_id = @profileId AND state = 'pending'"
+        )
+        .all({ profileId: this.#profileId });
+      for (const row of pending) {
+        this.#database
+          .prepare(
+            `UPDATE approval_requests
+                SET state = 'cancelled', reason_code = @reasonCode, settled_at_ms = @settledAtMs
+              WHERE approval_token = @approvalToken`
+          )
+          .run({
+            approvalToken: row.approval_token,
+            reasonCode: input.reasonCode,
+            settledAtMs: input.settledAtMs
+          });
+        this.#rejectApprovalOutbox(row.approval_token, input.reasonCode, input.settledAtMs);
+        this.#appendAudit(
+          row.approval_token,
+          "approval_resolved",
+          "cancelled",
+          row.approval_token,
+          input.settledAtMs
+        );
+      }
+      return pending.map((row) => this.#approvalByToken(row.approval_token)!);
+    });
+    try {
+      return abandon.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to abandon Approval Requests");
+    }
+  }
+
+  public auditRecords(limit = DEFAULT_LIMIT): readonly AuditRecord[] {
+    this.#requireOpen();
+    const boundedLimit = validateLimit(limit);
+    return this.#database
+      .prepare<{ profileId: string; limit: number }, AuditRecordRow>(
+        `SELECT audit_record_id, correlation_id, action, result, target_reference, at_ms
+           FROM audit_records
+          WHERE profile_id = @profileId
+          ORDER BY row_id DESC
+          LIMIT @limit`
+      )
+      .all({ profileId: this.#profileId, limit: boundedLimit })
+      .map(toAuditRecord);
+  }
+
   #commitDurableResult(input: DurableResultInput): LogicalResultCommitResult {
     const payloadDigest = durableResultDigest(input);
     const existing = this.#database
@@ -1103,6 +1393,12 @@ export class SqliteProfileStore {
             providerMessageId: settlement.providerMessageId,
             acceptedAtMs: settlement.acceptedAtMs
           });
+        this.#updateApprovalPresentation(
+          row.logical_result_id,
+          "accepted",
+          "accepted",
+          settlement.acceptedAtMs
+        );
         return {
           outboxRecordId: settlement.outboxRecordId,
           logicalResultId: row.logical_result_id,
@@ -1130,6 +1426,12 @@ export class SqliteProfileStore {
             retryAtMs: settlement.retryAtMs,
             settledAtMs: settlement.settledAtMs
           });
+        this.#updateApprovalPresentation(
+          row.logical_result_id,
+          "ambiguous",
+          settlement.outcome,
+          settlement.settledAtMs
+        );
         return {
           outboxRecordId: settlement.outboxRecordId,
           logicalResultId: row.logical_result_id,
@@ -1165,6 +1467,12 @@ export class SqliteProfileStore {
           segmentIndex: row.segment_index,
           settledAtMs: settlement.settledAtMs
         });
+      this.#updateApprovalPresentation(
+        row.logical_result_id,
+        "rejected",
+        "rejected",
+        settlement.settledAtMs
+      );
       return {
         outboxRecordId: settlement.outboxRecordId,
         logicalResultId: row.logical_result_id,
@@ -1221,6 +1529,86 @@ export class SqliteProfileStore {
       )
       .get({ correlationId, profileId: this.#profileId });
     return row ? toCodexInputCorrelation(row) : undefined;
+  }
+
+  #approvalByToken(approvalToken: string): ApprovalRequestRecord | undefined {
+    const row = this.#database
+      .prepare<{ profileId: string; approvalToken: string }, ApprovalRequestRow>(
+        `SELECT * FROM approval_requests
+          WHERE profile_id = @profileId AND approval_token = @approvalToken`
+      )
+      .get({ profileId: this.#profileId, approvalToken });
+    return row ? toApprovalRequest(row) : undefined;
+  }
+
+  #rejectApprovalOutbox(approvalToken: string, reasonCode: string, atMs: number): void {
+    this.#database
+      .prepare(
+        `UPDATE delivery_outbox
+            SET status = 'rejected', lease_token = NULL, lease_expires_at_ms = NULL,
+                last_outcome = 'rejected', last_reason_code = @reasonCode, updated_at_ms = @atMs
+          WHERE logical_result_id = (
+            SELECT logical_result_id FROM logical_results
+             WHERE profile_id = @profileId
+               AND source_kind = 'approval_request'
+               AND source_id = @approvalToken
+          )
+            AND status IN ('pending', 'leased', 'retry_wait')`
+      )
+      .run({ profileId: this.#profileId, approvalToken, reasonCode, atMs });
+  }
+
+  #updateApprovalPresentation(
+    logicalResultId: string,
+    presentationState: ApprovalPresentationState,
+    result: string,
+    atMs: number
+  ): void {
+    const source = this.#database
+      .prepare<{ logicalResultId: string; profileId: string }, { source_id: string }>(
+        `SELECT source_id FROM logical_results
+          WHERE logical_result_id = @logicalResultId
+            AND profile_id = @profileId
+            AND source_kind = 'approval_request'`
+      )
+      .get({ logicalResultId, profileId: this.#profileId });
+    if (!source) return;
+    this.#database
+      .prepare(
+        `UPDATE approval_requests
+            SET presentation_state = @presentationState
+          WHERE profile_id = @profileId
+            AND approval_token = @approvalToken
+            AND state = 'pending'`
+      )
+      .run({
+        presentationState,
+        profileId: this.#profileId,
+        approvalToken: source.source_id
+      });
+    this.#appendAudit(
+      source.source_id,
+      "approval_presentation",
+      result,
+      source.source_id,
+      atMs
+    );
+  }
+
+  #appendAudit(
+    correlationId: string,
+    action: string,
+    result: string,
+    targetReference: string,
+    atMs: number
+  ): void {
+    this.#database
+      .prepare(
+        `INSERT INTO audit_records (
+           audit_record_id, profile_id, correlation_id, action, result, target_reference, at_ms
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(randomUUID(), this.#profileId, correlationId, action, result, targetReference, atMs);
   }
 
   #outboxIds(logicalResultId: string): readonly string[] {
@@ -1457,7 +1845,9 @@ function createSchema(database: Database.Database, profileId: string): void {
         row_id INTEGER PRIMARY KEY,
         logical_result_id TEXT NOT NULL UNIQUE,
         profile_id TEXT NOT NULL,
-        source_kind TEXT NOT NULL CHECK (source_kind IN ('codex_turn', 'codex_input_uncertainty')),
+        source_kind TEXT NOT NULL CHECK (
+          source_kind IN ('codex_turn', 'codex_input_uncertainty', 'approval_request')
+        ),
         source_id TEXT NOT NULL,
         codex_thread_id TEXT NOT NULL,
         codex_turn_id TEXT,
@@ -1522,6 +1912,54 @@ function createSchema(database: Database.Database, profileId: string): void {
           provider_reply_event_id
         )
       );
+
+      CREATE TABLE approval_requests (
+        row_id INTEGER PRIMARY KEY,
+        approval_token TEXT NOT NULL UNIQUE,
+        profile_id TEXT NOT NULL,
+        operation_kind TEXT NOT NULL CHECK (
+          operation_kind IN ('command_execution', 'file_change')
+        ),
+        codex_thread_id TEXT NOT NULL,
+        codex_turn_id TEXT NOT NULL,
+        channel_account_id TEXT NOT NULL,
+        channel_account_epoch_id TEXT NOT NULL,
+        conversation_key TEXT NOT NULL,
+        provider_identity TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (
+          state IN ('pending', 'responded', 'cancelled', 'expired', 'failed')
+        ),
+        presentation_state TEXT NOT NULL CHECK (
+          presentation_state IN ('pending', 'accepted', 'ambiguous', 'rejected')
+        ),
+        decision TEXT CHECK (
+          decision IN ('accept', 'acceptForSession', 'decline', 'cancel')
+        ),
+        reason_code TEXT,
+        created_at_ms INTEGER NOT NULL,
+        expires_at_ms INTEGER NOT NULL,
+        settled_at_ms INTEGER,
+        CHECK (expires_at_ms > created_at_ms),
+        CHECK (state = 'pending' OR settled_at_ms IS NOT NULL),
+        CHECK (state <> 'responded' OR decision IS NOT NULL)
+      );
+
+      CREATE INDEX approval_requests_pending
+        ON approval_requests (profile_id, state, expires_at_ms);
+
+      CREATE TABLE audit_records (
+        row_id INTEGER PRIMARY KEY,
+        audit_record_id TEXT NOT NULL UNIQUE,
+        profile_id TEXT NOT NULL,
+        correlation_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        result TEXT NOT NULL,
+        target_reference TEXT NOT NULL,
+        at_ms INTEGER NOT NULL
+      );
+
+      CREATE INDEX audit_records_profile_time
+        ON audit_records (profile_id, at_ms DESC, row_id DESC);
     `);
     database
       .prepare("INSERT INTO profile_metadata (singleton, profile_id) VALUES (1, ?)")
@@ -1702,6 +2140,74 @@ function validateCodexInputUncertainty(input: CommitCodexInputUncertaintyInput):
   ) {
     throw new ProfileStoreError("invalid_codex_input", "Codex input uncertainty is invalid");
   }
+}
+
+function validateApprovalRequest(input: CommitApprovalRequestInput, profileId: string): void {
+  const valid =
+    profileId.length > 0 &&
+    validExternalId(input.approvalToken) &&
+    (input.operationKind === "command_execution" || input.operationKind === "file_change") &&
+    validExternalId(input.codexThreadId) &&
+    validExternalId(input.codexTurnId) &&
+    (input.provider === "qq" || input.provider === "whatsapp") &&
+    validExternalId(input.channelAccountId) &&
+    validExternalId(input.channelAccountEpochId) &&
+    validExternalId(input.providerIdentity) &&
+    validExternalId(input.target.conversationKey) &&
+    (input.target.conversationKind === "private" || input.target.conversationKind === "group") &&
+    validExternalId(input.target.providerConversationId) &&
+    (input.target.providerReplyEventId === undefined ||
+      validExternalId(input.target.providerReplyEventId)) &&
+    typeof input.prompt === "string" &&
+    input.prompt.length > 0 &&
+    Buffer.byteLength(input.prompt, "utf8") <= MAX_TEXT_BYTES &&
+    validTimestamp(input.createdAtMs) &&
+    validTimestamp(input.expiresAtMs) &&
+    input.expiresAtMs > input.createdAtMs;
+  if (!valid) {
+    throw new ProfileStoreError("invalid_approval_request", "Approval Request is invalid");
+  }
+}
+
+function validateApprovalSettlement(input: SettleApprovalRequestInput): void {
+  const decisionValid =
+    input.decision === undefined ||
+    input.decision === "accept" ||
+    input.decision === "acceptForSession" ||
+    input.decision === "decline" ||
+    input.decision === "cancel";
+  const valid =
+    validExternalId(input.approvalToken) &&
+    (input.state === "responded" ||
+      input.state === "cancelled" ||
+      input.state === "expired" ||
+      input.state === "failed") &&
+    decisionValid &&
+    (input.state === "responded" ? input.decision !== undefined : input.decision === undefined) &&
+    (input.reasonCode === undefined || /^[a-z][a-z0-9_]{0,127}$/u.test(input.reasonCode)) &&
+    validTimestamp(input.settledAtMs);
+  if (!valid) {
+    throw new ProfileStoreError("invalid_approval_request", "Approval settlement is invalid");
+  }
+}
+
+function sameApprovalRequest(
+  current: ApprovalRequestRecord,
+  input: CommitApprovalRequestInput
+): boolean {
+  return current.operationKind === input.operationKind &&
+    current.codexThreadId === input.codexThreadId &&
+    current.codexTurnId === input.codexTurnId &&
+    current.channelAccountId === input.channelAccountId &&
+    current.channelAccountEpochId === input.channelAccountEpochId &&
+    current.conversationKey === input.target.conversationKey &&
+    current.providerIdentity === input.providerIdentity &&
+    current.createdAtMs === input.createdAtMs &&
+    current.expiresAtMs === input.expiresAtMs;
+}
+
+function validTimestamp(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function durableResultDigest(input: DurableResultInput): string {
@@ -1940,6 +2446,37 @@ function toCodexInputCorrelation(row: CodexInputRow): CodexInputCorrelation {
     ...(row.reason_code ? { reasonCode: row.reason_code } : {}),
     acceptedAtMs: row.accepted_at_ms,
     updatedAtMs: row.updated_at_ms
+  };
+}
+
+function toApprovalRequest(row: ApprovalRequestRow): ApprovalRequestRecord {
+  return {
+    approvalToken: row.approval_token,
+    operationKind: row.operation_kind,
+    codexThreadId: row.codex_thread_id,
+    codexTurnId: row.codex_turn_id,
+    channelAccountId: row.channel_account_id,
+    channelAccountEpochId: row.channel_account_epoch_id,
+    conversationKey: row.conversation_key,
+    providerIdentity: row.provider_identity,
+    state: row.state,
+    presentationState: row.presentation_state,
+    ...(row.decision ? { decision: row.decision } : {}),
+    ...(row.reason_code ? { reasonCode: row.reason_code } : {}),
+    createdAtMs: row.created_at_ms,
+    expiresAtMs: row.expires_at_ms,
+    ...(row.settled_at_ms !== null ? { settledAtMs: row.settled_at_ms } : {})
+  };
+}
+
+function toAuditRecord(row: AuditRecordRow): AuditRecord {
+  return {
+    auditRecordId: row.audit_record_id,
+    correlationId: row.correlation_id,
+    action: row.action,
+    result: row.result,
+    targetReference: row.target_reference,
+    atMs: row.at_ms
   };
 }
 

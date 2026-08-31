@@ -484,6 +484,93 @@ test("a definite segment rejection terminates its remaining Logical Result segme
   store.close();
 });
 
+test("persists Approval presentation, terminal callback, and body-free Audit Records", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const committed = store.commitApprovalRequest({
+    approvalToken: "approval-token-1",
+    operationKind: "command_execution",
+    codexThreadId: "thread-1",
+    codexTurnId: "turn-1",
+    provider: "qq",
+    channelAccountId: "qq-primary",
+    channelAccountEpochId: "epoch-1",
+    providerIdentity: "participant-1",
+    target: {
+      conversationKey: "qq:qq-primary:private:user-1",
+      conversationKind: "private",
+      providerConversationId: "user-1",
+      providerReplyEventId: "event-1"
+    },
+    prompt: "Codex requests approval. /approve approval-token-1 accept",
+    createdAtMs: 2_000,
+    expiresAtMs: 3_000
+  });
+  assert.equal(committed.approval.state, "pending");
+  assert.equal(committed.approval.presentationState, "pending");
+
+  const [lease] = store.claimOutbox({ nowMs: 2_000, leaseDurationMs: 100 });
+  assert.equal(lease?.logicalResultId, committed.logicalResult.logicalResultId);
+  assert.equal(lease?.text, "Codex requests approval. /approve approval-token-1 accept");
+  store.settleOutbox({
+    outboxRecordId: lease!.outboxRecordId,
+    leaseToken: lease!.leaseToken,
+    outcome: "accepted",
+    providerMessageId: "provider-message-approval",
+    acceptedAtMs: 2_010
+  });
+  const resolved = store.settleApprovalRequest({
+    approvalToken: "approval-token-1",
+    state: "responded",
+    decision: "accept",
+    settledAtMs: 2_020
+  });
+  assert.equal(resolved.state, "responded");
+  assert.equal(resolved.presentationState, "accepted");
+  assert.deepEqual(
+    store.auditRecords().map((record) => [record.action, record.result]).reverse(),
+    [
+      ["approval_requested", "succeeded"],
+      ["approval_presentation", "accepted"],
+      ["approval_resolved", "responded"]
+    ]
+  );
+  assert.doesNotMatch(JSON.stringify(store.auditRecords()), /participant-1|provider-message-approval|Codex requests/u);
+  store.close();
+});
+
+test("abandons process-scoped Approval work without delivering it after restart", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  store.commitApprovalRequest({
+    approvalToken: "approval-token-stale",
+    operationKind: "file_change",
+    codexThreadId: "thread-1",
+    codexTurnId: "turn-1",
+    provider: "qq",
+    channelAccountId: "qq-primary",
+    channelAccountEpochId: "epoch-1",
+    providerIdentity: "participant-1",
+    target: {
+      conversationKey: "qq:qq-primary:private:user-1",
+      conversationKind: "private",
+      providerConversationId: "user-1"
+    },
+    prompt: "stale approval prompt",
+    createdAtMs: 2_000,
+    expiresAtMs: 3_000
+  });
+  const [abandoned] = store.abandonPendingApprovalRequests({
+    reasonCode: "app_server_generation_lost",
+    settledAtMs: 2_100
+  });
+  assert.equal(abandoned?.state, "cancelled");
+  assert.equal(abandoned?.reasonCode, "app_server_generation_lost");
+  assert.equal(store.claimOutbox({ nowMs: 2_100, leaseDurationMs: 100 }).length, 0);
+  assert.equal(store.outboxCounts().rejected, 1);
+  store.close();
+});
+
 test("fails closed when a database belongs to another Profile", async (context) => {
   const databasePath = await temporaryDatabase(context);
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();

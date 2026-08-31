@@ -65,6 +65,14 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.commitCodexTurnResult(operation.value);
     case "commitLogicalResult":
       return store.commitLogicalResult(operation.value);
+    case "commitApprovalRequest":
+      return store.commitApprovalRequest(operation.value);
+    case "settleApprovalRequest":
+      return store.settleApprovalRequest(operation.value);
+    case "abandonPendingApprovalRequests":
+      return store.abandonPendingApprovalRequests(operation.value);
+    case "auditRecords":
+      return store.auditRecords(operation.limit);
     case "claimOutbox":
       return store.claimOutbox(operation.options);
     case "settleOutbox":
@@ -96,6 +104,10 @@ function isStorageRequest(value: unknown): value is StorageRequest {
       value.operation.name === "commitCodexInputUncertainty" ||
       value.operation.name === "commitCodexTurnResult" ||
       value.operation.name === "commitLogicalResult" ||
+      value.operation.name === "commitApprovalRequest" ||
+      value.operation.name === "settleApprovalRequest" ||
+      value.operation.name === "abandonPendingApprovalRequests" ||
+      value.operation.name === "auditRecords" ||
       value.operation.name === "claimOutbox" ||
       value.operation.name === "settleOutbox" ||
       value.operation.name === "outboxCounts" ||

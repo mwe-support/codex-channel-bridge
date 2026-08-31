@@ -16,7 +16,7 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 const MIN_ESTIMATED_ADDITIONAL_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
@@ -90,13 +90,20 @@ export async function planProfileStoreMigration(
     currentVersion = Number(database.pragma("user_version", { simple: true }));
     requireProfile(database, target.profileId);
     if (currentVersion === CURRENT_SCHEMA_VERSION) {
-      requireVersionFiveShape(database);
+      requireVersionSixShape(database);
       operations = [];
       irreversibleSteps = [];
+    } else if (currentVersion === 5) {
+      requireVersionFiveShape(database);
+      operations = versionFiveToSixOperations();
+      irreversibleSteps = versionFiveToSixIrreversibleSteps();
     } else if (currentVersion === 4) {
       requireVersionFourShape(database);
-      operations = versionFourToFiveOperations();
-      irreversibleSteps = versionFourToFiveIrreversibleSteps();
+      operations = [...versionFourToFiveOperations(), ...versionFiveToSixOperations()];
+      irreversibleSteps = [
+        ...versionFourToFiveIrreversibleSteps(),
+        ...versionFiveToSixIrreversibleSteps()
+      ];
     } else if (currentVersion === 3) {
       requireVersionThreeShape(database);
       operations = [
@@ -104,11 +111,13 @@ export async function planProfileStoreMigration(
         "backfill stable QQ passive reply sequences",
         "create delivery_reply_sequences",
         "set SQLite user_version to 4",
-        ...versionFourToFiveOperations()
+        ...versionFourToFiveOperations(),
+        ...versionFiveToSixOperations()
       ];
       irreversibleSteps = [
         "rebuild delivery_outbox to add provider reply sequencing for schema version 4",
-        ...versionFourToFiveIrreversibleSteps()
+        ...versionFourToFiveIrreversibleSteps(),
+        ...versionFiveToSixIrreversibleSteps()
       ];
     } else {
       throw new ProfileMigrationError(
@@ -194,14 +203,23 @@ export async function applyProfileStoreMigration(
       appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 3, 4, "succeeded");
       activeStep = undefined;
     }
-    requireVersionFourShape(database);
-    activeStep = { fromVersion: 4, toVersion: 5 };
-    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "started");
-    migrateFourToFive(database);
+    if (Number(database.pragma("user_version", { simple: true })) === 4) {
+      requireVersionFourShape(database);
+      activeStep = { fromVersion: 4, toVersion: 5 };
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "started");
+      migrateFourToFive(database);
+      requireVersionFiveShape(database);
+      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "succeeded");
+      activeStep = undefined;
+    }
     requireVersionFiveShape(database);
+    activeStep = { fromVersion: 5, toVersion: 6 };
+    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 5, 6, "started");
+    migrateFiveToSix(database);
+    requireVersionSixShape(database);
     const quickCheck = String(database.pragma("quick_check", { simple: true }));
     if (quickCheck !== "ok") throw new Error("SQLite quick_check failed");
-    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "succeeded");
+    appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 5, 6, "succeeded");
     activeStep = undefined;
   } catch {
     if (activeStep) {
@@ -468,7 +486,7 @@ function migrateFourToFive(database: Database.Database): void {
       for (const row of archiveRows) {
         updateArchive.run(providerConversationIdFromKey(row.conversation_key), row.record_id);
       }
-      database.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
+      database.pragma("user_version = 5");
       const violations = database.pragma("foreign_key_check") as readonly unknown[];
       if (violations.length > 0) throw new Error("SQLite foreign_key_check failed");
     });
@@ -484,6 +502,153 @@ function providerConversationIdFromKey(conversationKey: string): string {
   const decoded = decodeURIComponent(encoded);
   if (!decoded) throw new Error("Conversation Key provider target is empty");
   return decoded;
+}
+
+function versionFiveToSixOperations(): readonly string[] {
+  return [
+    "generalize Logical Result source identity for Approval Requests",
+    "create durable approval_requests",
+    "create body-free audit_records",
+    "set SQLite user_version to 6",
+    "verify profile ownership, schema shape, foreign keys, and quick_check"
+  ];
+}
+
+function versionFiveToSixIrreversibleSteps(): readonly string[] {
+  return [
+    "rebuild logical_results for Approval Request source identity",
+    "rebuild delivery_outbox against schema version 6 Logical Results",
+    "create durable Approval and Audit state"
+  ];
+}
+
+function migrateFiveToSix(database: Database.Database): void {
+  database.pragma("foreign_keys = OFF");
+  try {
+    const migrate = database.transaction(() => {
+      database.exec(`
+        CREATE TABLE logical_results_v6 (
+          row_id INTEGER PRIMARY KEY,
+          logical_result_id TEXT NOT NULL UNIQUE,
+          profile_id TEXT NOT NULL,
+          source_kind TEXT NOT NULL CHECK (
+            source_kind IN ('codex_turn', 'codex_input_uncertainty', 'approval_request')
+          ),
+          source_id TEXT NOT NULL,
+          codex_thread_id TEXT NOT NULL,
+          codex_turn_id TEXT,
+          completed_at_ms INTEGER NOT NULL,
+          payload_digest TEXT NOT NULL,
+          segment_count INTEGER NOT NULL CHECK (segment_count > 0),
+          CHECK (source_kind <> 'codex_turn' OR codex_turn_id IS NOT NULL),
+          UNIQUE (profile_id, source_kind, source_id)
+        );
+
+        INSERT INTO logical_results_v6
+        SELECT * FROM logical_results;
+
+        CREATE TABLE delivery_outbox_v6 (
+          row_id INTEGER PRIMARY KEY,
+          outbox_record_id TEXT NOT NULL UNIQUE,
+          logical_result_id TEXT NOT NULL REFERENCES logical_results_v6(logical_result_id),
+          profile_id TEXT NOT NULL,
+          segment_index INTEGER NOT NULL CHECK (segment_index >= 0),
+          provider TEXT NOT NULL CHECK (provider IN ('qq', 'whatsapp')),
+          channel_account_id TEXT NOT NULL,
+          channel_account_epoch_id TEXT NOT NULL,
+          conversation_key TEXT NOT NULL,
+          conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
+          provider_conversation_id TEXT NOT NULL,
+          provider_reply_event_id TEXT,
+          provider_reply_sequence INTEGER CHECK (
+            provider_reply_sequence IS NULL OR provider_reply_sequence > 0
+          ),
+          text_body TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (
+            status IN ('pending', 'leased', 'retry_wait', 'accepted', 'rejected')
+          ),
+          attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+          next_attempt_at_ms INTEGER NOT NULL,
+          lease_token TEXT,
+          lease_expires_at_ms INTEGER,
+          last_outcome TEXT CHECK (
+            last_outcome IN ('accepted', 'rejected', 'ambiguous', 'deferred')
+          ),
+          last_reason_code TEXT,
+          provider_message_id TEXT,
+          accepted_at_ms INTEGER,
+          created_at_ms INTEGER NOT NULL,
+          updated_at_ms INTEGER NOT NULL,
+          UNIQUE (logical_result_id, segment_index)
+        );
+
+        INSERT INTO delivery_outbox_v6
+        SELECT * FROM delivery_outbox;
+
+        DROP TABLE delivery_outbox;
+        DROP TABLE logical_results;
+        ALTER TABLE logical_results_v6 RENAME TO logical_results;
+        ALTER TABLE delivery_outbox_v6 RENAME TO delivery_outbox;
+
+        CREATE INDEX delivery_outbox_ready
+          ON delivery_outbox (profile_id, status, next_attempt_at_ms, created_at_ms);
+
+        CREATE TABLE approval_requests (
+          row_id INTEGER PRIMARY KEY,
+          approval_token TEXT NOT NULL UNIQUE,
+          profile_id TEXT NOT NULL,
+          operation_kind TEXT NOT NULL CHECK (
+            operation_kind IN ('command_execution', 'file_change')
+          ),
+          codex_thread_id TEXT NOT NULL,
+          codex_turn_id TEXT NOT NULL,
+          channel_account_id TEXT NOT NULL,
+          channel_account_epoch_id TEXT NOT NULL,
+          conversation_key TEXT NOT NULL,
+          provider_identity TEXT NOT NULL,
+          state TEXT NOT NULL CHECK (
+            state IN ('pending', 'responded', 'cancelled', 'expired', 'failed')
+          ),
+          presentation_state TEXT NOT NULL CHECK (
+            presentation_state IN ('pending', 'accepted', 'ambiguous', 'rejected')
+          ),
+          decision TEXT CHECK (
+            decision IN ('accept', 'acceptForSession', 'decline', 'cancel')
+          ),
+          reason_code TEXT,
+          created_at_ms INTEGER NOT NULL,
+          expires_at_ms INTEGER NOT NULL,
+          settled_at_ms INTEGER,
+          CHECK (expires_at_ms > created_at_ms),
+          CHECK (state = 'pending' OR settled_at_ms IS NOT NULL),
+          CHECK (state <> 'responded' OR decision IS NOT NULL)
+        );
+
+        CREATE INDEX approval_requests_pending
+          ON approval_requests (profile_id, state, expires_at_ms);
+
+        CREATE TABLE audit_records (
+          row_id INTEGER PRIMARY KEY,
+          audit_record_id TEXT NOT NULL UNIQUE,
+          profile_id TEXT NOT NULL,
+          correlation_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          result TEXT NOT NULL,
+          target_reference TEXT NOT NULL,
+          at_ms INTEGER NOT NULL
+        );
+
+        CREATE INDEX audit_records_profile_time
+          ON audit_records (profile_id, at_ms DESC, row_id DESC);
+      `);
+      database.pragma("user_version = 6");
+      const violations = database.pragma("foreign_key_check") as readonly unknown[];
+      if (violations.length > 0) throw new Error("SQLite foreign_key_check failed");
+    });
+    migrate.immediate();
+  } finally {
+    database.pragma("foreign_keys = ON");
+  }
 }
 
 interface LegacyPassiveReplyRow {
@@ -599,7 +764,7 @@ function requireVersionFiveShape(database: Database.Database): void {
   const version = Number(database.pragma("user_version", { simple: true }));
   const logicalColumns = tableColumns(database, "logical_results");
   if (
-    version !== CURRENT_SCHEMA_VERSION ||
+    version !== 5 ||
     !tableColumns(database, "delivery_outbox").includes("provider_reply_sequence") ||
     !tableExists(database, "delivery_reply_sequences") ||
     !tableColumns(database, "message_archive").includes("provider_conversation_id") ||
@@ -607,6 +772,23 @@ function requireVersionFiveShape(database: Database.Database): void {
     !logicalColumns.includes("source_id")
   ) {
     throw new ProfileMigrationError("schema_mismatch", "Schema version 5 shape is inconsistent");
+  }
+}
+
+function requireVersionSixShape(database: Database.Database): void {
+  const version = Number(database.pragma("user_version", { simple: true }));
+  const logicalColumns = tableColumns(database, "logical_results");
+  if (
+    version !== CURRENT_SCHEMA_VERSION ||
+    !tableColumns(database, "delivery_outbox").includes("provider_reply_sequence") ||
+    !tableExists(database, "delivery_reply_sequences") ||
+    !tableColumns(database, "message_archive").includes("provider_conversation_id") ||
+    !logicalColumns.includes("source_kind") ||
+    !logicalColumns.includes("source_id") ||
+    !tableExists(database, "approval_requests") ||
+    !tableExists(database, "audit_records")
+  ) {
+    throw new ProfileMigrationError("schema_mismatch", "Schema version 6 shape is inconsistent");
   }
 }
 

@@ -37,12 +37,16 @@ import { ChannelDeliveryError } from "@codex-channel-bridge/core";
 import {
   ProfileStore,
   ProfileStoreError,
+  type AbandonApprovalRequestsInput,
+  type ApprovalRequestCommitResult,
+  type ApprovalRequestRecord,
   type ArchiveCommitResult,
   type ClaimOutboxOptions,
   type CodexInputUncertaintyCommitResult,
   type CodexTurnResultCommitResult,
   type CommitCodexInputUncertaintyInput,
   type CommitCodexTurnResultInput,
+  type CommitApprovalRequestInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -52,6 +56,7 @@ import {
   type OutboxDeliveryLease,
   type OutboxSettlement,
   type OutboxSettlementResult,
+  type SettleApprovalRequestInput,
   type ThreadBindingCommitResult
 } from "@codex-channel-bridge/profile-store";
 import { QQChannelAdapter, type QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
@@ -63,7 +68,7 @@ import {
   type WhatsAppChannelAdapterOptions
 } from "@codex-channel-bridge/whatsapp-adapter";
 import { AdmissionController } from "./admission-controller.js";
-import { ChannelApprovalTransport } from "./channel-approval-transport.js";
+import { formatApprovalPrompt } from "./channel-approval-transport.js";
 import { ChannelIngressController, type ChannelIngressInput } from "./channel-ingress-controller.js";
 import { CodexInputReconciler } from "./codex-input-reconciler.js";
 import { CodexRestartController } from "./codex-restart-controller.js";
@@ -123,6 +128,11 @@ export interface ProfileStoreRuntime {
   ): Promise<CodexInputUncertaintyCommitResult>;
   commitCodexTurnResult(input: CommitCodexTurnResultInput): Promise<CodexTurnResultCommitResult>;
   commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult>;
+  commitApprovalRequest(input: CommitApprovalRequestInput): Promise<ApprovalRequestCommitResult>;
+  settleApprovalRequest(input: SettleApprovalRequestInput): Promise<ApprovalRequestRecord>;
+  abandonPendingApprovalRequests(
+    input: AbandonApprovalRequestsInput
+  ): Promise<readonly ApprovalRequestRecord[]>;
   claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]>;
   settleOutbox(settlement: OutboxSettlement): Promise<OutboxSettlementResult>;
   outboxCounts(): Promise<OutboxCounts>;
@@ -168,7 +178,6 @@ export class ProfileWorker extends EventEmitter {
   readonly #channelAdapters = new Map<string, ChannelAdapter>();
   readonly #channelAdapterReadiness = new Map<string, ReturnType<NonNullable<ChannelAdapter["readiness"]>>>();
   readonly #channelAdapterUnsubscribe = new Map<string, () => void>();
-  readonly #channelApprovalTransport: ChannelApprovalTransport;
   readonly #codexRestartController: CodexRestartController;
   #health: ProfileHealth;
   #stopPromise?: Promise<ProfileHealth>;
@@ -197,9 +206,6 @@ export class ProfileWorker extends EventEmitter {
     this.#channelIngress = new ChannelIngressController(
       new AdmissionController({ ...admission, ready: false })
     );
-    this.#channelApprovalTransport = new ChannelApprovalTransport({
-      detail: config.approval?.detail ?? "minimal"
-    });
     this.#codexRestartController = new CodexRestartController({
       ...(dependencies.codexRestartDelaysMs
         ? { delaysMs: dependencies.codexRestartDelaysMs }
@@ -283,6 +289,10 @@ export class ProfileWorker extends EventEmitter {
     probe: ProtocolProbeResult
   ): Promise<boolean> {
     if (this.#stopping || this.#runtime) return false;
+    await this.#store?.abandonPendingApprovalRequests({
+      reasonCode: "app_server_generation_lost",
+      settledAtMs: Date.now()
+    });
     let runtime: ManagedCodexRpcRuntime;
     try {
       runtime = this.#dependencies.createRuntime({
@@ -300,11 +310,22 @@ export class ProfileWorker extends EventEmitter {
     const eventRouter = new CodexEventRouter();
     const serverRequestRouter = new CodexServerRequestRouter(runtime, {
       approvalTimeoutMs: this.#config.approval?.timeoutMs ?? 300_000,
-      onExpired: (approval) => this.emit("channelApprovalExpired", {
-        approvalToken: approval.approvalToken,
-        threadId: approval.threadId,
-        turnId: approval.turnId
-      })
+      onExpired: async (approval) => {
+        await this.#store?.settleApprovalRequest({
+          approvalToken: approval.approvalToken,
+          state: "expired",
+          reasonCode: "response_timeout",
+          settledAtMs: Date.now()
+        }).catch((error) => this.emit("channelApprovalPersistenceFailed", {
+          approvalToken: approval.approvalToken,
+          reason: error instanceof Error ? error.message : "storage_failure"
+        }));
+        this.emit("channelApprovalExpired", {
+          approvalToken: approval.approvalToken,
+          threadId: approval.threadId,
+          turnId: approval.turnId
+        });
+      }
     });
     const turnCoordinator = new TurnCoordinator({
       runtime,
@@ -371,7 +392,13 @@ export class ProfileWorker extends EventEmitter {
     this.#deactivateCodexGeneration(runtime, error);
     this.#emitExpiredChannelWork(this.#channelIngress.setReady(false, Date.now()).expired);
     this.#transition("unavailable", "protocol_fault", probe);
-    this.#generationShutdown = runtime.stop().catch(() => undefined);
+    this.#generationShutdown = Promise.all([
+      runtime.stop().catch(() => undefined),
+      this.#store?.abandonPendingApprovalRequests({
+        reasonCode: "app_server_generation_lost",
+        settledAtMs: Date.now()
+      }).catch(() => []) ?? Promise.resolve([])
+    ]).then(() => undefined);
     this.#ensureCodexRecovery();
   }
 
@@ -443,7 +470,16 @@ export class ProfileWorker extends EventEmitter {
   ): Promise<void> {
     const router = this.#serverRequestRouter;
     if (!router) throw new ProfileUnavailableError(this.health());
+    const approval = router.approvalForRequest(requestId);
     await router.respond(requestId, context, decision);
+    if (approval) {
+      await this.#store?.settleApprovalRequest({
+        approvalToken: approval.approvalToken,
+        state: "responded",
+        decision,
+        settledAtMs: Date.now()
+      });
+    }
   }
 
   public async stop(): Promise<ProfileHealth> {
@@ -473,6 +509,10 @@ export class ProfileWorker extends EventEmitter {
       await this.#waitForActiveWork(this.#config.childExitTimeoutMs ?? 10_000);
     }
     this.#serverRequestRouter?.close();
+    await this.#store?.abandonPendingApprovalRequests({
+      reasonCode: drain.completed ? "profile_stopped" : "drain_timeout",
+      settledAtMs: Date.now()
+    });
     await this.#stopDeliveryOutbox();
     await this.#stopChannelAdapters();
     if (runtime) {
@@ -807,6 +847,12 @@ export class ProfileWorker extends EventEmitter {
           },
           command.decision
         );
+        await this.#store?.settleApprovalRequest({
+          approvalToken: command.approvalToken,
+          state: "responded",
+          decision: command.decision,
+          settledAtMs: Date.now()
+        });
         this.emit("channelApprovalResponded", {
           archiveRecordId: work.archiveRecordId,
           approvalToken: command.approvalToken,
@@ -871,19 +917,43 @@ export class ProfileWorker extends EventEmitter {
       return;
     }
     try {
-      const presentation = await this.#channelApprovalTransport.present(approval, adapter);
-      this.emit("channelApprovalPresented", presentation);
+      const createdAtMs = Date.now();
+      const committed = await this.#store?.commitApprovalRequest({
+        approvalToken: approval.approvalToken,
+        operationKind: approval.request.method === "item/commandExecution/requestApproval"
+          ? "command_execution"
+          : "file_change",
+        codexThreadId: approval.threadId,
+        codexTurnId: approval.turnId,
+        provider: account.provider,
+        channelAccountId: approval.context.channelAccountId,
+        channelAccountEpochId: approval.context.channelAccountEpochId,
+        providerIdentity: approval.context.providerIdentity,
+        target: approval.context.replyTarget,
+        prompt: formatApprovalPrompt(
+          approval,
+          this.#config.approval?.detail ?? "minimal"
+        ),
+        createdAtMs,
+        expiresAtMs: createdAtMs + (this.#config.approval?.timeoutMs ?? 300_000)
+      });
+      if (!committed) throw new Error("Profile Store is unavailable");
+      this.emit("channelApprovalQueued", {
+        approvalToken: approval.approvalToken,
+        logicalResultId: committed.logicalResult.logicalResultId
+      });
+      void this.#deliveryOutbox?.deliverReady();
     } catch (error) {
-      if (error instanceof ChannelDeliveryError && error.outcome === "ambiguous") {
-        this.emit("channelApprovalDeliveryAmbiguous", {
-          approvalToken: approval.approvalToken
-        });
-        return;
-      }
       await this.#serverRequestRouter?.cancelUndeliverable(approval.approvalToken);
+      await this.#store?.settleApprovalRequest({
+        approvalToken: approval.approvalToken,
+        state: "failed",
+        reasonCode: "presentation_commit_failed",
+        settledAtMs: Date.now()
+      }).catch(() => undefined);
       this.emit("channelApprovalDeliveryFailed", {
         approvalToken: approval.approvalToken,
-        reason: error instanceof ChannelDeliveryError ? error.outcome : "delivery_exception"
+        reason: error instanceof Error ? error.message : "delivery_exception"
       });
     }
   }

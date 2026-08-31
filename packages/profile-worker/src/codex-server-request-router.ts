@@ -34,7 +34,7 @@ export type ServerRequestDisposition =
 export interface CodexServerRequestRouterOptions {
   readonly approvalTimeoutMs?: number;
   readonly newApprovalToken?: () => string;
-  readonly onExpired?: (approval: RoutedApprovalRequest) => void;
+  readonly onExpired?: (approval: RoutedApprovalRequest) => void | Promise<void>;
 }
 
 interface PendingApproval {
@@ -48,7 +48,7 @@ export class CodexServerRequestRouter {
   readonly #runtime: ManagedCodexRpcRuntime;
   readonly #approvalTimeoutMs: number;
   readonly #newApprovalToken: () => string;
-  readonly #onExpired?: (approval: RoutedApprovalRequest) => void;
+  readonly #onExpired?: (approval: RoutedApprovalRequest) => void | Promise<void>;
   readonly #pendingByRequest = new Map<string, PendingApproval>();
   readonly #pendingByToken = new Map<string, PendingApproval>();
 
@@ -153,6 +153,10 @@ export class CodexServerRequestRouter {
     return this.#pendingByRequest.size;
   }
 
+  public approvalForRequest(requestId: JsonRpcId): RoutedApprovalRequest | undefined {
+    return this.#pendingByRequest.get(requestKey(requestId))?.approval;
+  }
+
   async #respondPending(
     key: string,
     pending: PendingApproval,
@@ -179,7 +183,7 @@ export class CodexServerRequestRouter {
     await this.#runtime.respond(pending.approval.request.id, { decision: "cancel" }).catch(
       () => undefined
     );
-    this.#onExpired?.(pending.approval);
+    await this.#onExpired?.(pending.approval);
   }
 
   #removePending(key: string, pending: PendingApproval): void {

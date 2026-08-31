@@ -13,7 +13,7 @@ import {
 } from "./migration.js";
 import { SqliteProfileStore } from "./profile-store.js";
 
-test("plans and applies the explicit schema 3 to 5 migration", async (context) => {
+test("plans and applies the explicit schema 3 to 6 migration", async (context) => {
   const fixture = await schemaThreeFixture(context);
   const target = {
     profileId: "alpha",
@@ -23,10 +23,10 @@ test("plans and applies the explicit schema 3 to 5 migration", async (context) =
 
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 3);
-  assert.equal(plan.targetVersion, 5);
+  assert.equal(plan.targetVersion, 6);
   assert.equal(plan.migrationRequired, true);
-  assert.equal(plan.operations.length, 9);
-  assert.equal(plan.irreversibleSteps.length, 3);
+  assert.equal(plan.operations.length, 14);
+  assert.equal(plan.irreversibleSteps.length, 6);
   assert.ok(plan.estimatedAdditionalBytes >= 1024 * 1024);
 
   const result = await applyProfileStoreMigration({
@@ -36,7 +36,7 @@ test("plans and applies the explicit schema 3 to 5 migration", async (context) =
     nowMs: 10_000
   });
   assert.equal(result.fromVersion, 3);
-  assert.equal(result.toVersion, 5);
+  assert.equal(result.toVersion, 6);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
   const current = await planProfileStoreMigration(target);
   assert.equal(current.migrationRequired, false);
@@ -50,12 +50,14 @@ test("plans and applies the explicit schema 3 to 5 migration", async (context) =
     "succeeded",
     "started",
     "succeeded",
+    "started",
+    "succeeded",
     "succeeded"
   ]);
   assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
 });
 
-test("plans and applies the explicit schema 4 to 5 migration", async (context) => {
+test("plans and applies the explicit schema 4 to 6 migration", async (context) => {
   const fixture = await schemaFourFixture(context);
   const target = {
     profileId: "alpha",
@@ -64,16 +66,38 @@ test("plans and applies the explicit schema 4 to 5 migration", async (context) =
   };
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 4);
-  assert.equal(plan.targetVersion, 5);
-  assert.equal(plan.operations.length, 5);
-  assert.equal(plan.irreversibleSteps.length, 2);
+  assert.equal(plan.targetVersion, 6);
+  assert.equal(plan.operations.length, 10);
+  assert.equal(plan.irreversibleSteps.length, 5);
   const result = await applyProfileStoreMigration({
     ...target,
     expectedPlanDigest: plan.planDigest,
     expectedSourceDigest: plan.sourceDigest
   });
   assert.equal(result.fromVersion, 4);
-  assert.equal(result.toVersion, 5);
+  assert.equal(result.toVersion, 6);
+  SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
+});
+
+test("plans and applies the explicit schema 5 to 6 migration", async (context) => {
+  const fixture = await currentFixture(context);
+  const target = {
+    profileId: "alpha",
+    databasePath: fixture.databasePath,
+    auditPath: join(fixture.directory, "audit.jsonl")
+  };
+  const plan = await planProfileStoreMigration(target);
+  assert.equal(plan.currentVersion, 5);
+  assert.equal(plan.targetVersion, 6);
+  assert.equal(plan.operations.length, 5);
+  assert.equal(plan.irreversibleSteps.length, 3);
+  const result = await applyProfileStoreMigration({
+    ...target,
+    expectedPlanDigest: plan.planDigest,
+    expectedSourceDigest: plan.sourceDigest
+  });
+  assert.equal(result.fromVersion, 5);
+  assert.equal(result.toVersion, 6);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
@@ -228,7 +252,76 @@ async function currentFixture(context: test.TestContext): Promise<{
   context.after(async () => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "bridge.sqlite");
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
+  const database = new Database(databasePath);
+  downgradeSixToFive(database);
+  database.close();
   return { directory, databasePath };
+}
+
+function downgradeSixToFive(database: Database.Database): void {
+  database.pragma("foreign_keys = OFF");
+  database.exec(`
+    DROP TABLE audit_records;
+    DROP TABLE approval_requests;
+
+    CREATE TABLE logical_results_v5 (
+      row_id INTEGER PRIMARY KEY,
+      logical_result_id TEXT NOT NULL UNIQUE,
+      profile_id TEXT NOT NULL,
+      source_kind TEXT NOT NULL CHECK (
+        source_kind IN ('codex_turn', 'codex_input_uncertainty')
+      ),
+      source_id TEXT NOT NULL,
+      codex_thread_id TEXT NOT NULL,
+      codex_turn_id TEXT,
+      completed_at_ms INTEGER NOT NULL,
+      payload_digest TEXT NOT NULL,
+      segment_count INTEGER NOT NULL CHECK (segment_count > 0),
+      CHECK (source_kind <> 'codex_turn' OR codex_turn_id IS NOT NULL),
+      UNIQUE (profile_id, source_kind, source_id)
+    );
+    INSERT INTO logical_results_v5 SELECT * FROM logical_results;
+
+    CREATE TABLE delivery_outbox_v5 AS SELECT * FROM delivery_outbox WHERE 0;
+    DROP TABLE delivery_outbox_v5;
+    CREATE TABLE delivery_outbox_v5 (
+      row_id INTEGER PRIMARY KEY,
+      outbox_record_id TEXT NOT NULL UNIQUE,
+      logical_result_id TEXT NOT NULL REFERENCES logical_results_v5(logical_result_id),
+      profile_id TEXT NOT NULL,
+      segment_index INTEGER NOT NULL CHECK (segment_index >= 0),
+      provider TEXT NOT NULL CHECK (provider IN ('qq', 'whatsapp')),
+      channel_account_id TEXT NOT NULL,
+      channel_account_epoch_id TEXT NOT NULL,
+      conversation_key TEXT NOT NULL,
+      conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
+      provider_conversation_id TEXT NOT NULL,
+      provider_reply_event_id TEXT,
+      provider_reply_sequence INTEGER CHECK (provider_reply_sequence IS NULL OR provider_reply_sequence > 0),
+      text_body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'leased', 'retry_wait', 'accepted', 'rejected')),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at_ms INTEGER NOT NULL,
+      lease_token TEXT,
+      lease_expires_at_ms INTEGER,
+      last_outcome TEXT CHECK (last_outcome IN ('accepted', 'rejected', 'ambiguous', 'deferred')),
+      last_reason_code TEXT,
+      provider_message_id TEXT,
+      accepted_at_ms INTEGER,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      UNIQUE (logical_result_id, segment_index)
+    );
+    INSERT INTO delivery_outbox_v5 SELECT * FROM delivery_outbox;
+    DROP TABLE delivery_outbox;
+    DROP TABLE logical_results;
+    ALTER TABLE logical_results_v5 RENAME TO logical_results;
+    ALTER TABLE delivery_outbox_v5 RENAME TO delivery_outbox;
+    CREATE INDEX delivery_outbox_ready
+      ON delivery_outbox (profile_id, status, next_attempt_at_ms, created_at_ms);
+    PRAGMA user_version = 5;
+  `);
+  database.pragma("foreign_keys = ON");
 }
 
 function downgradeFiveToFour(database: Database.Database): void {

@@ -16,6 +16,12 @@ export interface CodexAppServerOptions {
   readonly codexHome: string;
   readonly workspace: string;
   readonly bridgeVersion: string;
+  /**
+   * Source environment used to construct the isolated child environment.
+   * Production callers should omit this; it exists so the boundary can be
+   * tested without mutating the test runner's own process environment.
+   */
+  readonly processEnvironment?: Readonly<NodeJS.ProcessEnv>;
   readonly requestTimeoutMs?: number;
   readonly childExitTimeoutMs?: number;
 }
@@ -65,7 +71,10 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
     this.#faultEmitted = false;
     const child = spawn(this.#options.executable, ["app-server", "--stdio"], {
       cwd: this.#options.workspace,
-      env: { ...process.env, CODEX_HOME: this.#options.codexHome },
+      env: createCodexChildEnvironment(
+        this.#options.processEnvironment ?? process.env,
+        this.#options.codexHome
+      ),
       stdio: ["pipe", "pipe", "pipe"]
     });
     this.#child = child;
@@ -168,6 +177,63 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
     if (!this.#rpc) throw new Error("Codex App Server process is not started");
     return this.#rpc;
   }
+}
+
+const CODEX_CHILD_ENVIRONMENT_KEYS = new Set([
+  "ALL_PROXY",
+  "APPDATA",
+  "COLORTERM",
+  "COMSPEC",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "HOME",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "LANG",
+  "LANGUAGE",
+  "LOCALAPPDATA",
+  "LOGNAME",
+  "NODE_EXTRA_CA_CERTS",
+  "NO_PROXY",
+  "PATH",
+  "PATHEXT",
+  "PROGRAMDATA",
+  "PROGRAMFILES",
+  "PROGRAMFILES(X86)",
+  "SHELL",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "TZ",
+  "USER",
+  "USERPROFILE",
+  "WINDIR"
+]);
+
+/**
+ * Build the Profile-local Codex child environment without forwarding Channel
+ * secrets, Bridge control variables, or an enclosing Codex Desktop session's
+ * tool pipe and permission profile. CODEX_HOME is the only CODEX_* variable
+ * the Bridge injects into the child.
+ */
+export function createCodexChildEnvironment(
+  source: Readonly<NodeJS.ProcessEnv>,
+  codexHome: string
+): NodeJS.ProcessEnv {
+  const child: NodeJS.ProcessEnv = { CODEX_HOME: codexHome };
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    const normalized = key.toUpperCase();
+    if (normalized.startsWith("LC_") || CODEX_CHILD_ENVIRONMENT_KEYS.has(normalized)) {
+      child[key] = value;
+    }
+  }
+  return child;
 }
 
 async function waitWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

@@ -18,6 +18,12 @@ export type {
   ProfileMigrationTarget
 } from "./migration.js";
 export type {
+  AbandonApprovalRequestsInput,
+  ApprovalOperationKind,
+  ApprovalPresentationState,
+  ApprovalRequestCommitResult,
+  ApprovalRequestRecord,
+  ApprovalRequestState,
   ArchiveCommitResult,
   ArchivedChannelMessage,
   ArchiveTextSearch,
@@ -27,6 +33,7 @@ export type {
   CodexTurnResultCommitResult,
   CommitCodexInputUncertaintyInput,
   CommitCodexTurnResultInput,
+  CommitApprovalRequestInput,
   CodexInputCommitResult,
   CodexInputTransition,
   CreateThreadBindingInput,
@@ -36,6 +43,8 @@ export type {
   OutboxDeliveryLease,
   OutboxSettlement,
   OutboxSettlementResult,
+  AuditRecord,
   ProfileStoreReason,
+  SettleApprovalRequestInput,
   ThreadBindingCommitResult
 } from "./profile-store.js";

@@ -1,16 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type {
-  ChannelAdapter,
-  ChannelTextDelivery,
-  ProviderInboundEvent
-} from "@codex-channel-bridge/core";
-
-import {
-  ChannelApprovalTransport,
-  formatApprovalPrompt
-} from "./channel-approval-transport.js";
+import { formatApprovalPrompt } from "./channel-approval-transport.js";
 import type { RoutedApprovalRequest } from "./codex-server-request-router.js";
 
 const approval: RoutedApprovalRequest = {
@@ -36,29 +27,10 @@ const approval: RoutedApprovalRequest = {
   }
 };
 
-class FakeAdapter implements ChannelAdapter {
-  delivery?: ChannelTextDelivery;
-  async start(_onEvent: (event: ProviderInboundEvent) => Promise<void>): Promise<void> {}
-  async sendText(delivery: ChannelTextDelivery) {
-    this.delivery = delivery;
-    return {
-      logicalResultId: delivery.logicalResultId,
-      segmentIndex: delivery.segmentIndex,
-      outcome: "accepted" as const,
-      providerMessageId: "provider-message-1",
-      acceptedAtMs: 1
-    };
-  }
-  async stop(): Promise<void> {}
-}
-
-test("presents a content-free Approval command without exposing the JSON-RPC id", async () => {
-  const adapter = new FakeAdapter();
-  const result = await new ChannelApprovalTransport().present(approval, adapter);
-  assert.equal(result.approvalToken, "token-1");
-  assert.equal(adapter.delivery?.logicalResultId, "approval:token-1");
-  assert.match(adapter.delivery?.text ?? "", /\/approve token-1 accept/);
-  assert.doesNotMatch(adapter.delivery?.text ?? "", /secret body|99/);
+test("formats a content-free Approval command without exposing the JSON-RPC id", () => {
+  const prompt = formatApprovalPrompt(approval);
+  assert.match(prompt, /\/approve token-1 accept/);
+  assert.doesNotMatch(prompt, /secret body|99/);
 });
 
 test("labels file-change approvals separately", () => {

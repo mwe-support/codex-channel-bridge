@@ -15,11 +15,16 @@ import {
   type ArchivedChannelMessage,
   type ArchiveTextSearch,
   type ArchiveTextSearchHit,
+  type AbandonApprovalRequestsInput,
+  type ApprovalRequestCommitResult,
+  type ApprovalRequestRecord,
+  type AuditRecord,
   type ClaimOutboxOptions,
   type CodexInputUncertaintyCommitResult,
   type CodexTurnResultCommitResult,
   type CommitCodexInputUncertaintyInput,
   type CommitCodexTurnResultInput,
+  type CommitApprovalRequestInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -30,6 +35,7 @@ import {
   type OutboxSettlement,
   type OutboxSettlementResult,
   type ProfileStoreReason,
+  type SettleApprovalRequestInput,
   type ThreadBindingCommitResult
 } from "./profile-store.js";
 
@@ -45,6 +51,10 @@ type StorageOperation =
   | { readonly name: "commitCodexInputUncertainty"; readonly value: CommitCodexInputUncertaintyInput }
   | { readonly name: "commitCodexTurnResult"; readonly value: CommitCodexTurnResultInput }
   | { readonly name: "commitLogicalResult"; readonly value: LogicalResultInput }
+  | { readonly name: "commitApprovalRequest"; readonly value: CommitApprovalRequestInput }
+  | { readonly name: "settleApprovalRequest"; readonly value: SettleApprovalRequestInput }
+  | { readonly name: "abandonPendingApprovalRequests"; readonly value: AbandonApprovalRequestsInput }
+  | { readonly name: "auditRecords"; readonly limit?: number }
   | { readonly name: "claimOutbox"; readonly options: ClaimOutboxOptions }
   | { readonly name: "settleOutbox"; readonly settlement: OutboxSettlement }
   | { readonly name: "outboxCounts" }
@@ -170,6 +180,28 @@ export class ProfileStore {
 
   public commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult> {
     return this.#request({ name: "commitLogicalResult", value: input });
+  }
+
+  public commitApprovalRequest(
+    input: CommitApprovalRequestInput
+  ): Promise<ApprovalRequestCommitResult> {
+    return this.#request({ name: "commitApprovalRequest", value: input });
+  }
+
+  public settleApprovalRequest(
+    input: SettleApprovalRequestInput
+  ): Promise<ApprovalRequestRecord> {
+    return this.#request({ name: "settleApprovalRequest", value: input });
+  }
+
+  public abandonPendingApprovalRequests(
+    input: AbandonApprovalRequestsInput
+  ): Promise<readonly ApprovalRequestRecord[]> {
+    return this.#request({ name: "abandonPendingApprovalRequests", value: input });
+  }
+
+  public auditRecords(limit?: number): Promise<readonly AuditRecord[]> {
+    return this.#request({ name: "auditRecords", ...(limit !== undefined ? { limit } : {}) });
   }
 
   public claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]> {

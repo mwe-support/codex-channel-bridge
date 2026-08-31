@@ -26,6 +26,7 @@ import {
   type CommitCodexTurnResultInput,
   type CodexInputTransition,
   type CreateThreadBindingInput,
+  type OutboxDeliveryLease,
   type OutboxSettlement
 } from "@codex-channel-bridge/profile-store";
 import type { QQChannelAdapterOptions } from "@codex-channel-bridge/qq-adapter";
@@ -114,6 +115,7 @@ class FakeStore implements ProfileStoreRuntime {
   outboxClaimCount = 0;
   binding?: Awaited<ReturnType<ProfileStoreRuntime["getThreadBinding"]>>;
   correlationSequence = 0;
+  pendingApprovalLease?: OutboxDeliveryLease;
 
   async commitMessage(message: NormalizedChannelMessage) {
     this.messages.push(message);
@@ -205,9 +207,73 @@ class FakeStore implements ProfileStoreRuntime {
     return { correlation, logicalResult };
   }
 
+  async commitApprovalRequest(input: import("@codex-channel-bridge/profile-store").CommitApprovalRequestInput) {
+    const logicalResultId = `approval:${input.approvalToken}`;
+    this.pendingApprovalLease = {
+      outboxRecordId: `approval-outbox:${input.approvalToken}`,
+      logicalResultId,
+      segmentIndex: 0,
+      provider: input.provider,
+      channelAccountId: input.channelAccountId,
+      channelAccountEpochId: input.channelAccountEpochId,
+      target: input.target,
+      text: input.prompt,
+      attemptNumber: 1,
+      leaseToken: `lease:${input.approvalToken}`,
+      leaseExpiresAtMs: input.createdAtMs + 30_000
+    };
+    return {
+      approval: {
+        approvalToken: input.approvalToken,
+        operationKind: input.operationKind,
+        codexThreadId: input.codexThreadId,
+        codexTurnId: input.codexTurnId,
+        channelAccountId: input.channelAccountId,
+        channelAccountEpochId: input.channelAccountEpochId,
+        conversationKey: input.target.conversationKey,
+        providerIdentity: input.providerIdentity,
+        state: "pending" as const,
+        presentationState: "pending" as const,
+        createdAtMs: input.createdAtMs,
+        expiresAtMs: input.expiresAtMs
+      },
+      logicalResult: {
+        logicalResultId,
+        outboxRecordIds: [`approval-outbox:${input.approvalToken}`],
+        inserted: true
+      }
+    };
+  }
+
+  async settleApprovalRequest(input: import("@codex-channel-bridge/profile-store").SettleApprovalRequestInput) {
+    return {
+      approvalToken: input.approvalToken,
+      operationKind: "command_execution" as const,
+      codexThreadId: "thread-1",
+      codexTurnId: "turn-1",
+      channelAccountId: "qq-main",
+      channelAccountEpochId: "epoch-1",
+      conversationKey: "qq:private:user-1",
+      providerIdentity: "user-1",
+      state: input.state,
+      presentationState: "accepted" as const,
+      ...(input.decision ? { decision: input.decision } : {}),
+      ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+      createdAtMs: 1,
+      expiresAtMs: 2,
+      settledAtMs: input.settledAtMs
+    };
+  }
+
+  async abandonPendingApprovalRequests(_input: import("@codex-channel-bridge/profile-store").AbandonApprovalRequestsInput) {
+    return [];
+  }
+
   async claimOutbox(_options: ClaimOutboxOptions) {
     this.outboxClaimCount += 1;
-    return [];
+    const lease = this.pendingApprovalLease;
+    this.pendingApprovalLease = undefined;
+    return lease ? [lease] : [];
   }
 
   async settleOutbox(settlement: OutboxSettlement) {
@@ -851,14 +917,15 @@ test("presents stable Codex Approval Requests and accepts only a bound Channel r
   await started;
 
   const routed = once(worker, "channelApprovalRequested");
-  const presented = once(worker, "channelApprovalPresented");
+  const queued = once(worker, "channelApprovalQueued");
   runtime.emit("serverRequest", {
     id: 42,
     method: "item/commandExecution/requestApproval",
     params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", startedAtMs: 1 }
   });
   const [approval] = await routed;
-  await presented;
+  await queued;
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(approval.context.providerIdentity, "user-1");
   assert.equal(approval.context.replyTarget.providerConversationId, "user-1");
   assert.match(adapter.deliveries[0]?.text ?? "", new RegExp(`/approve ${approval.approvalToken} accept`));
