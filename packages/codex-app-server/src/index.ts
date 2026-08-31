@@ -30,6 +30,8 @@ export type {
   JsonRpcNotification,
   JsonRpcRequest,
   ThreadResumeResponse,
+  ThreadReadResponse,
+  CodexTurnStatus,
   ThreadStartResponse,
   TurnInterruptResponse,
   TurnStartResponse,

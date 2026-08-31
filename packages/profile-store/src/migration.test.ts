@@ -13,7 +13,7 @@ import {
 } from "./migration.js";
 import { SqliteProfileStore } from "./profile-store.js";
 
-test("plans and applies the explicit schema 3 to 4 migration", async (context) => {
+test("plans and applies the explicit schema 3 to 5 migration", async (context) => {
   const fixture = await schemaThreeFixture(context);
   const target = {
     profileId: "alpha",
@@ -23,10 +23,10 @@ test("plans and applies the explicit schema 3 to 4 migration", async (context) =
 
   const plan = await planProfileStoreMigration(target);
   assert.equal(plan.currentVersion, 3);
-  assert.equal(plan.targetVersion, 4);
+  assert.equal(plan.targetVersion, 5);
   assert.equal(plan.migrationRequired, true);
-  assert.equal(plan.operations.length, 5);
-  assert.equal(plan.irreversibleSteps.length, 1);
+  assert.equal(plan.operations.length, 9);
+  assert.equal(plan.irreversibleSteps.length, 3);
   assert.ok(plan.estimatedAdditionalBytes >= 1024 * 1024);
 
   const result = await applyProfileStoreMigration({
@@ -36,7 +36,7 @@ test("plans and applies the explicit schema 3 to 4 migration", async (context) =
     nowMs: 10_000
   });
   assert.equal(result.fromVersion, 3);
-  assert.equal(result.toVersion, 4);
+  assert.equal(result.toVersion, 5);
   SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
   const current = await planProfileStoreMigration(target);
   assert.equal(current.migrationRequired, false);
@@ -44,8 +44,37 @@ test("plans and applies the explicit schema 3 to 4 migration", async (context) =
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as { result: string });
-  assert.deepEqual(audit.map((record) => record.result), ["started", "succeeded"]);
+  assert.deepEqual(audit.map((record) => record.result), [
+    "started",
+    "started",
+    "succeeded",
+    "started",
+    "succeeded",
+    "succeeded"
+  ]);
   assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
+});
+
+test("plans and applies the explicit schema 4 to 5 migration", async (context) => {
+  const fixture = await schemaFourFixture(context);
+  const target = {
+    profileId: "alpha",
+    databasePath: fixture.databasePath,
+    auditPath: join(fixture.directory, "audit.jsonl")
+  };
+  const plan = await planProfileStoreMigration(target);
+  assert.equal(plan.currentVersion, 4);
+  assert.equal(plan.targetVersion, 5);
+  assert.equal(plan.operations.length, 5);
+  assert.equal(plan.irreversibleSteps.length, 2);
+  const result = await applyProfileStoreMigration({
+    ...target,
+    expectedPlanDigest: plan.planDigest,
+    expectedSourceDigest: plan.sourceDigest
+  });
+  assert.equal(result.fromVersion, 4);
+  assert.equal(result.toVersion, 5);
+  SqliteProfileStore.open({ profileId: "alpha", databasePath: fixture.databasePath }).close();
 });
 
 test("planning leaves the Profile SQLite directory unchanged", async (context) => {
@@ -167,16 +196,108 @@ async function schemaThreeFixture(context: test.TestContext): Promise<{
   directory: string;
   databasePath: string;
 }> {
-  const directory = await mkdtemp(join(tmpdir(), "bridge-migration-test-"));
-  await chmod(directory, 0o700);
-  context.after(async () => rm(directory, { recursive: true, force: true }));
-  const databasePath = join(directory, "bridge.sqlite");
-  SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
+  const { directory, databasePath } = await currentFixture(context);
   const database = new Database(databasePath);
+  downgradeFiveToFour(database);
   database.exec("DROP TABLE delivery_reply_sequences");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_sequence");
   database.pragma("user_version = 3");
   database.close();
   await chmod(databasePath, 0o600);
   return { directory, databasePath };
+}
+
+async function schemaFourFixture(context: test.TestContext): Promise<{
+  directory: string;
+  databasePath: string;
+}> {
+  const fixture = await currentFixture(context);
+  const database = new Database(fixture.databasePath);
+  downgradeFiveToFour(database);
+  database.close();
+  await chmod(fixture.databasePath, 0o600);
+  return fixture;
+}
+
+async function currentFixture(context: test.TestContext): Promise<{
+  directory: string;
+  databasePath: string;
+}> {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-migration-test-"));
+  await chmod(directory, 0o700);
+  context.after(async () => rm(directory, { recursive: true, force: true }));
+  const databasePath = join(directory, "bridge.sqlite");
+  SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
+  return { directory, databasePath };
+}
+
+function downgradeFiveToFour(database: Database.Database): void {
+  database.pragma("foreign_keys = OFF");
+  database.exec(`
+    ALTER TABLE message_archive DROP COLUMN provider_conversation_id;
+
+    CREATE TABLE logical_results_v4 (
+      row_id INTEGER PRIMARY KEY,
+      logical_result_id TEXT NOT NULL UNIQUE,
+      profile_id TEXT NOT NULL,
+      codex_thread_id TEXT NOT NULL,
+      codex_turn_id TEXT NOT NULL,
+      completed_at_ms INTEGER NOT NULL,
+      payload_digest TEXT NOT NULL,
+      segment_count INTEGER NOT NULL CHECK (segment_count > 0),
+      UNIQUE (profile_id, codex_thread_id, codex_turn_id)
+    );
+    INSERT INTO logical_results_v4 (
+      row_id, logical_result_id, profile_id, codex_thread_id, codex_turn_id,
+      completed_at_ms, payload_digest, segment_count
+    )
+    SELECT row_id, logical_result_id, profile_id, codex_thread_id, codex_turn_id,
+           completed_at_ms, payload_digest, segment_count
+      FROM logical_results
+     WHERE source_kind = 'codex_turn';
+
+    CREATE TABLE delivery_outbox_v4 (
+      row_id INTEGER PRIMARY KEY,
+      outbox_record_id TEXT NOT NULL UNIQUE,
+      logical_result_id TEXT NOT NULL REFERENCES logical_results_v4(logical_result_id),
+      profile_id TEXT NOT NULL,
+      segment_index INTEGER NOT NULL CHECK (segment_index >= 0),
+      provider TEXT NOT NULL CHECK (provider IN ('qq', 'whatsapp')),
+      channel_account_id TEXT NOT NULL,
+      channel_account_epoch_id TEXT NOT NULL,
+      conversation_key TEXT NOT NULL,
+      conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
+      provider_conversation_id TEXT NOT NULL,
+      provider_reply_event_id TEXT,
+      provider_reply_sequence INTEGER CHECK (
+        provider_reply_sequence IS NULL OR provider_reply_sequence > 0
+      ),
+      text_body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (
+        status IN ('pending', 'leased', 'retry_wait', 'accepted', 'rejected')
+      ),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at_ms INTEGER NOT NULL,
+      lease_token TEXT,
+      lease_expires_at_ms INTEGER,
+      last_outcome TEXT CHECK (
+        last_outcome IN ('accepted', 'rejected', 'ambiguous', 'deferred')
+      ),
+      last_reason_code TEXT,
+      provider_message_id TEXT,
+      accepted_at_ms INTEGER,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      UNIQUE (logical_result_id, segment_index)
+    );
+    INSERT INTO delivery_outbox_v4 SELECT * FROM delivery_outbox;
+    DROP TABLE delivery_outbox;
+    DROP TABLE logical_results;
+    ALTER TABLE logical_results_v4 RENAME TO logical_results;
+    ALTER TABLE delivery_outbox_v4 RENAME TO delivery_outbox;
+    CREATE INDEX delivery_outbox_ready
+      ON delivery_outbox (profile_id, status, next_attempt_at_ms, created_at_ms);
+    PRAGMA user_version = 4;
+  `);
+  database.pragma("foreign_keys = ON");
 }

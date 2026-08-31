@@ -19,9 +19,12 @@ The control plane supports status and explicitly confirmed runtime
 configuration changes without TCP or HTTP. Stable Codex command and file-change
 Approval Requests are correlated to the exact initiating Channel participant,
 but their durable provider presentation and callback path remain incomplete.
-Restart reconciliation, host-local WhatsApp pairing control/media behavior, and
-production packaging also remain incomplete, so the Bridge is not ready for
-deployment.
+App Server generations now restart behind a Profile-local circuit, resume and
+read nonterminal Codex correlations without replaying them, and participate in
+bounded Profile drain. Recovery-discovered uncertainty is atomically committed
+with a durable Channel notification. Host-local WhatsApp pairing control/media
+behavior and production packaging remain incomplete, so the Bridge is not ready
+for deployment.
 
 ## First-release direction
 
@@ -101,7 +104,7 @@ runtime state. See [Configuration and Supervisor operation](docs/configuration.m
 for endpoint and platform limits.
 
 An older Profile database is never migrated during startup. Inspect and apply
-the currently supported schema 3 to 4 migration through the same host-local
+the currently supported schema 3 or 4 to 5 migration through the same host-local
 control plane:
 
 ```sh

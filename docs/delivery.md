@@ -4,9 +4,12 @@
 
 Codex owns the Thread, Turn, items, and terminal status. The Bridge stores only
 the Channel delivery projection needed after the terminal event. One
-`commitLogicalResult` operation creates the Logical Result and every initial
-Outbox segment in one immediate SQLite transaction. No Provider send happens
-before that transaction commits.
+`commitCodexTurnResult` operation transitions the correlated Codex input to its
+terminal state and creates the Logical Result plus every initial Outbox segment
+in one immediate SQLite transaction. No Provider send happens before that
+transaction commits. Recovery uncertainty uses the same pattern through
+`commitCodexInputUncertainty`, so a correlation cannot produce both a terminal
+reply and an uncertainty reply.
 
 The identity `(Profile ID, Codex Thread ID, Codex Turn ID)` permits only one
 Logical Result. A stable payload digest covers the destination and segment
@@ -56,11 +59,11 @@ stable reason codes instead.
 
 ## Schema and current limits
 
-New databases use Bridge schema version 4. Older databases fail closed with
+New databases use Bridge schema version 5. Older databases fail closed with
 Profile reason `migration_required`; normal service startup does not alter
 them. The host-local [`migrations.md`](migrations.md) workflow explicitly
-supports schema 3 to 4 with snapshot evidence, full-plan confirmation,
-transactional QQ sequence backfill, verification, and body-free audit records.
+supports schema 3 or 4 to 5 with snapshot evidence, full-plan confirmation,
+transactional backfill/rebuild, verification, and body-free audit records.
 
 The current Outbox provides durable generic delivery and crash-safe lease
 recovery. For QQ passive delivery, the same transaction allocates and stores a

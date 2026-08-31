@@ -217,3 +217,40 @@ test("projects interruption into native turn/interrupt with both identifiers", a
     params: { threadId: "thread-1", turnId: "turn-1" }
   });
 });
+
+test("exposes active Turn state and interrupts every known Turn during drain", async () => {
+  const router = new CodexEventRouter();
+  const runtime = new FakeRuntime(router);
+  runtime.completeTurns = false;
+  const coordinator = new TurnCoordinator({
+    runtime,
+    workspace: "/tmp/workspace",
+    eventRouter: router
+  });
+
+  const running = coordinator.runTurn("keep working", "thread-1");
+  await eventually(() => coordinator.activeTargets().length === 1);
+  assert.equal(coordinator.activeCount(), 1);
+  assert.deepEqual(coordinator.activeTargets(), [
+    { threadId: "thread-1", turnId: "turn-for-thread-1" }
+  ]);
+
+  await coordinator.interruptActiveTurns();
+  assert.deepEqual(runtime.requests.at(-1), {
+    method: "turn/interrupt",
+    params: { threadId: "thread-1", turnId: "turn-for-thread-1" }
+  });
+
+  router.close(new Error("drain timeout"));
+  await assert.rejects(running, /drain timeout/);
+  assert.equal(coordinator.activeCount(), 0);
+  assert.deepEqual(coordinator.activeTargets(), []);
+});
+
+async function eventually(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.fail("condition did not become true");
+}

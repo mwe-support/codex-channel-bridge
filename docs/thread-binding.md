@@ -47,19 +47,21 @@ For an admitted Channel message, `ConversationTurnCoordinator` uses this order:
 7. mark the input correlation `terminal`.
 
 If the outcome becomes unclear after acceptance, the correlation becomes
-`uncertain`. The Bridge does not automatically replay it. Terminal text is split
-on Unicode character boundaries into at most 64 KiB Outbox segments.
+`uncertain`. The Bridge does not automatically replay it; the same SQLite
+transaction commits a recovery Logical Result and durable Channel Outbox
+record. Terminal text is split on Unicode character boundaries into at most 64
+KiB Outbox segments.
 
 The Profile worker now connects normalized Adapter events through the single
 Inbound Pipeline, Access Policy, command parser, and Admission Controller before
 calling this coordinator. A second ordinary message for the same active Binding
 in steer mode uses native `turn/steer` with the exact `threadId` and
 `expectedTurnId`. Its accepted correlation is attached to that Turn and reaches
-the same terminal status; an unclear steer outcome becomes `uncertain` and is
-not replayed automatically.
+the same terminal status; an unclear steer outcome becomes `uncertain`, is not
+replayed automatically, and produces the same durable uncertainty notification.
 
 ## Schema
 
 Thread Bindings and Codex input correlations are part of Bridge Profile schema
-version 4. Older stores fail closed with `migration_required`; normal service
+version 5. Older stores fail closed with `migration_required`; normal service
 startup never migrates them.

@@ -10,7 +10,11 @@ const CHANNEL_ACCOUNT_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 const CHANNEL_ACCOUNT_EPOCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TOP_LEVEL_KEYS = new Set(["schemaVersion", "supervisor", "profiles"]);
-const SUPERVISOR_KEYS = new Set(["drainTimeoutMs", "childExitTimeoutMs"]);
+const SUPERVISOR_KEYS = new Set([
+  "drainTimeoutMs",
+  "childExitTimeoutMs",
+  "codexRestartCooldownMs"
+]);
 const PROFILE_KEYS = new Set([
   "enabled",
   "workspace",
@@ -115,6 +119,7 @@ export interface ProfileConfiguration {
 export interface SupervisorConfiguration {
   readonly drainTimeoutMs: number;
   readonly childExitTimeoutMs: number;
+  readonly codexRestartCooldownMs: number;
 }
 
 export interface BridgeConfiguration {
@@ -272,6 +277,14 @@ function validateShape(raw: unknown): BridgeConfiguration {
     "supervisor.childExitTimeoutMs",
     issues
   );
+  const codexRestartCooldownMs = integerWithin(
+    isRecord(supervisorRaw) ? supervisorRaw.codexRestartCooldownMs : undefined,
+    30_000,
+    1_000,
+    3_600_000,
+    "supervisor.codexRestartCooldownMs",
+    issues
+  );
 
   const profiles: Record<string, ProfileConfiguration> = {};
   if (!isRecord(raw.profiles)) {
@@ -344,7 +357,7 @@ function validateShape(raw: unknown): BridgeConfiguration {
 
   return {
     schemaVersion: 1,
-    supervisor: { drainTimeoutMs, childExitTimeoutMs },
+    supervisor: { drainTimeoutMs, childExitTimeoutMs, codexRestartCooldownMs },
     profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
   };
 }

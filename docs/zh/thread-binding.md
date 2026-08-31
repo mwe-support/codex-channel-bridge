@@ -32,10 +32,10 @@ Thread Binding 位于 Profile 边界内，并由以下字段确定：
 6. 提交 Logical Result 与全部 Outbox Segment；
 7. 把 Input Correlation 标记为 `terminal`。
 
-若 Input 已接受后结果变得不明确，Correlation 进入 `uncertain`，Bridge 不自动重放。Terminal Text 按 Unicode Character Boundary 切为不超过 64 KiB 的 Outbox Segment。
+若 Input 已接受后结果变得不明确，Correlation 进入 `uncertain`，Bridge 不自动重放；同一 SQLite Transaction 会提交 Recovery Logical Result 与 Durable Channel Outbox Record。Terminal Text 按 Unicode Character Boundary 切为不超过 64 KiB 的 Outbox Segment。
 
-Profile Worker 现已把规范化 Adapter Event 依次送入唯一 Inbound Pipeline、Access Policy、Command Parser 和 Admission Controller，然后才调用该 Coordinator。在 Steer Mode 下，同一 Active Binding 的第二条普通消息使用精确 `threadId` 与 `expectedTurnId` 调用原生 `turn/steer`。其 Accepted Correlation 会附着到该 Turn 并进入相同终态；Steer Outcome 不明确时改为 `uncertain`，且不自动重放。
+Profile Worker 现已把规范化 Adapter Event 依次送入唯一 Inbound Pipeline、Access Policy、Command Parser 和 Admission Controller，然后才调用该 Coordinator。在 Steer Mode 下，同一 Active Binding 的第二条普通消息使用精确 `threadId` 与 `expectedTurnId` 调用原生 `turn/steer`。其 Accepted Correlation 会附着到该 Turn 并进入相同终态；Steer Outcome 不明确时改为 `uncertain`，不自动重放，并产生同样的 Durable Uncertainty Notification。
 
 ## Schema
 
-Thread Binding 与 Codex Input Correlation 属于 Bridge Profile Schema Version 4。旧 Store 以 `migration_required` 失败关闭；普通 Service Startup 绝不自动迁移。
+Thread Binding、Codex Input Correlation 与可恢复 Logical Result Source 属于 Bridge Profile Schema Version 5。旧 Store 以 `migration_required` 失败关闭；普通 Service Startup 绝不自动迁移。

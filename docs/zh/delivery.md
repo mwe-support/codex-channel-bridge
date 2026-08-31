@@ -2,7 +2,7 @@
 
 ## 所有权与提交顺序
 
-Codex 拥有 Thread、Turn、Item 和终态 Status。Bridge 只存储终态 Event 后恢复 Channel 投递所需的 Projection。一次 `commitLogicalResult` Operation 会在同一个 Immediate SQLite Transaction 中创建 Logical Result 和所有初始 Outbox Segment。在该 Transaction 提交前绝不调用 Provider Send。
+Codex 拥有 Thread、Turn、Item 和终态 Status。Bridge 只存储终态 Event 后恢复 Channel 投递所需的 Projection。一次 `commitCodexTurnResult` Operation 会在同一个 Immediate SQLite Transaction 中把关联的 Codex Input 转为终态，并创建 Logical Result 和所有初始 Outbox Segment。在该 Transaction 提交前绝不调用 Provider Send。恢复期的不确定结果通过 `commitCodexInputUncertainty` 使用相同模式，因此同一 Correlation 不会同时产生终态回复和不确定回复。
 
 Identity `(Profile ID, Codex Thread ID, Codex Turn ID)` 只允许一个 Logical Result。稳定 Payload Digest 覆盖 Destination 与 Segment Content。重复提交相同终态结果时返回已有 Logical Result 和 Outbox Identity；同一 Turn 使用不同 Content 或 Destination 重放时以 `logical_result_conflict` 失败。
 
@@ -30,7 +30,7 @@ Provider Message ID 和 Delivery Body 只保留在 Profile Database 内。Operat
 
 ## Schema 与当前限制
 
-新数据库使用 Bridge Schema Version 4。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务内 QQ Sequence Backfill、验证和不含内容的 Audit Record，显式支持 Schema 3→4。
+新数据库使用 Bridge Schema Version 5。旧 Database 会以 Profile Reason `migration_required` 失败关闭；正常 Service Startup 不会修改它们。Host-local [`migrations.md`](migrations.md) Workflow 通过 Snapshot Evidence、完整 Plan Confirmation、事务化 Backfill/Rebuild、验证和不含内容的 Audit Record，显式支持 Schema 3 或 4→5。
 
 当前 Outbox 已提供持久通用投递和 Crash-safe Lease Recovery。对于 QQ 被动投递，同一 Transaction 会为每个 `msg_id` 分配并保存正整数 `msg_seq`；后续共享该 Anchor 的 Logical Result 会继续递增。所有 Ambiguous Retry 都复用同一个 Pair，QQ Adapter 使用显式 Raw-send Path，不再允许 SDK Helper 临时生成新序号。
 

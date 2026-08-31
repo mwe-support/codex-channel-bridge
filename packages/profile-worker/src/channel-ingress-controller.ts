@@ -159,6 +159,10 @@ export class ChannelIngressController {
     return this.#takeExpired(this.#admission.expire(nowMs));
   }
 
+  public snapshot(): { readonly active: number; readonly queued: number; readonly ready: boolean } {
+    return this.#admission.snapshot();
+  }
+
   public controllerForTurn(
     threadId: string,
     turnId: string

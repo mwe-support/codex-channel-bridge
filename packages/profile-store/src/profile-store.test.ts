@@ -19,6 +19,7 @@ function message(overrides: Partial<NormalizedChannelMessage> = {}): NormalizedC
     providerEventId: "event-1",
     conversationKey: "qq:private:conversation-1",
     conversationKind: "private",
+    providerConversationId: "conversation-1",
     providerIdentity: "participant-1",
     observedAtMs: 1_000,
     text: "launch the contract tests",
@@ -179,6 +180,7 @@ test("persists Codex input acceptance before its Turn outcome", async (context) 
     acceptedAtMs: 1_002
   });
   assert.equal(accepted.correlation.state, "accepted");
+  assert.deepEqual(store.nonterminalCodexInputs(), [accepted.correlation]);
   const started = store.transitionCodexInput({
     correlationId: accepted.correlation.correlationId,
     state: "started",
@@ -186,6 +188,7 @@ test("persists Codex input acceptance before its Turn outcome", async (context) 
     updatedAtMs: 1_003
   });
   assert.equal(started.state, "started");
+  assert.deepEqual(store.nonterminalCodexInputs(), [started]);
   const terminal = store.transitionCodexInput({
     correlationId: accepted.correlation.correlationId,
     state: "terminal",
@@ -194,6 +197,7 @@ test("persists Codex input acceptance before its Turn outcome", async (context) 
     updatedAtMs: 1_004
   });
   assert.equal(terminal.terminalStatus, "completed");
+  assert.deepEqual(store.nonterminalCodexInputs(), []);
   assert.deepEqual(
     store.acceptCodexInput({
       profileId: "alpha",
@@ -248,6 +252,111 @@ test("commits one Logical Result and all Outbox segments atomically", async (con
   const reopened = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   assert.deepEqual(reopened.commitLogicalResult(logicalResult({ completedAtMs: 2_000 })), duplicate);
   reopened.close();
+});
+
+test("atomically commits a correlated terminal Turn result and rolls back conflicts", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const archive = store.commitMessage(message());
+  const binding = store.createThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:private:conversation-1",
+    scope: "conversation",
+    codexThreadId: "thread-1",
+    boundAtMs: 1_001
+  }).binding;
+  const accepted = store.acceptCodexInput({
+    profileId: "alpha",
+    archiveRecordId: archive.recordId,
+    bindingId: binding.bindingId,
+    codexThreadId: binding.codexThreadId,
+    clientUserMessageId: "client-terminal",
+    acceptedAtMs: 1_002
+  }).correlation;
+  store.transitionCodexInput({
+    correlationId: accepted.correlationId,
+    state: "started",
+    codexTurnId: "turn-1",
+    updatedAtMs: 1_003
+  });
+
+  const committed = store.commitCodexTurnResult({
+    correlationId: accepted.correlationId,
+    terminalStatus: "completed",
+    updatedAtMs: 1_004,
+    result: logicalResult({ completedAtMs: 1_004 })
+  });
+  assert.equal(committed.correlation.state, "terminal");
+  assert.equal(committed.logicalResult.inserted, true);
+  assert.deepEqual(store.nonterminalCodexInputs(), []);
+  assert.equal(store.outboxCounts().pending, 2);
+
+  const replay = store.commitCodexTurnResult({
+    correlationId: accepted.correlationId,
+    terminalStatus: "completed",
+    updatedAtMs: 1_005,
+    result: logicalResult({ completedAtMs: 1_005 })
+  });
+  assert.equal(replay.logicalResult.inserted, false);
+  assert.equal(store.outboxCounts().pending, 2);
+  store.close();
+});
+
+test("atomically commits restart uncertainty and its durable Channel notification", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const archive = store.commitMessage(message());
+  const binding = store.createThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:private:conversation-1",
+    scope: "conversation",
+    codexThreadId: "thread-uncertain",
+    boundAtMs: 1_001
+  }).binding;
+  const accepted = store.acceptCodexInput({
+    profileId: "alpha",
+    archiveRecordId: archive.recordId,
+    bindingId: binding.bindingId,
+    codexThreadId: binding.codexThreadId,
+    clientUserMessageId: "client-uncertain",
+    acceptedAtMs: 1_002
+  }).correlation;
+
+  assert.throws(
+    () =>
+      store.commitCodexInputUncertainty({
+        correlationId: accepted.correlationId,
+        reasonCode: "turn_start_uncertain",
+        completedAtMs: 1_001,
+        text: "not delivered"
+      }),
+    (error: unknown) =>
+      error instanceof ProfileStoreError && error.reason === "codex_input_conflict"
+  );
+  assert.equal(store.nonterminalCodexInputs().length, 1);
+  assert.deepEqual(store.outboxCounts(), {
+    pending: 0,
+    leased: 0,
+    retryWait: 0,
+    accepted: 0,
+    rejected: 0
+  });
+
+  const committed = store.commitCodexInputUncertainty({
+    correlationId: accepted.correlationId,
+    reasonCode: "turn_start_uncertain",
+    completedAtMs: 2_000,
+    text: "The previous Codex operation was not replayed automatically."
+  });
+  assert.equal(committed.correlation.state, "uncertain");
+  assert.equal(committed.correlation.reasonCode, "turn_start_uncertain");
+  assert.equal(committed.logicalResult.inserted, true);
+  assert.deepEqual(store.nonterminalCodexInputs(), []);
+  const [lease] = store.claimOutbox({ nowMs: 2_000, leaseDurationMs: 1_000 });
+  assert.equal(lease?.target.providerConversationId, "conversation-1");
+  assert.equal(lease?.target.providerReplyEventId, "event-1");
+  assert.equal(lease?.text, "The previous Codex operation was not replayed automatically.");
+  store.close();
 });
 
 test("leases Outbox segments in order and retries ambiguous delivery durably", async (context) => {

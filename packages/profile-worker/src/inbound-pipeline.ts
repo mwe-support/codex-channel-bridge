@@ -100,6 +100,7 @@ function normalizeInboundEvent(
       providerEventId: providerEvent.message.providerEventId,
       conversationKey,
       conversationKind: providerEvent.message.conversationKind,
+      providerConversationId: providerEvent.message.providerConversationId,
       providerIdentity: providerEvent.message.providerIdentity,
       observedAtMs: providerEvent.message.observedAtMs,
       text: providerEvent.message.text

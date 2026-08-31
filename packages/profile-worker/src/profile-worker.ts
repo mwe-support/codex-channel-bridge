@@ -39,6 +39,10 @@ import {
   ProfileStoreError,
   type ArchiveCommitResult,
   type ClaimOutboxOptions,
+  type CodexInputUncertaintyCommitResult,
+  type CodexTurnResultCommitResult,
+  type CommitCodexInputUncertaintyInput,
+  type CommitCodexTurnResultInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -61,6 +65,8 @@ import {
 import { AdmissionController } from "./admission-controller.js";
 import { ChannelApprovalTransport } from "./channel-approval-transport.js";
 import { ChannelIngressController, type ChannelIngressInput } from "./channel-ingress-controller.js";
+import { CodexInputReconciler } from "./codex-input-reconciler.js";
+import { CodexRestartController } from "./codex-restart-controller.js";
 import { CodexEventRouter } from "./codex-event-router.js";
 import { CodexServerRequestRouter } from "./codex-server-request-router.js";
 import { ConversationTurnCoordinator } from "./conversation-turn-coordinator.js";
@@ -72,6 +78,8 @@ export type { TurnResult } from "./turn-coordinator.js";
 
 const CHANNEL_ADAPTER_START_TIMEOUT_MS = 30_000;
 const OUTBOX_SWEEP_INTERVAL_MS = 500;
+const DEFAULT_PROFILE_DRAIN_TIMEOUT_MS = 300_000;
+const DRAIN_POLL_INTERVAL_MS = 50;
 
 export interface ProfileWorkerConfig {
   readonly profileId: string;
@@ -83,6 +91,9 @@ export interface ProfileWorkerConfig {
   readonly codexExecutable?: string;
   readonly admission?: AdmissionConfiguration;
   readonly approval?: ApprovalConfiguration;
+  readonly drainTimeoutMs?: number;
+  readonly childExitTimeoutMs?: number;
+  readonly codexRestartCooldownMs?: number;
 }
 
 export interface ProfileWorkerDependencies {
@@ -95,6 +106,9 @@ export interface ProfileWorkerDependencies {
     options: OpenBaileysAuthStateOptions
   ) => Promise<BaileysAuthStateHandle>;
   readonly createWhatsAppAdapter: (options: WhatsAppChannelAdapterOptions) => ChannelAdapter;
+  readonly sleep?: (delayMs: number) => Promise<void>;
+  readonly codexRestartDelaysMs?: readonly number[];
+  readonly codexRestartCooldownMs?: number;
 }
 
 export interface ProfileStoreRuntime {
@@ -103,6 +117,11 @@ export interface ProfileStoreRuntime {
   createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult>;
   acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult>;
   transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation>;
+  nonterminalCodexInputs(): Promise<readonly CodexInputCorrelation[]>;
+  commitCodexInputUncertainty(
+    input: CommitCodexInputUncertaintyInput
+  ): Promise<CodexInputUncertaintyCommitResult>;
+  commitCodexTurnResult(input: CommitCodexTurnResultInput): Promise<CodexTurnResultCommitResult>;
   commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult>;
   claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]>;
   settleOutbox(settlement: OutboxSettlement): Promise<OutboxSettlementResult>;
@@ -150,11 +169,15 @@ export class ProfileWorker extends EventEmitter {
   readonly #channelAdapterReadiness = new Map<string, ReturnType<NonNullable<ChannelAdapter["readiness"]>>>();
   readonly #channelAdapterUnsubscribe = new Map<string, () => void>();
   readonly #channelApprovalTransport: ChannelApprovalTransport;
+  readonly #codexRestartController: CodexRestartController;
   #health: ProfileHealth;
-  readonly #onCodexNotification = (message: JsonRpcNotification): void => {
-    this.#eventRouter?.route(message);
-    this.emit("notification", message);
-  };
+  #stopPromise?: Promise<ProfileHealth>;
+  #runtimeListeners?: CodexRuntimeListeners;
+  #probe?: ProtocolProbeResult;
+  #codexExecutable?: string;
+  #recoveryTask?: Promise<boolean>;
+  #generationShutdown: Promise<void> = Promise.resolve();
+  #stopping = false;
 
   public constructor(
     config: ProfileWorkerConfig,
@@ -176,6 +199,15 @@ export class ProfileWorker extends EventEmitter {
     );
     this.#channelApprovalTransport = new ChannelApprovalTransport({
       detail: config.approval?.detail ?? "minimal"
+    });
+    this.#codexRestartController = new CodexRestartController({
+      ...(dependencies.codexRestartDelaysMs
+        ? { delaysMs: dependencies.codexRestartDelaysMs }
+        : {}),
+      ...(dependencies.codexRestartCooldownMs !== undefined || config.codexRestartCooldownMs !== undefined
+        ? { cooldownMs: dependencies.codexRestartCooldownMs ?? config.codexRestartCooldownMs }
+        : {}),
+      ...(dependencies.sleep ? { sleep: dependencies.sleep } : {})
     });
     this.#health = {
       profileId: config.profileId,
@@ -211,6 +243,7 @@ export class ProfileWorker extends EventEmitter {
     if (this.#runtime) return this.health();
     this.#transition("starting", null);
     const executable = this.#config.codexExecutable ?? "codex";
+    this.#codexExecutable = executable;
 
     let probe: ProtocolProbeResult;
     try {
@@ -218,63 +251,22 @@ export class ProfileWorker extends EventEmitter {
     } catch (error) {
       const reason =
         error instanceof CodexProtocolProbeError ? error.reason : ("codex_start_failed" as const);
+      await this.#startChannelAdapters();
+      this.#startDeliveryOutbox();
+      this.#channelIngress.setReady(false, Date.now());
+      this.#ensureCodexRecovery();
       return this.#transition("unavailable", reason);
     }
-
-    const runtime = this.#dependencies.createRuntime({
-      executable,
-      codexHome: this.#config.codexHome,
-      workspace: this.#config.workspace,
-      bridgeVersion: "0.1.0-dev"
-    });
-    this.#runtime = runtime;
-    const eventRouter = new CodexEventRouter();
-    this.#eventRouter = eventRouter;
-    this.#serverRequestRouter = new CodexServerRequestRouter(runtime, {
-      approvalTimeoutMs: this.#config.approval?.timeoutMs ?? 300_000,
-      onExpired: (approval) => this.emit("channelApprovalExpired", {
-        approvalToken: approval.approvalToken,
-        threadId: approval.threadId,
-        turnId: approval.turnId
-      })
-    });
-    this.#turnCoordinator = new TurnCoordinator({
-      runtime,
-      workspace: this.#config.workspace,
-      eventRouter
-    });
-    this.#conversationTurnCoordinator = new ConversationTurnCoordinator({
-      profileId: this.#config.profileId,
-      store: this.#store!,
-      turnDriver: this.#turnCoordinator
-    });
-    runtime.on("notification", this.#onCodexNotification);
-    runtime.on("serverRequest", (request) => this.#handleServerRequest(request));
-    runtime.on("protocolFault", () => {
-      eventRouter.close(new Error("Codex App Server protocol fault"));
-      this.#serverRequestRouter?.close();
-      this.#emitExpiredChannelWork(this.#channelIngress.setReady(false, Date.now()).expired);
-      this.#transition("unavailable", "protocol_fault", probe);
-    });
-
-    try {
-      await runtime.start();
-      await runtime.request("model/list", {});
-    } catch {
-      runtime.off("notification", this.#onCodexNotification);
-      eventRouter.close(new Error("Codex App Server failed to start"));
-      await runtime.stop().catch(() => undefined);
-      this.#runtime = undefined;
-      this.#eventRouter = undefined;
-      this.#serverRequestRouter = undefined;
-      this.#turnCoordinator = undefined;
-      this.#conversationTurnCoordinator = undefined;
+    this.#probe = probe;
+    const codexReady = await this.#startCodexGeneration(executable, probe);
+    const adaptersReady = await this.#startChannelAdapters();
+    this.#startDeliveryOutbox();
+    if (!codexReady) {
+      this.#channelIngress.setReady(false, Date.now());
+      this.#ensureCodexRecovery();
       return this.#transition("unavailable", "codex_start_failed", probe);
     }
-
-    const adaptersReady = await this.#startChannelAdapters();
     this.#channelIngress.setReady(true, Date.now());
-    this.#startDeliveryOutbox();
     return this.#transition(
       adaptersReady ? "ready" : "degraded",
       adaptersReady ? null : "channel_adapter_unavailable",
@@ -284,6 +276,164 @@ export class ProfileWorker extends EventEmitter {
 
   public async runTurn(text: string, existingThreadId?: string): Promise<TurnResult> {
     return this.#requireReadyTurnCoordinator().runTurn(text, existingThreadId);
+  }
+
+  async #startCodexGeneration(
+    executable: string,
+    probe: ProtocolProbeResult
+  ): Promise<boolean> {
+    if (this.#stopping || this.#runtime) return false;
+    let runtime: ManagedCodexRpcRuntime;
+    try {
+      runtime = this.#dependencies.createRuntime({
+        executable,
+        codexHome: this.#config.codexHome,
+        workspace: this.#config.workspace,
+        bridgeVersion: "0.1.0-dev",
+        ...(this.#config.childExitTimeoutMs !== undefined
+          ? { childExitTimeoutMs: this.#config.childExitTimeoutMs }
+          : {})
+      });
+    } catch {
+      return false;
+    }
+    const eventRouter = new CodexEventRouter();
+    const serverRequestRouter = new CodexServerRequestRouter(runtime, {
+      approvalTimeoutMs: this.#config.approval?.timeoutMs ?? 300_000,
+      onExpired: (approval) => this.emit("channelApprovalExpired", {
+        approvalToken: approval.approvalToken,
+        threadId: approval.threadId,
+        turnId: approval.turnId
+      })
+    });
+    const turnCoordinator = new TurnCoordinator({
+      runtime,
+      workspace: this.#config.workspace,
+      eventRouter
+    });
+    const conversationTurnCoordinator = new ConversationTurnCoordinator({
+      profileId: this.#config.profileId,
+      store: this.#store!,
+      turnDriver: turnCoordinator
+    });
+    const listeners: CodexRuntimeListeners = {
+      notification: (message) => {
+        if (this.#runtime !== runtime) return;
+        eventRouter.route(message);
+        this.emit("notification", message);
+      },
+      serverRequest: (request) => {
+        if (this.#runtime === runtime) this.#handleServerRequest(request, runtime, probe);
+      },
+      protocolFault: (error) => {
+        if (this.#runtime === runtime) this.#handleCodexGenerationFault(runtime, error, probe);
+      }
+    };
+    this.#runtime = runtime;
+    this.#eventRouter = eventRouter;
+    this.#serverRequestRouter = serverRequestRouter;
+    this.#turnCoordinator = turnCoordinator;
+    this.#conversationTurnCoordinator = conversationTurnCoordinator;
+    this.#runtimeListeners = listeners;
+    runtime.on("notification", listeners.notification);
+    runtime.on("serverRequest", listeners.serverRequest);
+    runtime.on("protocolFault", listeners.protocolFault);
+
+    try {
+      await runtime.start();
+      await runtime.request("model/list", {});
+      const reconciliation = await new CodexInputReconciler(runtime, this.#store!).reconcile();
+      if (reconciliation.inspected > 0) {
+        this.emit("codexInputReconciled", reconciliation);
+      }
+      if (this.#stopping || this.#runtime !== runtime) {
+        this.#deactivateCodexGeneration(runtime, new Error("Profile is stopping"));
+        await runtime.stop().catch(() => undefined);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.#deactivateCodexGeneration(
+        runtime,
+        error instanceof Error ? error : new Error(String(error))
+      );
+      await runtime.stop().catch(() => undefined);
+      return false;
+    }
+  }
+
+  #handleCodexGenerationFault(
+    runtime: ManagedCodexRpcRuntime,
+    error: Error,
+    probe: ProtocolProbeResult
+  ): void {
+    if (this.#stopping || this.#runtime !== runtime) return;
+    this.#deactivateCodexGeneration(runtime, error);
+    this.#emitExpiredChannelWork(this.#channelIngress.setReady(false, Date.now()).expired);
+    this.#transition("unavailable", "protocol_fault", probe);
+    this.#generationShutdown = runtime.stop().catch(() => undefined);
+    this.#ensureCodexRecovery();
+  }
+
+  #deactivateCodexGeneration(runtime: ManagedCodexRpcRuntime, error: Error): void {
+    if (this.#runtime !== runtime) return;
+    const listeners = this.#runtimeListeners;
+    if (listeners) {
+      runtime.off("notification", listeners.notification);
+      runtime.off("serverRequest", listeners.serverRequest);
+      runtime.off("protocolFault", listeners.protocolFault);
+    }
+    this.#eventRouter?.close(error);
+    this.#serverRequestRouter?.close();
+    this.#runtime = undefined;
+    this.#eventRouter = undefined;
+    this.#serverRequestRouter = undefined;
+    this.#turnCoordinator = undefined;
+    this.#conversationTurnCoordinator = undefined;
+    this.#runtimeListeners = undefined;
+  }
+
+  #ensureCodexRecovery(): void {
+    if (this.#stopping || this.#recoveryTask || !this.#codexExecutable) return;
+    const executable = this.#codexExecutable;
+    const recovery = this.#codexRestartController.recover(
+      async () => {
+        if (this.#stopping) return false;
+        await this.#generationShutdown;
+        if (this.#stopping) return false;
+        let freshProbe: ProtocolProbeResult;
+        try {
+          freshProbe = await this.#dependencies.probe(executable);
+        } catch {
+          return false;
+        }
+        if (!await this.#startCodexGeneration(executable, freshProbe)) return false;
+        this.#probe = freshProbe;
+        this.#channelIngress.setReady(true, Date.now());
+        this.#transitionForCurrentAdapters(freshProbe);
+        this.emit("codexGenerationRecovered", { profileId: this.#config.profileId });
+        return true;
+      },
+      () => this.#transition("unavailable", "codex_restart_exhausted", this.#probe)
+    );
+    this.#recoveryTask = recovery;
+    void recovery.finally(() => {
+      if (this.#recoveryTask === recovery) this.#recoveryTask = undefined;
+    });
+  }
+
+  #transitionForCurrentAdapters(probe: ProtocolProbeResult): void {
+    const enabledAccountIds = Object.values(this.#config.channelAccounts ?? {})
+      .filter((account) => account.enabled)
+      .map((account) => account.id);
+    const allReady = enabledAccountIds.every(
+      (accountId) => this.#channelAdapterReadiness.get(accountId) === "ready"
+    );
+    this.#transition(
+      allReady ? "ready" : "degraded",
+      allReady ? null : "channel_adapter_unavailable",
+      probe
+    );
   }
 
   public async respondToApproval(
@@ -297,15 +447,41 @@ export class ProfileWorker extends EventEmitter {
   }
 
   public async stop(): Promise<ProfileHealth> {
+    if (this.#stopPromise) return this.#stopPromise;
+    this.#stopPromise = this.#drainAndStop();
+    return this.#stopPromise;
+  }
+
+  async #drainAndStop(): Promise<ProfileHealth> {
+    this.#stopping = true;
+    this.#codexRestartController.stop();
     const runtime = this.#runtime;
-    if (runtime) this.#transition("draining", null);
-    this.#eventRouter?.close(new Error("Profile worker stopped"));
-    this.#serverRequestRouter?.close();
+    if (runtime || this.#store || this.#channelAdapters.size > 0) {
+      this.#transition("draining", null);
+    }
     this.#emitExpiredChannelWork(this.#channelIngress.setReady(false, Date.now()).expired);
+    const drain = await this.#waitForDrain();
+    if (!drain.completed) {
+      await this.#turnCoordinator?.interruptActiveTurns();
+      await this.#waitForActiveWork(this.#config.childExitTimeoutMs ?? 10_000);
+    }
+    this.emit("drainCompleted", drain);
+    this.#eventRouter?.close(
+      new Error(drain.completed ? "Profile worker stopped" : "Profile drain timed out")
+    );
+    if (!drain.completed) {
+      await this.#waitForActiveWork(this.#config.childExitTimeoutMs ?? 10_000);
+    }
+    this.#serverRequestRouter?.close();
     await this.#stopDeliveryOutbox();
     await this.#stopChannelAdapters();
     if (runtime) {
-      runtime.off("notification", this.#onCodexNotification);
+      const listeners = this.#runtimeListeners;
+      if (listeners) {
+        runtime.off("notification", listeners.notification);
+        runtime.off("serverRequest", listeners.serverRequest);
+        runtime.off("protocolFault", listeners.protocolFault);
+      }
       await runtime.stop();
       this.#runtime = undefined;
     }
@@ -313,10 +489,51 @@ export class ProfileWorker extends EventEmitter {
     this.#serverRequestRouter = undefined;
     this.#turnCoordinator = undefined;
     this.#conversationTurnCoordinator = undefined;
+    this.#runtimeListeners = undefined;
     await this.#store?.close();
     this.#store = undefined;
     this.#inboundPipeline = undefined;
     return this.#transition("stopped", null);
+  }
+
+  async #waitForDrain(): Promise<ProfileDrainResult> {
+    const timeoutMs = this.#config.drainTimeoutMs ?? DEFAULT_PROFILE_DRAIN_TIMEOUT_MS;
+    const deadlineMs = Date.now() + timeoutMs;
+    let snapshot = await this.#drainSnapshot();
+    while (!isDrainIdle(snapshot) && Date.now() < deadlineMs) {
+      await delay(Math.min(DRAIN_POLL_INTERVAL_MS, Math.max(deadlineMs - Date.now(), 1)));
+      snapshot = await this.#drainSnapshot();
+    }
+    return { completed: isDrainIdle(snapshot), snapshot };
+  }
+
+  async #waitForActiveWork(timeoutMs: number): Promise<void> {
+    const deadlineMs = Date.now() + timeoutMs;
+    while (Date.now() < deadlineMs) {
+      const admission = this.#channelIngress.snapshot();
+      if (admission.active === 0 && (this.#turnCoordinator?.activeCount() ?? 0) === 0) return;
+      await delay(Math.min(DRAIN_POLL_INTERVAL_MS, Math.max(deadlineMs - Date.now(), 1)));
+    }
+  }
+
+  async #drainSnapshot(): Promise<ProfileDrainSnapshot> {
+    const admission = this.#channelIngress.snapshot();
+    const outbox = this.#store
+      ? await this.#store.outboxCounts().catch(() => ({
+          pending: 1,
+          leased: 0,
+          retryWait: 0,
+          accepted: 0,
+          rejected: 0
+        }))
+      : { pending: 0, leased: 0, retryWait: 0, accepted: 0, rejected: 0 };
+    return {
+      activeAdmission: admission.active,
+      queuedAdmission: admission.queued,
+      activeTurns: this.#turnCoordinator?.activeCount() ?? 0,
+      pendingApprovals: this.#serverRequestRouter?.pendingCount() ?? 0,
+      pendingOutbox: outbox.pending + outbox.leased + outbox.retryWait
+    };
   }
 
   #requireReadyTurnCoordinator(): TurnCoordinator {
@@ -329,7 +546,11 @@ export class ProfileWorker extends EventEmitter {
     return this.#turnCoordinator;
   }
 
-  #handleServerRequest(request: JsonRpcRequest): void {
+  #handleServerRequest(
+    request: JsonRpcRequest,
+    runtime: ManagedCodexRpcRuntime,
+    probe: ProtocolProbeResult
+  ): void {
     const router = this.#serverRequestRouter;
     if (!router) return;
     void router
@@ -351,7 +572,13 @@ export class ProfileWorker extends EventEmitter {
           void this.#presentChannelApproval(disposition.approval);
         }
       })
-      .catch(() => this.#transition("unavailable", "protocol_fault"));
+      .catch((error) =>
+        this.#handleCodexGenerationFault(
+          runtime,
+          error instanceof Error ? error : new Error(String(error)),
+          probe
+        )
+      );
   }
 
   #isValidConfiguration(): boolean {
@@ -360,7 +587,14 @@ export class ProfileWorker extends EventEmitter {
       isAbsolute(this.#config.workspace) &&
       isAbsolute(this.#config.codexHome) &&
       isAbsolute(this.#config.stateDirectory) &&
-      (this.#config.secretsFile === undefined || isAbsolute(this.#config.secretsFile))
+      (this.#config.secretsFile === undefined || isAbsolute(this.#config.secretsFile)) &&
+      (this.#config.drainTimeoutMs === undefined ||
+        (Number.isSafeInteger(this.#config.drainTimeoutMs) && this.#config.drainTimeoutMs > 0)) &&
+      (this.#config.childExitTimeoutMs === undefined ||
+        (Number.isSafeInteger(this.#config.childExitTimeoutMs) && this.#config.childExitTimeoutMs > 0)) &&
+      (this.#config.codexRestartCooldownMs === undefined ||
+        (Number.isSafeInteger(this.#config.codexRestartCooldownMs) &&
+          this.#config.codexRestartCooldownMs > 0))
     );
   }
 
@@ -508,6 +742,49 @@ export class ProfileWorker extends EventEmitter {
         decision.disposition.work,
         decision.disposition.command
       );
+    } else if (
+      decision.disposition.kind === "rejected" &&
+      (decision.disposition.reason === "unavailable" ||
+        decision.disposition.reason === "busy" ||
+        decision.disposition.reason === "rate_limited")
+    ) {
+      void this.#sendIngressRejection(input, decision.disposition.reason);
+    }
+  }
+
+  async #sendIngressRejection(
+    work: ChannelIngressInput,
+    reason: "unavailable" | "busy" | "rate_limited"
+  ): Promise<void> {
+    const adapter = this.#channelAdapters.get(work.event.message.channelAccountId);
+    if (!adapter) return;
+    const text =
+      reason === "unavailable"
+        ? "Codex is currently unavailable. This input was archived but was not queued or executed."
+        : reason === "busy"
+          ? "This Profile is busy. The input was not queued or executed."
+          : "This Channel Account is rate limited. The input was not queued or executed.";
+    try {
+      await adapter.sendText({
+        logicalResultId: `bridge-status:${work.archiveRecordId}:${reason}`,
+        segmentIndex: 0,
+        target: {
+          conversationKey: work.event.replyTarget.conversationKey,
+          conversationKind: work.event.replyTarget.conversationKind,
+          providerConversationId: work.event.replyTarget.providerConversationId
+        },
+        text
+      });
+      this.emit("channelIngressRejectionDelivered", {
+        archiveRecordId: work.archiveRecordId,
+        reason
+      });
+    } catch (error) {
+      this.emit("channelIngressRejectionDeliveryFailed", {
+        archiveRecordId: work.archiveRecordId,
+        reason,
+        outcome: error instanceof ChannelDeliveryError ? error.outcome : "delivery_exception"
+      });
     }
   }
 
@@ -783,4 +1060,35 @@ async function withRejectingTimeout<T>(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+interface ProfileDrainSnapshot {
+  readonly activeAdmission: number;
+  readonly queuedAdmission: number;
+  readonly activeTurns: number;
+  readonly pendingApprovals: number;
+  readonly pendingOutbox: number;
+}
+
+interface ProfileDrainResult {
+  readonly completed: boolean;
+  readonly snapshot: ProfileDrainSnapshot;
+}
+
+interface CodexRuntimeListeners {
+  readonly notification: (message: JsonRpcNotification) => void;
+  readonly serverRequest: (request: JsonRpcRequest) => void;
+  readonly protocolFault: (error: Error) => void;
+}
+
+function isDrainIdle(snapshot: ProfileDrainSnapshot): boolean {
+  return snapshot.activeAdmission === 0 &&
+    snapshot.queuedAdmission === 0 &&
+    snapshot.activeTurns === 0 &&
+    snapshot.pendingApprovals === 0 &&
+    snapshot.pendingOutbox === 0;
+}
+
+async function delay(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }

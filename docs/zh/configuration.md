@@ -14,6 +14,7 @@ schemaVersion: 1
 supervisor:
   drainTimeoutMs: 300000
   childExitTimeoutMs: 10000
+  codexRestartCooldownMs: 30000
 
 profiles:
   primary:
@@ -52,6 +53,8 @@ profiles:
             allow: [provider-group-participant-id]
     codexExecutable: /optional/absolute/path/to/codex
 ```
+
+`codexRestartCooldownMs` 是 App Server 有界重启预算耗尽后使用的 Profile-local Circuit Breaker Cooldown。每个新 Generation 必须重新完成完整 Capability Probe 后才能进入 Ready。
 
 Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字和连字符，以字母开头，最长 63 个字符。`workspace`、`codexHome` 和 `stateDirectory` 都必须是现有绝对目录；在完整 Candidate 中，任何一个 Owned Root 都不能与另一个相同，也不能包含另一个或被另一个包含。在 macOS 和 Linux 上，`stateDirectory` 必须是真实目录、由 Service User 所有且 Mode 为 `0700`；Worker 在其中创建 Mode 为 `0600` 的 `bridge.sqlite`。`codexExecutable` 可选；省略时，Worker 从其 Service Environment 中解析 `codex`。Bridge 不会安装或升级它。
 

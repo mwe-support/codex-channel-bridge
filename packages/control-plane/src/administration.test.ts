@@ -124,7 +124,7 @@ profiles:
   assert.deepEqual(result, {
     ...result,
     fromVersion: 3,
-    toVersion: 4
+    toVersion: 5
   });
   SqliteProfileStore.open({
     profileId: "alpha",
@@ -260,10 +260,79 @@ async function schemaThreeState(context: test.TestContext): Promise<string> {
   const databasePath = join(directory, "bridge.sqlite");
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
   const database = new Database(databasePath);
+  downgradeFiveToFour(database);
   database.exec("DROP TABLE delivery_reply_sequences");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_sequence");
   database.pragma("user_version = 3");
   database.close();
   await chmod(databasePath, 0o600);
   return directory;
+}
+
+function downgradeFiveToFour(database: Database.Database): void {
+  database.pragma("foreign_keys = OFF");
+  database.exec(`
+    ALTER TABLE message_archive DROP COLUMN provider_conversation_id;
+    CREATE TABLE logical_results_v4 (
+      row_id INTEGER PRIMARY KEY,
+      logical_result_id TEXT NOT NULL UNIQUE,
+      profile_id TEXT NOT NULL,
+      codex_thread_id TEXT NOT NULL,
+      codex_turn_id TEXT NOT NULL,
+      completed_at_ms INTEGER NOT NULL,
+      payload_digest TEXT NOT NULL,
+      segment_count INTEGER NOT NULL CHECK (segment_count > 0),
+      UNIQUE (profile_id, codex_thread_id, codex_turn_id)
+    );
+    INSERT INTO logical_results_v4 (
+      row_id, logical_result_id, profile_id, codex_thread_id, codex_turn_id,
+      completed_at_ms, payload_digest, segment_count
+    )
+    SELECT row_id, logical_result_id, profile_id, codex_thread_id, codex_turn_id,
+           completed_at_ms, payload_digest, segment_count
+      FROM logical_results WHERE source_kind = 'codex_turn';
+    CREATE TABLE delivery_outbox_v4 (
+      row_id INTEGER PRIMARY KEY,
+      outbox_record_id TEXT NOT NULL UNIQUE,
+      logical_result_id TEXT NOT NULL REFERENCES logical_results_v4(logical_result_id),
+      profile_id TEXT NOT NULL,
+      segment_index INTEGER NOT NULL CHECK (segment_index >= 0),
+      provider TEXT NOT NULL CHECK (provider IN ('qq', 'whatsapp')),
+      channel_account_id TEXT NOT NULL,
+      channel_account_epoch_id TEXT NOT NULL,
+      conversation_key TEXT NOT NULL,
+      conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
+      provider_conversation_id TEXT NOT NULL,
+      provider_reply_event_id TEXT,
+      provider_reply_sequence INTEGER CHECK (
+        provider_reply_sequence IS NULL OR provider_reply_sequence > 0
+      ),
+      text_body TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (
+        status IN ('pending', 'leased', 'retry_wait', 'accepted', 'rejected')
+      ),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at_ms INTEGER NOT NULL,
+      lease_token TEXT,
+      lease_expires_at_ms INTEGER,
+      last_outcome TEXT CHECK (
+        last_outcome IN ('accepted', 'rejected', 'ambiguous', 'deferred')
+      ),
+      last_reason_code TEXT,
+      provider_message_id TEXT,
+      accepted_at_ms INTEGER,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      UNIQUE (logical_result_id, segment_index)
+    );
+    INSERT INTO delivery_outbox_v4 SELECT * FROM delivery_outbox;
+    DROP TABLE delivery_outbox;
+    DROP TABLE logical_results;
+    ALTER TABLE logical_results_v4 RENAME TO logical_results;
+    ALTER TABLE delivery_outbox_v4 RENAME TO delivery_outbox;
+    CREATE INDEX delivery_outbox_ready
+      ON delivery_outbox (profile_id, status, next_attempt_at_ms, created_at_ms);
+    PRAGMA user_version = 4;
+  `);
+  database.pragma("foreign_keys = ON");
 }

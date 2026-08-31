@@ -175,10 +175,14 @@ profiles:
 
 test("restarts a crashed Worker with a bounded Profile-local budget", async () => {
   const factory = new FakeFactory();
-  const clock: SupervisorClock = { now: () => 1_000, sleep: async () => undefined };
+  const cooldown = new Promise<void>(() => undefined);
+  const clock: SupervisorClock = {
+    now: () => 1_000,
+    sleep: (delayMs) => delayMs === 99 ? cooldown : Promise.resolve()
+  };
   const supervisor = new Supervisor(
     factory,
-    { delaysMs: [0, 0], windowMs: 60_000 },
+    { delaysMs: [0, 0], windowMs: 60_000, cooldownMs: 99 },
     clock
   );
   await supervisor.apply(candidate("/srv/alpha/workspace", false));
@@ -195,6 +199,37 @@ test("restarts a crashed Worker with a bounded Profile-local budget", async () =
   );
   assert.equal(factory.created.length, 3);
   assert.equal(supervisor.status().liveness, "live");
+  await supervisor.stop();
+});
+
+test("retries a Worker only after an exhausted circuit cooldown", async () => {
+  const factory = new FakeFactory();
+  let releaseCooldown!: () => void;
+  const cooldown = new Promise<void>((resolve) => {
+    releaseCooldown = resolve;
+  });
+  const clock: SupervisorClock = {
+    now: () => 1_000,
+    sleep: (delayMs) => delayMs === 99 ? cooldown : Promise.resolve()
+  };
+  const supervisor = new Supervisor(
+    factory,
+    { delaysMs: [0], windowMs: 60_000, cooldownMs: 99 },
+    clock
+  );
+  await supervisor.apply(candidate("/srv/alpha/workspace", false));
+
+  factory.created.at(-1)!.crash();
+  await eventually(() => factory.created.length === 2);
+  factory.created.at(-1)!.crash();
+  await eventually(
+    () => supervisor.status().profiles[0]?.reason === "worker_restart_exhausted"
+  );
+  assert.equal(factory.created.length, 2);
+
+  releaseCooldown();
+  await eventually(() => factory.created.length === 3);
+  assert.equal(supervisor.status().profiles[0]?.readiness, "ready");
   await supervisor.stop();
 });
 

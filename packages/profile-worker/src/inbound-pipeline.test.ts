@@ -72,6 +72,7 @@ test("injects Worker-owned authority and archives before exposing an observed ev
       providerEventId: '["message-1",null]',
       conversationKey: "qq:qq-primary:private:participant%2F1",
       conversationKind: "private",
+      providerConversationId: "participant/1",
       providerIdentity: "participant/1",
       observedAtMs: 1_000,
       text: "hello"

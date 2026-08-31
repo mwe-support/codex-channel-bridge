@@ -46,6 +46,7 @@ export type ProfileMaintenanceOperation<T> = (
 export interface WorkerRestartPolicy {
   readonly delaysMs: readonly number[];
   readonly windowMs: number;
+  readonly cooldownMs: number;
 }
 
 export interface SupervisorClock {
@@ -55,7 +56,8 @@ export interface SupervisorClock {
 
 const defaultRestartPolicy: WorkerRestartPolicy = {
   delaysMs: [1_000, 2_000, 5_000],
-  windowMs: 60_000
+  windowMs: 60_000,
+  cooldownMs: 30_000
 };
 
 const defaultClock: SupervisorClock = {
@@ -281,6 +283,14 @@ export class Supervisor extends EventEmitter {
         ...runtime.health(),
         readiness: "unavailable",
         reason: "worker_restart_exhausted"
+      });
+      void this.#clock.sleep(this.#restartPolicy.cooldownMs).then(() => {
+        const operation = this.#operation.then(async () => {
+          if (this.#liveness !== "live" || this.#runtimes.get(profileId) !== runtime) return;
+          this.#workerCrashes.delete(profileId);
+          await this.#restartCrashedProfile(profileId, runtime);
+        });
+        this.#operation = operation.catch(() => undefined);
       });
       return;
     }

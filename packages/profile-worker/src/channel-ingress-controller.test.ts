@@ -22,6 +22,7 @@ function event(overrides: Partial<InboundChannelEvent> = {}): InboundChannelEven
       providerEventId: "event-1",
       conversationKey: "qq:qq-primary:private:user-1",
       conversationKind: "private",
+      providerConversationId: "user-1",
       providerIdentity: "user-1",
       observedAtMs: 1_000,
       text: "run tests"

@@ -4,11 +4,12 @@ Supervisor 正常启动绝不修改现有 Profile Database Schema。旧 Database
 Profile 保持 `unavailable: migration_required`；Supervisor 与 Sibling Profile 继续
 保持 Live。
 
-当前 Binary 只支持一个 Migration Span：Bridge Profile Schema Version 3 到 Version
-4。未知 Version 或不一致的 Schema Shape 都会失败关闭。3→4 Migration 会增加持久
-QQ Passive Reply Sequence 字段，对现有 QQ Outbox Row 确定性回填序号，创建按 Anchor
-保存 Next Sequence 的 Table，并验证 Profile Ownership、迁移后 Schema 与 SQLite
-`quick_check`。
+当前 Binary 支持 Bridge Profile Schema 4→5，以及串联的 3→5 Path。未知 Version
+或不一致的 Schema Shape 都会失败关闭。3→4 会增加并回填持久 QQ Passive Reply
+Sequence；4→5 会在 Message Archive 保留 Provider Conversation Target，并泛化
+Logical Result Source Identity，使 Restart Uncertainty 与其 Channel Notification 能在
+同一 Transaction 提交。两条 Path 都会验证 Profile Ownership、迁移后 Schema、
+Foreign Key 与 SQLite `quick_check`。
 
 ## Plan
 

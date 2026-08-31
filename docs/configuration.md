@@ -18,6 +18,7 @@ schemaVersion: 1
 supervisor:
   drainTimeoutMs: 300000
   childExitTimeoutMs: 10000
+  codexRestartCooldownMs: 30000
 
 profiles:
   primary:
@@ -56,6 +57,10 @@ profiles:
             allow: [provider-group-participant-id]
     codexExecutable: /optional/absolute/path/to/codex
 ```
+
+`codexRestartCooldownMs` is the configured Profile-local circuit-breaker
+cooldown after a bounded App Server restart budget is exhausted. Every new
+generation repeats the full capability probe before it can become ready.
 
 The Profile mapping key is the Profile ID. IDs use lowercase ASCII letters,
 digits, and hyphens, start with a letter, and are at most 63 characters.

@@ -57,6 +57,12 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.acceptCodexInput(operation.value);
     case "transitionCodexInput":
       return store.transitionCodexInput(operation.transition);
+    case "nonterminalCodexInputs":
+      return store.nonterminalCodexInputs();
+    case "commitCodexInputUncertainty":
+      return store.commitCodexInputUncertainty(operation.value);
+    case "commitCodexTurnResult":
+      return store.commitCodexTurnResult(operation.value);
     case "commitLogicalResult":
       return store.commitLogicalResult(operation.value);
     case "claimOutbox":
@@ -86,6 +92,9 @@ function isStorageRequest(value: unknown): value is StorageRequest {
       value.operation.name === "createThreadBinding" ||
       value.operation.name === "acceptCodexInput" ||
       value.operation.name === "transitionCodexInput" ||
+      value.operation.name === "nonterminalCodexInputs" ||
+      value.operation.name === "commitCodexInputUncertainty" ||
+      value.operation.name === "commitCodexTurnResult" ||
       value.operation.name === "commitLogicalResult" ||
       value.operation.name === "claimOutbox" ||
       value.operation.name === "settleOutbox" ||

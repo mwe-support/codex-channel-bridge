@@ -22,6 +22,8 @@ import type {
 import {
   ProfileStoreError,
   type ClaimOutboxOptions,
+  type CommitCodexInputUncertaintyInput,
+  type CommitCodexTurnResultInput,
   type CodexInputTransition,
   type CreateThreadBindingInput,
   type OutboxSettlement
@@ -45,8 +47,11 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
   readonly responses: Array<{ id: JsonRpcId; result: unknown }> = [];
   stopped = false;
   completeTurns = true;
+  startFailure = false;
+  respondErrorFailure = false;
 
   async start() {
+    if (this.startFailure) throw new Error("start failed");
     return {
       userAgent: "fake",
       platformFamily: "unix",
@@ -59,6 +64,9 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
     this.requests.push({ method, params });
     if (method === "model/list") return { data: [] } as TResult;
     if (method === "thread/start") return { thread: { id: "thread-1" } } as TResult;
+    if (method === "thread/resume") {
+      return { thread: { id: (params as { threadId: string }).threadId } } as TResult;
+    }
     if (method === "turn/start") {
       queueMicrotask(() => this.emit("turnStarted"));
       if (this.completeTurns) queueMicrotask(() => this.completeTurn());
@@ -90,7 +98,9 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
   async respond(id: JsonRpcId, result: unknown): Promise<void> {
     this.responses.push({ id, result });
   }
-  async respondError(_id: JsonRpcId, _error: JsonRpcErrorObject): Promise<void> {}
+  async respondError(_id: JsonRpcId, _error: JsonRpcErrorObject): Promise<void> {
+    if (this.respondErrorFailure) throw new Error("response write failed");
+  }
   async stop(): Promise<void> {
     this.stopped = true;
   }
@@ -100,6 +110,7 @@ class FakeStore implements ProfileStoreRuntime {
   closed = false;
   readonly messages: NormalizedChannelMessage[] = [];
   readonly logicalResults: LogicalResultInput[] = [];
+  readonly transitions: CodexInputTransition[] = [];
   outboxClaimCount = 0;
   binding?: Awaited<ReturnType<ProfileStoreRuntime["getThreadBinding"]>>;
   correlationSequence = 0;
@@ -135,6 +146,7 @@ class FakeStore implements ProfileStoreRuntime {
   }
 
   async transitionCodexInput(transition: CodexInputTransition) {
+    this.transitions.push(transition);
     return {
       correlationId: transition.correlationId,
       profileId: "profile-a",
@@ -155,9 +167,42 @@ class FakeStore implements ProfileStoreRuntime {
     };
   }
 
+  async nonterminalCodexInputs() {
+    return [];
+  }
+
+  async commitCodexInputUncertainty(input: CommitCodexInputUncertaintyInput) {
+    const correlation = await this.transitionCodexInput({
+      correlationId: input.correlationId,
+      state: "uncertain",
+      reasonCode: input.reasonCode,
+      updatedAtMs: input.completedAtMs
+    });
+    return {
+      correlation,
+      logicalResult: {
+        logicalResultId: `uncertain-${input.correlationId}`,
+        outboxRecordIds: [`outbox-${input.correlationId}`],
+        inserted: true
+      }
+    };
+  }
+
   async commitLogicalResult(input: LogicalResultInput) {
     this.logicalResults.push(input);
     return { logicalResultId: "result-1", outboxRecordIds: ["outbox-1"], inserted: true };
+  }
+
+  async commitCodexTurnResult(input: CommitCodexTurnResultInput) {
+    const correlation = await this.transitionCodexInput({
+      correlationId: input.correlationId,
+      state: "terminal",
+      codexTurnId: input.result.codexTurnId,
+      terminalStatus: input.terminalStatus,
+      updatedAtMs: input.updatedAtMs
+    });
+    const logicalResult = await this.commitLogicalResult(input.result);
+    return { correlation, logicalResult };
   }
 
   async claimOutbox(_options: ClaimOutboxOptions) {
@@ -379,6 +424,62 @@ test("fails closed before starting Codex when Profile storage cannot open", asyn
   assert.equal(runtime.requests.length, 0);
 });
 
+test("keeps adapters archiving while Codex is unavailable without creating an outage backlog", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    {
+      ...dependencies(runtime, store),
+      probe: async () => {
+        throw new Error("Codex unavailable");
+      },
+      createQQAdapter: () => adapter
+    }
+  );
+
+  assert.deepEqual(await worker.start(), {
+    profileId: "profile-a",
+    readiness: "unavailable",
+    reason: "codex_start_failed"
+  });
+  assert.equal(adapter.started, true);
+  const ingress = once(worker, "channelIngress");
+  const rejectionDelivered = once(worker, "channelIngressRejectionDelivered");
+  await adapter.receive(inboundEvent(1, "must not run later"));
+  const [decision] = await ingress;
+  await rejectionDelivered;
+  assert.equal(decision.disposition.kind, "rejected");
+  assert.equal(decision.disposition.reason, "unavailable");
+  assert.equal(store.messages.length, 1);
+  assert.equal(runtime.requests.length, 0);
+  assert.match(adapter.deliveries[0]?.text ?? "", /not queued or executed/);
+  assert.equal(adapter.deliveries[0]?.target.providerReplyEventId, undefined);
+  await worker.stop();
+});
+
 test("reports migration_required without starting Codex for an older Bridge schema", async () => {
   const runtime = new FakeRuntime();
   const worker = new ProfileWorker(
@@ -464,6 +565,7 @@ test("resolves QQ Secret References, starts the adapter, and archives inbound ev
       providerEventId: '["message-1",null]',
       conversationKey: "qq:qq-primary:private:user-1",
       conversationKind: "private",
+      providerConversationId: "user-1",
       providerIdentity: "user-1",
       observedAtMs: 1,
       text: "hello"
@@ -866,3 +968,274 @@ test("isolates an adapter that emits facts for a different provider", async () =
   assert.equal((await worker.runTurn("Codex remains available")).status, "completed");
   await worker.stop();
 });
+
+test("drains an active Channel Turn before stopping the App Server and adapter", async () => {
+  const runtime = new FakeRuntime();
+  runtime.completeTurns = false;
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      drainTimeoutMs: 500,
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    { ...dependencies(runtime), createQQAdapter: () => adapter }
+  );
+  await worker.start();
+  const started = once(runtime, "turnStarted");
+  await adapter.receive(inboundEvent(1, "long turn"));
+  await started;
+
+  const stopped = worker.stop();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(worker.health().readiness, "draining");
+  assert.equal(runtime.stopped, false);
+  assert.equal(adapter.stopped, false);
+
+  runtime.completeTurn();
+  const health = await stopped;
+  assert.equal(health.readiness, "stopped");
+  assert.equal(runtime.stopped, true);
+  assert.equal(adapter.stopped, true);
+  assert.equal(
+    runtime.requests.some((request) => request.method === "turn/interrupt"),
+    false
+  );
+});
+
+test("interrupts an unresolved Turn at the drain deadline and reports uncertainty", async () => {
+  const runtime = new FakeRuntime();
+  runtime.completeTurns = false;
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      drainTimeoutMs: 10,
+      childExitTimeoutMs: 25,
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    { ...dependencies(runtime), createQQAdapter: () => adapter }
+  );
+  await worker.start();
+  const started = once(runtime, "turnStarted");
+  await adapter.receive(inboundEvent(1, "never completes"));
+  await started;
+
+  const drained = once(worker, "drainCompleted");
+  await worker.stop();
+  const [result] = await drained as unknown as [
+    { completed: boolean; snapshot: { activeTurns: number } }
+  ];
+  assert.equal(result.completed, false);
+  assert.equal(result.snapshot.activeTurns, 1);
+  assert.deepEqual(
+    runtime.requests.find((request) => request.method === "turn/interrupt"),
+    {
+      method: "turn/interrupt",
+      params: { threadId: "thread-1", turnId: "turn-1" }
+    }
+  );
+  assert.equal(runtime.stopped, true);
+});
+
+test("restarts a failed App Server generation without restarting adapters or replaying input", async () => {
+  const firstRuntime = new FakeRuntime();
+  firstRuntime.completeTurns = false;
+  const secondRuntime = new FakeRuntime();
+  const runtimes = [firstRuntime, secondRuntime];
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  let probeCalls = 0;
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    {
+      ...dependencies(firstRuntime, store),
+      probe: async () => {
+        probeCalls += 1;
+        return testedProbe;
+      },
+      createRuntime: () => {
+        const runtime = runtimes.shift();
+        if (!runtime) throw new Error("unexpected runtime generation");
+        return runtime;
+      },
+      createQQAdapter: () => adapter,
+      codexRestartDelaysMs: [0],
+      codexRestartCooldownMs: 1_000,
+      sleep: async () => undefined
+    }
+  );
+  await worker.start();
+  const started = once(firstRuntime, "turnStarted");
+  await adapter.receive(inboundEvent(1, "work before crash"));
+  await started;
+
+  const failed = once(worker, "channelTurnFailed");
+  const recovered = once(worker, "codexGenerationRecovered");
+  firstRuntime.emit("protocolFault", new Error("child exited"));
+  await Promise.all([failed, recovered]);
+
+  assert.equal(firstRuntime.stopped, true);
+  assert.equal(adapter.stopped, false);
+  assert.equal(worker.health().readiness, "ready");
+  assert.equal(probeCalls, 2);
+  assert.equal(
+    store.transitions.some(
+      (transition) => transition.state === "uncertain" &&
+        transition.reasonCode === "turn_result_uncertain"
+    ),
+    true
+  );
+  assert.deepEqual(secondRuntime.requests.map((request) => request.method), ["model/list"]);
+
+  const completed = once(worker, "channelTurnCompleted");
+  await adapter.receive(inboundEvent(2, "continue deliberately"));
+  await completed;
+  assert.deepEqual(
+    secondRuntime.requests.map((request) => request.method),
+    ["model/list", "thread/resume", "turn/start"]
+  );
+  await worker.stop();
+});
+
+test("restarts the App Server generation when a server-request response cannot be written", async () => {
+  const firstRuntime = new FakeRuntime();
+  firstRuntime.respondErrorFailure = true;
+  const secondRuntime = new FakeRuntime();
+  const runtimes = [firstRuntime, secondRuntime];
+  let probeCalls = 0;
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
+    },
+    {
+      ...dependencies(firstRuntime),
+      probe: async () => {
+        probeCalls += 1;
+        return testedProbe;
+      },
+      createRuntime: () => {
+        const runtime = runtimes.shift();
+        if (!runtime) throw new Error("unexpected runtime generation");
+        return runtime;
+      },
+      codexRestartDelaysMs: [0],
+      sleep: async () => undefined
+    }
+  );
+  await worker.start();
+  const recovered = once(worker, "codexGenerationRecovered");
+  firstRuntime.emit("serverRequest", {
+    id: 7,
+    method: "unsupported/request",
+    params: {}
+  });
+  await recovered;
+  assert.equal(firstRuntime.stopped, true);
+  assert.equal(worker.health().readiness, "ready");
+  assert.equal(probeCalls, 2);
+  await worker.stop();
+});
+
+test("opens a Profile-local circuit after the bounded App Server restart budget", async () => {
+  const firstRuntime = new FakeRuntime();
+  const failedOne = new FakeRuntime();
+  failedOne.startFailure = true;
+  const failedTwo = new FakeRuntime();
+  failedTwo.startFailure = true;
+  const runtimes = [firstRuntime, failedOne, failedTwo];
+  const cooldown = new Promise<void>(() => undefined);
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state"
+    },
+    {
+      ...dependencies(firstRuntime),
+      createRuntime: () => {
+        const runtime = runtimes.shift();
+        if (!runtime) throw new Error("unexpected runtime generation");
+        return runtime;
+      },
+      codexRestartDelaysMs: [0, 0],
+      codexRestartCooldownMs: 99,
+      sleep: (delayMs) => delayMs === 99 ? cooldown : Promise.resolve()
+    }
+  );
+  await worker.start();
+  firstRuntime.emit("protocolFault", new Error("child exited"));
+  await eventually(() => worker.health().reason === "codex_restart_exhausted");
+  assert.equal(worker.health().readiness, "unavailable");
+  assert.equal(runtimes.length, 0);
+  await worker.stop();
+});
+
+async function eventually(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.fail("condition did not become true");
+}

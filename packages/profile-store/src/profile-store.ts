@@ -16,7 +16,7 @@ import type {
 } from "@codex-channel-bridge/core";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -97,6 +97,30 @@ export interface ThreadBindingCommitResult {
 export interface CodexInputCommitResult {
   readonly correlation: CodexInputCorrelation;
   readonly inserted: boolean;
+}
+
+export interface CommitCodexInputUncertaintyInput {
+  readonly correlationId: string;
+  readonly reasonCode: string;
+  readonly completedAtMs: number;
+  readonly text: string;
+}
+
+export interface CodexInputUncertaintyCommitResult {
+  readonly correlation: CodexInputCorrelation;
+  readonly logicalResult: LogicalResultCommitResult;
+}
+
+export interface CommitCodexTurnResultInput {
+  readonly correlationId: string;
+  readonly terminalStatus: string;
+  readonly updatedAtMs: number;
+  readonly result: LogicalResultInput;
+}
+
+export interface CodexTurnResultCommitResult {
+  readonly correlation: CodexInputCorrelation;
+  readonly logicalResult: LogicalResultCommitResult;
 }
 
 export type CodexInputTransition =
@@ -193,6 +217,7 @@ interface ArchiveRow {
   readonly provider_event_id: string;
   readonly conversation_key: string;
   readonly conversation_kind: ChannelConversationKind;
+  readonly provider_conversation_id: string;
   readonly provider_identity: string;
   readonly observed_at_ms: number;
   readonly text_body: string | null;
@@ -206,6 +231,12 @@ interface LogicalResultRow {
   readonly logical_result_id: string;
   readonly payload_digest: string;
 }
+
+type DurableResultInput = Omit<LogicalResultInput, "codexTurnId"> & {
+  readonly sourceKind: "codex_turn" | "codex_input_uncertainty";
+  readonly sourceId: string;
+  readonly codexTurnId?: string;
+};
 
 interface OutboxIdRow {
   readonly outbox_record_id: string;
@@ -314,6 +345,7 @@ export class SqliteProfileStore {
              provider_event_id,
              conversation_key,
              conversation_kind,
+             provider_conversation_id,
              provider_identity,
              observed_at_ms,
              text_body
@@ -326,6 +358,7 @@ export class SqliteProfileStore {
              @providerEventId,
              @conversationKey,
              @conversationKind,
+             @providerConversationId,
              @providerIdentity,
              @observedAtMs,
              @text
@@ -379,6 +412,7 @@ export class SqliteProfileStore {
                     provider_event_id,
                     conversation_key,
                     conversation_kind,
+                    provider_conversation_id,
                     provider_identity,
                     observed_at_ms,
                     text_body
@@ -419,6 +453,7 @@ export class SqliteProfileStore {
                 message_archive.provider_event_id,
                 message_archive.conversation_key,
                 message_archive.conversation_kind,
+                message_archive.provider_conversation_id,
                 message_archive.provider_identity,
                 message_archive.observed_at_ms,
                 message_archive.text_body,
@@ -637,66 +672,253 @@ export class SqliteProfileStore {
     }
   }
 
+  public nonterminalCodexInputs(): readonly CodexInputCorrelation[] {
+    this.#requireOpen();
+    try {
+      return this.#database
+        .prepare<{ profileId: string }, CodexInputRow>(
+          `SELECT *
+             FROM codex_input_correlations
+            WHERE profile_id = @profileId
+              AND state IN ('accepted', 'started')
+            ORDER BY accepted_at_ms ASC, row_id ASC`
+        )
+        .all({ profileId: this.#profileId })
+        .map(toCodexInputCorrelation);
+    } catch {
+      throw new ProfileStoreError("storage_failure", "Unable to list nonterminal Codex inputs");
+    }
+  }
+
   public commitLogicalResult(input: LogicalResultInput): LogicalResultCommitResult {
     this.#requireOpen();
     validateLogicalResult(input, this.#profileId);
-    const payloadDigest = logicalResultDigest(input);
-    const commit = this.#database.transaction((): LogicalResultCommitResult => {
-      const existing = this.#database
-        .prepare<
-          { profileId: string; codexThreadId: string; codexTurnId: string },
-          LogicalResultRow
-        >(
-          `SELECT logical_result_id, payload_digest
-             FROM logical_results
-            WHERE profile_id = @profileId
-              AND codex_thread_id = @codexThreadId
-              AND codex_turn_id = @codexTurnId`
-        )
-        .get({
-          profileId: input.profileId,
-          codexThreadId: input.codexThreadId,
-          codexTurnId: input.codexTurnId
-        });
-      if (existing) {
-        if (existing.payload_digest !== payloadDigest) {
+    const durableInput: DurableResultInput = {
+      ...input,
+      sourceKind: "codex_turn",
+      sourceId: input.codexTurnId
+    };
+    const commit = this.#database.transaction(() => this.#commitDurableResult(durableInput));
+
+    try {
+      return commit.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to commit Logical Result");
+    }
+  }
+
+  /** Atomically closes one started correlation and queues its terminal result. */
+  public commitCodexTurnResult(
+    input: CommitCodexTurnResultInput
+  ): CodexTurnResultCommitResult {
+    this.#requireOpen();
+    validateLogicalResult(input.result, this.#profileId);
+    if (!input.correlationId || !input.terminalStatus || !Number.isSafeInteger(input.updatedAtMs)) {
+      throw new ProfileStoreError("invalid_codex_input", "Invalid Codex Turn result commit");
+    }
+    const commit = this.#database.transaction((): CodexTurnResultCommitResult => {
+      const current = this.#codexInputById(input.correlationId);
+      if (!current) {
+        throw new ProfileStoreError("invalid_codex_input", "Codex input correlation was not found");
+      }
+      if (
+        current.codexThreadId !== input.result.codexThreadId ||
+        current.codexTurnId !== input.result.codexTurnId
+      ) {
+        throw new ProfileStoreError(
+          "codex_input_conflict",
+          "Terminal result does not match the correlated Codex Turn"
+        );
+      }
+      if (current.state === "terminal") {
+        if (current.terminalStatus !== input.terminalStatus) {
           throw new ProfileStoreError(
-            "logical_result_conflict",
-            "Codex Turn already has a different Logical Result"
+            "codex_input_conflict",
+            "Codex input already has a different terminal status"
           );
         }
-        return {
-          logicalResultId: existing.logical_result_id,
-          outboxRecordIds: this.#outboxIds(existing.logical_result_id),
-          inserted: false
-        };
+      } else if (current.state !== "started") {
+        throw new ProfileStoreError(
+          "codex_input_conflict",
+          `Cannot commit a terminal result from ${current.state}`
+        );
+      } else {
+        if (input.updatedAtMs < current.updatedAtMs) {
+          throw new ProfileStoreError("codex_input_conflict", "Terminal result timestamp is stale");
+        }
+        this.#database
+          .prepare(
+            `UPDATE codex_input_correlations
+                SET state = 'terminal',
+                    codex_turn_id = @codexTurnId,
+                    terminal_status = @terminalStatus,
+                    reason_code = NULL,
+                    updated_at_ms = @updatedAtMs
+              WHERE correlation_id = @correlationId`
+          )
+          .run({
+            correlationId: input.correlationId,
+            codexTurnId: input.result.codexTurnId,
+            terminalStatus: input.terminalStatus,
+            updatedAtMs: input.updatedAtMs
+          });
       }
+      const logicalResult = this.#commitDurableResult({
+        ...input.result,
+        sourceKind: "codex_turn",
+        sourceId: input.result.codexTurnId
+      });
+      return {
+        correlation: this.#codexInputById(input.correlationId)!,
+        logicalResult
+      };
+    });
 
-      const logicalResultId = randomUUID();
+    try {
+      return commit.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to commit Codex Turn result");
+    }
+  }
+
+  /** Atomically closes one uncertain correlation and queues its Channel notification. */
+  public commitCodexInputUncertainty(
+    input: CommitCodexInputUncertaintyInput
+  ): CodexInputUncertaintyCommitResult {
+    this.#requireOpen();
+    validateCodexInputUncertainty(input);
+    const commit = this.#database.transaction((): CodexInputUncertaintyCommitResult => {
+      const current = this.#codexInputById(input.correlationId);
+      if (!current) {
+        throw new ProfileStoreError("invalid_codex_input", "Codex input correlation was not found");
+      }
+      if (current.state !== "accepted" && current.state !== "started") {
+        throw new ProfileStoreError(
+          "codex_input_conflict",
+          "Codex input was settled before uncertainty could be committed"
+        );
+      }
+      if (input.completedAtMs < current.updatedAtMs) {
+        throw new ProfileStoreError("codex_input_conflict", "Uncertainty timestamp is stale");
+      }
+      const archive = this.#database
+        .prepare<{ recordId: string; profileId: string }, ArchiveRow>(
+          `SELECT *
+             FROM message_archive
+            WHERE record_id = @recordId
+              AND profile_id = @profileId`
+        )
+        .get({ recordId: current.archiveRecordId, profileId: this.#profileId });
+      if (!archive) {
+        throw new ProfileStoreError(
+          "invalid_codex_input",
+          "Codex input archive record was not found"
+        );
+      }
       this.#database
         .prepare(
-          `INSERT INTO logical_results (
+          `UPDATE codex_input_correlations
+              SET state = 'uncertain',
+                  terminal_status = NULL,
+                  reason_code = @reasonCode,
+                  updated_at_ms = @completedAtMs
+            WHERE correlation_id = @correlationId`
+        )
+        .run(input);
+      const logicalResult = this.#commitDurableResult({
+        profileId: this.#profileId,
+        sourceKind: "codex_input_uncertainty",
+        sourceId: current.correlationId,
+        codexThreadId: current.codexThreadId,
+        ...(current.codexTurnId ? { codexTurnId: current.codexTurnId } : {}),
+        provider: archive.provider,
+        channelAccountId: archive.channel_account_id,
+        channelAccountEpochId: archive.channel_account_epoch_id,
+        target: {
+          conversationKey: archive.conversation_key,
+          conversationKind: archive.conversation_kind,
+          providerConversationId: archive.provider_conversation_id,
+          providerReplyEventId: archive.provider_event_id
+        },
+        completedAtMs: input.completedAtMs,
+        segments: [{ text: input.text }]
+      });
+      return {
+        correlation: this.#codexInputById(current.correlationId)!,
+        logicalResult
+      };
+    });
+
+    try {
+      return commit.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError(
+        "storage_failure",
+        "Unable to commit Codex input uncertainty"
+      );
+    }
+  }
+
+  #commitDurableResult(input: DurableResultInput): LogicalResultCommitResult {
+    const payloadDigest = durableResultDigest(input);
+    const existing = this.#database
+      .prepare<
+        { profileId: string; sourceKind: string; sourceId: string },
+        LogicalResultRow
+      >(
+        `SELECT logical_result_id, payload_digest
+             FROM logical_results
+            WHERE profile_id = @profileId
+              AND source_kind = @sourceKind
+              AND source_id = @sourceId`
+      )
+      .get(input);
+    if (existing) {
+      if (existing.payload_digest !== payloadDigest) {
+        throw new ProfileStoreError(
+          "logical_result_conflict",
+          "Codex Turn already has a different Logical Result"
+        );
+      }
+      return {
+        logicalResultId: existing.logical_result_id,
+        outboxRecordIds: this.#outboxIds(existing.logical_result_id),
+        inserted: false
+      };
+    }
+
+    const logicalResultId = randomUUID();
+    this.#database
+      .prepare(
+        `INSERT INTO logical_results (
              logical_result_id,
              profile_id,
+             source_kind,
+             source_id,
              codex_thread_id,
              codex_turn_id,
              completed_at_ms,
              payload_digest,
              segment_count
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          logicalResultId,
-          input.profileId,
-          input.codexThreadId,
-          input.codexTurnId,
-          input.completedAtMs,
-          payloadDigest,
-          input.segments.length
-        );
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        logicalResultId,
+        input.profileId,
+        input.sourceKind,
+        input.sourceId,
+        input.codexThreadId,
+        input.codexTurnId ?? null,
+        input.completedAtMs,
+        payloadDigest,
+        input.segments.length
+      );
 
-      const insertOutbox = this.#database.prepare(
-        `INSERT INTO delivery_outbox (
+    const insertOutbox = this.#database.prepare(
+      `INSERT INTO delivery_outbox (
            outbox_record_id,
            logical_result_id,
            profile_id,
@@ -715,40 +937,32 @@ export class SqliteProfileStore {
            next_attempt_at_ms,
            created_at_ms,
            updated_at_ms
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
+    );
+    const replySequences = allocateReplySequences(this.#database, input);
+    const outboxRecordIds = input.segments.map((segment, segmentIndex) => {
+      const outboxRecordId = randomUUID();
+      insertOutbox.run(
+        outboxRecordId,
+        logicalResultId,
+        input.profileId,
+        segmentIndex,
+        input.provider,
+        input.channelAccountId,
+        input.channelAccountEpochId,
+        input.target.conversationKey,
+        input.target.conversationKind,
+        input.target.providerConversationId,
+        input.target.providerReplyEventId ?? null,
+        replySequences[segmentIndex],
+        segment.text,
+        input.completedAtMs,
+        input.completedAtMs,
+        input.completedAtMs
       );
-      const replySequences = allocateReplySequences(this.#database, input);
-      const outboxRecordIds = input.segments.map((segment, segmentIndex) => {
-        const outboxRecordId = randomUUID();
-        insertOutbox.run(
-          outboxRecordId,
-          logicalResultId,
-          input.profileId,
-          segmentIndex,
-          input.provider,
-          input.channelAccountId,
-          input.channelAccountEpochId,
-          input.target.conversationKey,
-          input.target.conversationKind,
-          input.target.providerConversationId,
-          input.target.providerReplyEventId ?? null,
-          replySequences[segmentIndex],
-          segment.text,
-          input.completedAtMs,
-          input.completedAtMs,
-          input.completedAtMs
-        );
-        return outboxRecordId;
-      });
-      return { logicalResultId, outboxRecordIds, inserted: true };
+      return outboxRecordId;
     });
-
-    try {
-      return commit.immediate();
-    } catch (error) {
-      if (error instanceof ProfileStoreError) throw error;
-      throw new ProfileStoreError("storage_failure", "Unable to commit Logical Result");
-    }
+    return { logicalResultId, outboxRecordIds, inserted: true };
   }
 
   public claimOutbox(options: ClaimOutboxOptions): readonly OutboxDeliveryLease[] {
@@ -1167,6 +1381,7 @@ function createSchema(database: Database.Database, profileId: string): void {
         provider_event_id TEXT NOT NULL,
         conversation_key TEXT NOT NULL,
         conversation_kind TEXT NOT NULL CHECK (conversation_kind IN ('private', 'group')),
+        provider_conversation_id TEXT NOT NULL,
         provider_identity TEXT NOT NULL,
         observed_at_ms INTEGER NOT NULL,
         text_body TEXT,
@@ -1242,12 +1457,15 @@ function createSchema(database: Database.Database, profileId: string): void {
         row_id INTEGER PRIMARY KEY,
         logical_result_id TEXT NOT NULL UNIQUE,
         profile_id TEXT NOT NULL,
+        source_kind TEXT NOT NULL CHECK (source_kind IN ('codex_turn', 'codex_input_uncertainty')),
+        source_id TEXT NOT NULL,
         codex_thread_id TEXT NOT NULL,
-        codex_turn_id TEXT NOT NULL,
+        codex_turn_id TEXT,
         completed_at_ms INTEGER NOT NULL,
         payload_digest TEXT NOT NULL,
         segment_count INTEGER NOT NULL CHECK (segment_count > 0),
-        UNIQUE (profile_id, codex_thread_id, codex_turn_id)
+        CHECK (source_kind <> 'codex_turn' OR codex_turn_id IS NOT NULL),
+        UNIQUE (profile_id, source_kind, source_id)
       );
 
       CREATE TABLE delivery_outbox (
@@ -1328,6 +1546,7 @@ function validateMessage(message: NormalizedChannelMessage, profileId: string): 
   validateExternalId(message.channelAccountEpochId, "channelAccountEpochId");
   validateExternalId(message.providerEventId, "providerEventId");
   validateExternalId(message.conversationKey, "conversationKey");
+  validateExternalId(message.providerConversationId, "providerConversationId");
   validateExternalId(message.providerIdentity, "providerIdentity");
 }
 
@@ -1471,11 +1690,27 @@ function validateLogicalResult(input: LogicalResultInput, profileId: string): vo
   }
 }
 
-function logicalResultDigest(input: LogicalResultInput): string {
+function validateCodexInputUncertainty(input: CommitCodexInputUncertaintyInput): void {
+  if (
+    !validExternalId(input.correlationId) ||
+    !validExternalId(input.reasonCode) ||
+    !Number.isSafeInteger(input.completedAtMs) ||
+    input.completedAtMs < 0 ||
+    typeof input.text !== "string" ||
+    input.text.length === 0 ||
+    Buffer.byteLength(input.text, "utf8") > MAX_TEXT_BYTES
+  ) {
+    throw new ProfileStoreError("invalid_codex_input", "Codex input uncertainty is invalid");
+  }
+}
+
+function durableResultDigest(input: DurableResultInput): string {
   const canonical = JSON.stringify([
     input.profileId,
+    input.sourceKind,
+    input.sourceId,
     input.codexThreadId,
-    input.codexTurnId,
+    input.codexTurnId ?? null,
     input.provider,
     input.channelAccountId,
     input.channelAccountEpochId,
@@ -1490,7 +1725,10 @@ function logicalResultDigest(input: LogicalResultInput): string {
 
 function allocateReplySequences(
   database: Database.Database,
-  input: LogicalResultInput
+  input: Pick<
+    DurableResultInput,
+    "provider" | "profileId" | "channelAccountId" | "channelAccountEpochId" | "target" | "segments"
+  >
 ): readonly (number | null)[] {
   if (input.provider !== "qq" || !input.target.providerReplyEventId) {
     return input.segments.map(() => null);
@@ -1669,6 +1907,7 @@ function toArchivedMessage(row: ArchiveRow): ArchivedChannelMessage {
     providerEventId: row.provider_event_id,
     conversationKey: row.conversation_key,
     conversationKind: row.conversation_kind,
+    providerConversationId: row.provider_conversation_id,
     providerIdentity: row.provider_identity,
     observedAtMs: row.observed_at_ms,
     text: row.text_body

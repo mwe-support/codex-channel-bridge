@@ -20,6 +20,7 @@ function event(kind: "private" | "group", identity: string, conversation = "grou
       providerEventId: "event-1",
       conversationKey: `qq:qq-primary:${kind}:${conversation}`,
       conversationKind: kind,
+      providerConversationId: conversation,
       providerIdentity: identity,
       observedAtMs: 1_000,
       text: "hello"

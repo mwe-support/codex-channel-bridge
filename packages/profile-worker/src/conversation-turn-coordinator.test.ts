@@ -11,6 +11,9 @@ import type {
 } from "@codex-channel-bridge/core";
 import type {
   CodexInputCommitResult,
+  CodexInputUncertaintyCommitResult,
+  CommitCodexTurnResultInput,
+  CommitCodexInputUncertaintyInput,
   CodexInputTransition,
   CreateThreadBindingInput,
   LogicalResultCommitResult,
@@ -30,6 +33,7 @@ class FakeStore implements ConversationTurnStore {
   readonly correlations = new Map<string, CodexInputCorrelation>();
   readonly operations: string[] = [];
   logicalResult?: LogicalResultInput;
+  uncertaintyText?: string;
 
   async getThreadBinding(_key: ThreadBindingKey): Promise<ThreadBinding | undefined> {
     this.operations.push("binding.get");
@@ -78,10 +82,53 @@ class FakeStore implements ConversationTurnStore {
     return this.correlation;
   }
 
+  async commitCodexInputUncertainty(
+    input: CommitCodexInputUncertaintyInput
+  ): Promise<CodexInputUncertaintyCommitResult> {
+    this.uncertaintyText = input.text;
+    const correlation = await this.transitionCodexInput({
+      correlationId: input.correlationId,
+      state: "uncertain",
+      reasonCode: input.reasonCode,
+      updatedAtMs: input.completedAtMs
+    });
+    this.operations.push("uncertainty.outbox");
+    return {
+      correlation,
+      logicalResult: {
+        logicalResultId: `uncertain-${input.correlationId}`,
+        outboxRecordIds: [`outbox-${input.correlationId}`],
+        inserted: true
+      }
+    };
+  }
+
   async commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult> {
     this.operations.push("result.commit");
     this.logicalResult = input;
     return { logicalResultId: "result-1", outboxRecordIds: ["outbox-1"], inserted: true };
+  }
+
+  async commitCodexTurnResult(input: CommitCodexTurnResultInput) {
+    this.operations.push("result.commit_terminal");
+    this.logicalResult = input.result;
+    const current = this.correlations.get(input.correlationId);
+    assert.ok(current);
+    const correlation: CodexInputCorrelation = {
+      ...current,
+      state: "terminal",
+      codexTurnId: input.result.codexTurnId,
+      terminalStatus: input.terminalStatus,
+      updatedAtMs: input.updatedAtMs
+    };
+    this.correlation = correlation;
+    this.correlations.set(input.correlationId, correlation);
+    const logicalResult = {
+      logicalResultId: "result-1",
+      outboxRecordIds: ["outbox-1"],
+      inserted: true
+    };
+    return { correlation, logicalResult };
   }
 }
 
@@ -136,6 +183,7 @@ function inboundEvent(overrides: Partial<InboundChannelEvent> = {}): InboundChan
       providerEventId: "event-1",
       conversationKey: "qq:qq-primary:group:group-1",
       conversationKind: "group",
+      providerConversationId: "group-1",
       providerIdentity: "member-1",
       observedAtMs: 1_000,
       text: "run tests"
@@ -177,8 +225,7 @@ test("persists Binding and input correlation around native Turn execution", asyn
     "binding.create",
     "input.accept",
     "input.started",
-    "result.commit",
-    "input.terminal"
+    "result.commit_terminal"
   ]);
   assert.equal(store.logicalResult?.target.providerReplyEventId, "event-1");
   assert.equal(store.logicalResult?.segments[0]?.text, "terminal answer");
@@ -236,6 +283,8 @@ test("marks accepted input uncertain instead of replaying after a lost Turn resu
   assert.equal(store.correlation?.state, "uncertain");
   assert.equal(store.correlation?.reasonCode, "turn_result_uncertain");
   assert.equal(store.operations.includes("result.commit"), false);
+  assert.equal(store.operations.includes("uncertainty.outbox"), true);
+  assert.match(store.uncertaintyText ?? "", /not replayed automatically/);
 });
 
 test("correlates native steer input with the active Turn and its terminal result", async () => {
@@ -355,4 +404,5 @@ test("marks accepted steer input uncertain when native steer fails", async () =>
   );
   assert.equal(store.correlation?.state, "uncertain");
   assert.equal(store.correlation?.reasonCode, "turn_steer_uncertain");
+  assert.equal(store.operations.includes("uncertainty.outbox"), true);
 });

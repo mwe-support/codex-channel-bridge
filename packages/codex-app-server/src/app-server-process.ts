@@ -17,6 +17,7 @@ export interface CodexAppServerOptions {
   readonly workspace: string;
   readonly bridgeVersion: string;
   readonly requestTimeoutMs?: number;
+  readonly childExitTimeoutMs?: number;
 }
 
 export interface StderrSummary {
@@ -34,6 +35,8 @@ export interface CodexRpcRuntime {
   on(event: "serverRequest", listener: (message: JsonRpcRequest) => void): this;
   on(event: "protocolFault", listener: (error: ProtocolFaultError) => void): this;
   off(event: "notification", listener: (message: JsonRpcNotification) => void): this;
+  off(event: "serverRequest", listener: (message: JsonRpcRequest) => void): this;
+  off(event: "protocolFault", listener: (error: ProtocolFaultError) => void): this;
   stop(): Promise<void>;
 }
 
@@ -48,6 +51,8 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
   #stderrBytes = 0;
   #stderrChunks = 0;
   #stderrTruncated = false;
+  #stopping = false;
+  #faultEmitted = false;
 
   public constructor(options: CodexAppServerOptions) {
     super();
@@ -56,6 +61,8 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
 
   public async start(): Promise<InitializeResponse> {
     if (this.#child) throw new Error("Codex App Server process is already started");
+    this.#stopping = false;
+    this.#faultEmitted = false;
     const child = spawn(this.#options.executable, ["app-server", "--stdio"], {
       cwd: this.#options.workspace,
       env: { ...process.env, CODEX_HOME: this.#options.codexHome },
@@ -75,12 +82,20 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
     rpc.on("notification", (message: JsonRpcNotification) => this.emit("notification", message));
     rpc.on("serverRequest", (message: JsonRpcRequest) => this.emit("serverRequest", message));
     rpc.on("protocolFault", (error: ProtocolFaultError) => {
-      this.emit("protocolFault", error);
+      this.#emitProtocolFault(error);
       if (!child.killed) child.kill("SIGTERM");
     });
-    child.once("error", (error) => rpc.close(error));
+    child.once("error", (error) => {
+      const fault = new ProtocolFaultError(`Codex App Server process error: ${error.message}`);
+      rpc.close(fault);
+      if (!this.#stopping) this.#emitProtocolFault(fault);
+    });
     child.once("exit", (code, signal) => {
-      rpc.close(new ProtocolFaultError(`Codex App Server exited (${code ?? signal ?? "unknown"})`));
+      const fault = new ProtocolFaultError(
+        `Codex App Server exited (${code ?? signal ?? "unknown"})`
+      );
+      rpc.close(fault);
+      if (!this.#stopping) this.#emitProtocolFault(fault);
     });
 
     const params: InitializeParams = {
@@ -123,22 +138,30 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
   public async stop(): Promise<void> {
     const child = this.#child;
     if (!child) return;
+    this.#stopping = true;
     this.#rpc?.close(new ProtocolFaultError("Codex App Server stopped by Profile worker"));
     if (child.exitCode === null && child.signalCode === null) {
       const exit = once(child, "exit");
       child.kill("SIGTERM");
+      const exitTimeoutMs = this.#options.childExitTimeoutMs ?? 5_000;
       try {
-        await waitWithTimeout(exit, 5_000);
+        await waitWithTimeout(exit, exitTimeoutMs);
       } catch {
         if (child.exitCode === null && child.signalCode === null) {
           const forcedExit = once(child, "exit");
           child.kill("SIGKILL");
-          await forcedExit;
+          await waitWithTimeout(forcedExit, exitTimeoutMs).catch(() => undefined);
         }
       }
     }
     this.#child = undefined;
     this.#rpc = undefined;
+  }
+
+  #emitProtocolFault(error: ProtocolFaultError): void {
+    if (this.#faultEmitted) return;
+    this.#faultEmitted = true;
+    this.emit("protocolFault", error);
   }
 
   #requireRpc(): JsonlRpcClient {

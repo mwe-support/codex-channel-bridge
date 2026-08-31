@@ -13,6 +13,7 @@ export type ProfileReasonCode =
   | "unsupported_codex_version"
   | "invalid_profile_configuration"
   | "protocol_fault"
+  | "codex_restart_exhausted"
   | "profile_store_unavailable"
   | "migration_required"
   | "channel_adapter_unavailable"

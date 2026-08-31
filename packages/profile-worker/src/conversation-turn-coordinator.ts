@@ -11,6 +11,10 @@ import type {
 } from "@codex-channel-bridge/core";
 import type {
   CodexInputCommitResult,
+  CodexInputUncertaintyCommitResult,
+  CodexTurnResultCommitResult,
+  CommitCodexInputUncertaintyInput,
+  CommitCodexTurnResultInput,
   CodexInputTransition,
   CreateThreadBindingInput,
   LogicalResultCommitResult,
@@ -26,6 +30,10 @@ export interface ConversationTurnStore {
   createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult>;
   acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult>;
   transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation>;
+  commitCodexInputUncertainty(
+    input: CommitCodexInputUncertaintyInput
+  ): Promise<CodexInputUncertaintyCommitResult>;
+  commitCodexTurnResult(input: CommitCodexTurnResultInput): Promise<CodexTurnResultCommitResult>;
   commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult>;
 }
 
@@ -133,23 +141,21 @@ export class ConversationTurnCoordinator {
         }
       });
       const completedAtMs = this.#now();
-      const logicalResult = await this.#store.commitLogicalResult({
-        profileId: this.#profileId,
-        codexThreadId: turn.threadId,
-        codexTurnId: turn.turnId,
-        provider: input.event.message.provider,
-        channelAccountId: input.event.message.channelAccountId,
-        channelAccountEpochId: input.event.message.channelAccountEpochId,
-        target: input.event.replyTarget,
-        completedAtMs,
-        segments: splitResult(turn.finalText || `Codex Turn ended with status: ${turn.status}`)
-      });
-      await this.#store.transitionCodexInput({
+      const terminal = await this.#store.commitCodexTurnResult({
         correlationId: acceptance.correlation.correlationId,
-        state: "terminal",
-        codexTurnId: turn.turnId,
         terminalStatus: turn.status,
-        updatedAtMs: completedAtMs
+        updatedAtMs: completedAtMs,
+        result: {
+          profileId: this.#profileId,
+          codexThreadId: turn.threadId,
+          codexTurnId: turn.turnId,
+          provider: input.event.message.provider,
+          channelAccountId: input.event.message.channelAccountId,
+          channelAccountEpochId: input.event.message.channelAccountEpochId,
+          target: input.event.replyTarget,
+          completedAtMs,
+          segments: splitResult(turn.finalText || `Codex Turn ended with status: ${turn.status}`)
+        }
       });
       this.#rememberTerminalTurn(turn.turnId, turn.status, completedAtMs);
       await this.#completeSteerCorrelations(turn.turnId, turn.status, completedAtMs);
@@ -157,15 +163,16 @@ export class ConversationTurnCoordinator {
         binding,
         inputCorrelationId: acceptance.correlation.correlationId,
         turn,
-        logicalResultId: logicalResult.logicalResultId
+        logicalResultId: terminal.logicalResult.logicalResultId
       };
     } catch (error) {
+      const reasonCode = startedTurnId ? "turn_result_uncertain" : "turn_start_uncertain";
       await this.#store
-        .transitionCodexInput({
+        .commitCodexInputUncertainty({
           correlationId: acceptance.correlation.correlationId,
-          state: "uncertain",
-          reasonCode: startedTurnId ? "turn_result_uncertain" : "turn_start_uncertain",
-          updatedAtMs: this.#now()
+          reasonCode,
+          completedAtMs: this.#now(),
+          text: uncertainResultText(reasonCode)
         })
         .catch(() => undefined);
       throw error;
@@ -222,11 +229,11 @@ export class ConversationTurnCoordinator {
       };
     } catch (error) {
       await this.#store
-        .transitionCodexInput({
+        .commitCodexInputUncertainty({
           correlationId: acceptance.correlation.correlationId,
-          state: "uncertain",
           reasonCode: "turn_steer_uncertain",
-          updatedAtMs: this.#now()
+          completedAtMs: this.#now(),
+          text: uncertainResultText("turn_steer_uncertain")
         })
         .catch(() => undefined);
       throw error;
@@ -286,6 +293,11 @@ export class ConversationTurnCoordinator {
       this.#terminalTurns.delete(oldest);
     }
   }
+}
+
+function uncertainResultText(reasonCode: string): string {
+  const operation = reasonCode === "turn_steer_uncertain" ? "steer operation" : "Codex operation";
+  return `The ${operation} outcome could not be verified. The input was not replayed automatically. You may retry or continue deliberately.`;
 }
 
 function bindingKey(

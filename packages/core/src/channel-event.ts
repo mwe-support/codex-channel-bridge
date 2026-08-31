@@ -36,6 +36,8 @@ export interface NormalizedChannelMessage {
   readonly providerEventId: string;
   readonly conversationKey: string;
   readonly conversationKind: ChannelConversationKind;
+  /** Provider-stable conversation target retained for durable replies after restart. */
+  readonly providerConversationId: string;
   readonly providerIdentity: string;
   readonly observedAtMs: number;
   readonly text: string | null;

@@ -16,6 +16,10 @@ import {
   type ArchiveTextSearch,
   type ArchiveTextSearchHit,
   type ClaimOutboxOptions,
+  type CodexInputUncertaintyCommitResult,
+  type CodexTurnResultCommitResult,
+  type CommitCodexInputUncertaintyInput,
+  type CommitCodexTurnResultInput,
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
@@ -37,6 +41,9 @@ type StorageOperation =
   | { readonly name: "createThreadBinding"; readonly value: CreateThreadBindingInput }
   | { readonly name: "acceptCodexInput"; readonly value: CodexInputAcceptance }
   | { readonly name: "transitionCodexInput"; readonly transition: CodexInputTransition }
+  | { readonly name: "nonterminalCodexInputs" }
+  | { readonly name: "commitCodexInputUncertainty"; readonly value: CommitCodexInputUncertaintyInput }
+  | { readonly name: "commitCodexTurnResult"; readonly value: CommitCodexTurnResultInput }
   | { readonly name: "commitLogicalResult"; readonly value: LogicalResultInput }
   | { readonly name: "claimOutbox"; readonly options: ClaimOutboxOptions }
   | { readonly name: "settleOutbox"; readonly settlement: OutboxSettlement }
@@ -143,6 +150,22 @@ export class ProfileStore {
 
   public transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation> {
     return this.#request({ name: "transitionCodexInput", transition });
+  }
+
+  public nonterminalCodexInputs(): Promise<readonly CodexInputCorrelation[]> {
+    return this.#request({ name: "nonterminalCodexInputs" });
+  }
+
+  public commitCodexInputUncertainty(
+    input: CommitCodexInputUncertaintyInput
+  ): Promise<CodexInputUncertaintyCommitResult> {
+    return this.#request({ name: "commitCodexInputUncertainty", value: input });
+  }
+
+  public commitCodexTurnResult(
+    input: CommitCodexTurnResultInput
+  ): Promise<CodexTurnResultCommitResult> {
+    return this.#request({ name: "commitCodexTurnResult", value: input });
   }
 
   public commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult> {

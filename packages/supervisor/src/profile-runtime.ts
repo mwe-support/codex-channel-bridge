@@ -30,7 +30,8 @@ export class ForkedProfileRuntimeFactory implements ProfileRuntimeFactory {
     return new ForkedProfileRuntime(
       profile,
       supervisor.drainTimeoutMs,
-      supervisor.childExitTimeoutMs
+      supervisor.childExitTimeoutMs,
+      supervisor.codexRestartCooldownMs
     );
   }
 }
@@ -39,6 +40,7 @@ class ForkedProfileRuntime implements ProfileRuntime {
   readonly #profile: ProfileConfiguration;
   readonly #drainTimeoutMs: number;
   readonly #childExitTimeoutMs: number;
+  readonly #supervisorCodexRestartCooldownMs: number;
   readonly #listeners = new Set<(health: ProfileHealth) => void>();
   #child?: ChildProcess;
   #health: ProfileHealth;
@@ -47,11 +49,13 @@ class ForkedProfileRuntime implements ProfileRuntime {
   public constructor(
     profile: ProfileConfiguration,
     drainTimeoutMs: number,
-    childExitTimeoutMs: number
+    childExitTimeoutMs: number,
+    codexRestartCooldownMs: number
   ) {
     this.#profile = profile;
     this.#drainTimeoutMs = drainTimeoutMs;
     this.#childExitTimeoutMs = childExitTimeoutMs;
+    this.#supervisorCodexRestartCooldownMs = codexRestartCooldownMs;
     this.#health = { profileId: profile.id, readiness: "stopped", reason: null };
   }
 
@@ -101,6 +105,9 @@ class ForkedProfileRuntime implements ProfileRuntime {
         channelAccounts: this.#profile.channelAccounts,
         admission: this.#profile.admission,
         approval: this.#profile.approval,
+        drainTimeoutMs: this.#drainTimeoutMs,
+        childExitTimeoutMs: this.#childExitTimeoutMs,
+        codexRestartCooldownMs: this.#supervisorCodexRestartCooldownMs,
         ...(this.#profile.codexExecutable
           ? { codexExecutable: this.#profile.codexExecutable }
           : {})
@@ -135,7 +142,7 @@ class ForkedProfileRuntime implements ProfileRuntime {
     const exited = onceExit(child);
     await send(child, { type: "stop" }).catch(() => undefined);
     try {
-      await withTimeout(exited, this.#drainTimeoutMs);
+      await withTimeout(exited, this.#drainTimeoutMs + this.#childExitTimeoutMs + 1_000);
     } catch {
       child.kill("SIGTERM");
       try {

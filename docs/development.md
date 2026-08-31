@@ -22,7 +22,7 @@ The current runtime slices establish these explicit package boundaries:
    lexical search, Thread Bindings, Codex input correlations, atomic Logical
    Result commits, and durable Outbox state transitions. Its asynchronous
    interface dispatches synchronous SQLite work to a dedicated Worker thread.
-   Its explicit migration edge currently supports only schema 3 to 4.
+   Its explicit migration edge currently supports schema 3 or 4 to 5.
 6. `@codex-channel-bridge/supervisor` owns the foreground deployment process,
    accepted desired configuration, multi-Profile transitions, and bounded
    Worker child-process restart policy. It serializes stopped Profile
@@ -225,19 +225,23 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
 - A crashed Worker is restarted Profile-locally after bounded delays of one,
   two, and five seconds within a sixty-second window. A further crash opens the
   Profile-local stop condition `worker_restart_exhausted`; the Supervisor and
-  sibling Profiles remain live. Administrator reset and cooldown-based recovery
-  are not implemented yet.
+  sibling Profiles remain live. A thirty-second cooldown resets the bounded
+  budget before one new Worker generation is attempted. An explicit
+  administrator reset is not exposed yet.
 - Unix access currently relies on verified service-user ownership and modes
   because Node.js does not expose peer credentials. The Windows named-pipe path
   is present, but strict ACL setup and verification remain untested platform
   work. No Web Administration Console is implemented.
-- Profile drain does not yet wait for Channel admission, active-Turn tracking,
-  durable Approval delivery, queues, or pending Outbox delivery. Their complete
-  drain integration remains defined by the ADRs.
+- Profile drain rejects new Turn and steer admission, expires queued work, and
+  waits for active Turns, process-scoped Approval Requests, and pending Outbox
+  delivery. At its deadline it invokes native `turn/interrupt`, closes the
+  generation-scoped routers, and stops adapters only after the delivery window.
+  Durable Approval persistence remains incomplete, so only requests known to
+  the current generation participate in the drain count.
 - The Profile Store implements persistence, an off-event-loop storage Worker,
   and lexical FTS5 foundations only. Complete local Hybrid Retrieval, Archive
   MCP Server, Archive Purge, and media persistence are not implemented yet.
-  Explicit migration currently supports only the known schema 3 to 4 span;
+  Explicit migration currently supports only the known schema 3 or 4 to 5 spans;
   other version spans remain unsupported and fail closed.
 - The QQ Adapter emits only C2C/group provider facts. The Profile-local Inbound
   Pipeline injects Profile, Channel Account, and Account Epoch authority,
@@ -246,8 +250,14 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   Thread start/resume, native Turn start/steer, input correlation, Logical
   Result creation, and durable Outbox dispatch are connected. Initiator-bound
   `/stop` uses native `turn/interrupt`; `/approve` returns a bound decision to
-  the original native request. The other Channel commands, durable Approval
-  presentation and restart reconciliation remain incomplete. Passive QQ reply
+  the original native request. App Server exits and protocol faults now close
+  process-scoped requests, mark in-flight correlation uncertain, retry behind a
+  bounded jittered circuit, and use native `thread/resume` plus
+  `thread/read(includeTurns)` before accepting new work. Recovered input is never
+  replayed automatically. An uncertainty found during restart is atomically
+  committed with its Channel Logical Result and durable Outbox records. The
+  other Channel commands and durable Approval presentation remain incomplete.
+  Passive QQ reply
   sequences are now allocated with the Outbox transaction and forwarded through
   the explicit raw-send path. The QQ SDK still does not expose a
   provider idempotency key or reconciliation lookup, so ambiguous sends retain

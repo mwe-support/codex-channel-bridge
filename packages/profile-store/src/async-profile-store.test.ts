@@ -18,6 +18,7 @@ function message(overrides: Partial<NormalizedChannelMessage> = {}): NormalizedC
     providerEventId: "event-1",
     conversationKey: "qq:private:conversation-1",
     conversationKind: "private",
+    providerConversationId: "conversation-1",
     providerIdentity: "participant-1",
     observedAtMs: 1_000,
     text: "worker-thread archive",
@@ -34,9 +35,9 @@ function logicalResult(): LogicalResultInput {
     channelAccountId: "qq-primary",
     channelAccountEpochId: "epoch-1",
     target: {
-      conversationKey: "qq:qq-primary:private:user-1",
+      conversationKey: "qq:private:conversation-1",
       conversationKind: "private",
-      providerConversationId: "user-1"
+      providerConversationId: "conversation-1"
     },
     completedAtMs: 1_000,
     segments: [{ text: "durable result" }]
@@ -65,9 +66,36 @@ test("executes archive operations through the asynchronous Profile Store interfa
 test("executes Logical Result and Outbox transitions through the storage Worker", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = await ProfileStore.open({ profileId: "alpha", databasePath });
-  const committed = await store.commitLogicalResult(logicalResult());
+  const archive = await store.commitMessage(message());
+  const binding = (await store.createThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:private:conversation-1",
+    scope: "conversation",
+    codexThreadId: "thread-1",
+    boundAtMs: 1_001
+  })).binding;
+  const accepted = (await store.acceptCodexInput({
+    profileId: "alpha",
+    archiveRecordId: archive.recordId,
+    bindingId: binding.bindingId,
+    codexThreadId: "thread-1",
+    clientUserMessageId: "client-1",
+    acceptedAtMs: 1_002
+  })).correlation;
+  await store.transitionCodexInput({
+    correlationId: accepted.correlationId,
+    state: "started",
+    codexTurnId: "turn-1",
+    updatedAtMs: 1_003
+  });
+  const committed = await store.commitCodexTurnResult({
+    correlationId: accepted.correlationId,
+    terminalStatus: "completed",
+    updatedAtMs: 1_004,
+    result: logicalResult()
+  });
   const [lease] = await store.claimOutbox({ nowMs: 1_000, leaseDurationMs: 100 });
-  assert.equal(lease?.logicalResultId, committed.logicalResultId);
+  assert.equal(lease?.logicalResultId, committed.logicalResult.logicalResultId);
   assert.equal(lease?.providerReplySequence, undefined);
   assert.ok(lease);
   assert.equal(

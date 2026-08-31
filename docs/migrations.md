@@ -4,12 +4,14 @@ Normal Supervisor startup never changes an existing Profile database schema.
 An older database keeps only that Profile `unavailable: migration_required`;
 the Supervisor and sibling Profiles remain live.
 
-The current binary supports exactly one migration span: Bridge Profile schema
-version 3 to version 4. Unknown versions and inconsistent schema shapes fail
-closed. Version 3 to 4 adds the durable QQ passive reply sequence column,
-deterministically backfills existing QQ Outbox rows, creates the per-anchor next
-sequence table, and verifies Profile ownership, the resulting schema, and
-SQLite `quick_check`.
+The current binary supports Bridge Profile schema version 4 to version 5 and a
+composed version 3 to version 5 path. Unknown versions and inconsistent schema
+shapes fail closed. Version 3 to 4 adds and backfills durable QQ passive reply
+sequences. Version 4 to 5 retains the provider conversation target in the
+Message Archive and generalizes Logical Result source identity so restart
+uncertainty and its Channel notification can commit atomically. Both paths
+verify Profile ownership, the resulting schema, foreign keys, and SQLite
+`quick_check`.
 
 ## Plan
 

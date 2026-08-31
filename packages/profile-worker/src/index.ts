@@ -11,6 +11,13 @@ export {
   CodexEventRouterError
 } from "./codex-event-router.js";
 export { CodexServerRequestRouter } from "./codex-server-request-router.js";
+export { CodexRestartController } from "./codex-restart-controller.js";
+export type { CodexRestartControllerOptions } from "./codex-restart-controller.js";
+export { CodexInputReconciler } from "./codex-input-reconciler.js";
+export type {
+  CodexInputReconciliationResult,
+  CodexInputReconciliationStore
+} from "./codex-input-reconciler.js";
 export { ChannelApprovalTransport, formatApprovalPrompt } from "./channel-approval-transport.js";
 export type { ChannelApprovalPresentation } from "./channel-approval-transport.js";
 export type {

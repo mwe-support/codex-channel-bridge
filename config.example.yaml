@@ -3,6 +3,7 @@ schemaVersion: 1
 supervisor:
   drainTimeoutMs: 300000
   childExitTimeoutMs: 10000
+  codexRestartCooldownMs: 30000
 
 profiles:
   example-primary:

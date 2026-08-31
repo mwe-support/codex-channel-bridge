@@ -46,6 +46,19 @@ export interface ThreadStartResponse {
 
 export type ThreadResumeResponse = ThreadStartResponse;
 
+export type CodexTurnStatus = "completed" | "interrupted" | "failed" | "inProgress";
+
+export interface ThreadReadResponse {
+  readonly thread: {
+    readonly id: string;
+    readonly turns: readonly {
+      readonly id: string;
+      readonly status: CodexTurnStatus;
+      readonly items: readonly unknown[];
+    }[];
+  };
+}
+
 export interface TurnStartResponse {
   readonly turn: {
     readonly id: string;

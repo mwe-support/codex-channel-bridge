@@ -31,6 +31,7 @@ test("parses a complete candidate and applies defaults", () => {
   assert.equal(candidate.configuration.profiles.alpha?.secretsFile, "/srv/alpha/state/secrets.env");
   assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts, {});
   assert.equal(candidate.configuration.supervisor.drainTimeoutMs, 300_000);
+  assert.equal(candidate.configuration.supervisor.codexRestartCooldownMs, 30_000);
   assert.deepEqual(candidate.configuration.profiles.alpha?.approval, {
     timeoutMs: 300_000,
     detail: "minimal"

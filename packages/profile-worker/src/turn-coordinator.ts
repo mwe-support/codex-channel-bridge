@@ -43,6 +43,8 @@ export class TurnCoordinator {
   readonly #eventRouter: CodexEventRouter;
   readonly #turnTimeoutMs: number;
   readonly #loadedThreadIds = new Set<string>();
+  readonly #activeTurns = new Map<string, SteerTurnTarget>();
+  #pendingTurnStarts = 0;
 
   public constructor(options: TurnCoordinatorOptions) {
     this.#runtime = options.runtime;
@@ -79,6 +81,7 @@ export class TurnCoordinator {
     }
     const clientUserMessageId = options.clientUserMessageId ?? randomUUID();
     const registration = this.#eventRouter.beginTurn(threadId);
+    this.#pendingTurnStarts += 1;
 
     try {
       const response = await this.#runtime.request<TurnStartResponse>("turn/start", {
@@ -87,6 +90,10 @@ export class TurnCoordinator {
         clientUserMessageId
       });
       registration.claim(response.turn.id);
+      this.#activeTurns.set(turnKey(threadId, response.turn.id), {
+        threadId,
+        turnId: response.turn.id
+      });
       await options.onStarted?.(threadId, response.turn.id);
       const terminal = await waitForTerminal(registration, this.#turnTimeoutMs);
       return {
@@ -99,7 +106,24 @@ export class TurnCoordinator {
     } catch (error) {
       registration.cancel(asError(error));
       throw error;
+    } finally {
+      this.#pendingTurnStarts -= 1;
+      for (const [key, target] of this.#activeTurns) {
+        if (target.threadId === threadId) this.#activeTurns.delete(key);
+      }
     }
+  }
+
+  public activeCount(): number {
+    return this.#pendingTurnStarts;
+  }
+
+  public activeTargets(): readonly SteerTurnTarget[] {
+    return [...this.#activeTurns.values()].map((target) => ({ ...target }));
+  }
+
+  public async interruptActiveTurns(): Promise<void> {
+    await Promise.allSettled(this.activeTargets().map((target) => this.interruptTurn(target)));
   }
 
   public async steerTurn(text: string, target: SteerTurnTarget): Promise<void> {
@@ -168,4 +192,8 @@ async function waitForTerminal(
 
 function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+function turnKey(threadId: string, turnId: string): string {
+  return `${threadId}\u0000${turnId}`;
 }
