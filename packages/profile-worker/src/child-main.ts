@@ -18,8 +18,10 @@ process.on("message", (message: unknown) => {
     void worker.start().catch(() => fatal());
   } else if (message.type === "stop") {
     void stopAndExit();
-  } else {
+  } else if (message.type === "whatsapp_action") {
     void handleWhatsAppAction(message);
+  } else {
+    void handleCodexCircuitReset(message);
   }
 });
 
@@ -35,6 +37,36 @@ async function stopAndExit(): Promise<void> {
   if (worker) await worker.stop().catch(() => undefined);
   if (process.connected) process.disconnect();
   process.exitCode = 0;
+}
+
+async function handleCodexCircuitReset(
+  message: Extract<
+    import("./worker-ipc.js").SupervisorToWorkerMessage,
+    { readonly type: "codex_circuit_reset" }
+  >
+): Promise<void> {
+  const active = worker;
+  if (!active || stopping) {
+    await send({
+      type: "codex_circuit_reset_error",
+      requestId: message.requestId,
+      error: { code: "profile_unavailable", message: "Profile worker is unavailable" }
+    }).catch(() => undefined);
+    return;
+  }
+  try {
+    const result = await active.resetCodexCircuit();
+    await send({ type: "codex_circuit_reset_result", requestId: message.requestId, result });
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : "";
+    await send({
+      type: "codex_circuit_reset_error",
+      requestId: message.requestId,
+      error: messageText.includes("not open")
+        ? { code: "circuit_not_open", message: "Codex circuit breaker is not open" }
+        : { code: "action_failed", message: "Codex circuit reset failed" }
+    }).catch(() => undefined);
+  }
 }
 
 async function fatal(): Promise<void> {

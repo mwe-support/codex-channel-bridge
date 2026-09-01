@@ -11,9 +11,11 @@ export type {
   SupervisorLiveness,
   SupervisorStatus,
   WorkerRestartPolicy,
-  ProfileMaintenanceOperation
+  ProfileMaintenanceOperation,
+  ProfileMaintenanceHold
 } from "./supervisor.js";
 export type {
+  CodexCircuitResetResult,
   WhatsAppChannelAccountAction,
   WhatsAppChannelAccountEvent,
   WhatsAppChannelAccountResult

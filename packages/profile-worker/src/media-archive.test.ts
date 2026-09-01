@@ -115,6 +115,30 @@ test("retains metadata while rejecting attachment and Profile quota overruns", a
   assert.equal(store.records.get(quota.attachmentRecordId)?.failureReason, "profile_media_quota");
 });
 
+test("stops media mirroring before crossing the deployment disk safety floor", async (context) => {
+  const root = await temporaryRoot(context);
+  const store = new FakeStore();
+  const record = pending({ declaredSizeBytes: 5 });
+  store.records.set(record.attachmentRecordId, record);
+  let opened = false;
+  const result = await new MediaArchive(store, {
+    rootDirectory: root,
+    perAttachmentLimitBytes: 10,
+    profileQuotaBytes: 20,
+    storageSafetyFloorBytes: 100,
+    availableStorageBytes: async () => 104,
+    now: () => 2
+  }).mirror(record, {
+    openStream: async () => {
+      opened = true;
+      return (async function* () { yield new Uint8Array([1]); })();
+    }
+  });
+  assert.equal(opened, false);
+  assert.equal(result.bytesState, "unavailable");
+  assert.equal(store.records.get(record.attachmentRecordId)?.failureReason, "storage_pressure");
+});
+
 test("serializes quota accounting across concurrent attachment mirrors", async (context) => {
   const root = await temporaryRoot(context);
   const store = new FakeStore();

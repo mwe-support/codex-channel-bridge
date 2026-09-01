@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -47,6 +50,8 @@ class FakeRuntime implements ProfileRuntime {
     this.whatsappActions.push(action);
     return { kind: "connected" as const };
   }
+
+  async resetCodexCircuit() { return { kind: "reset" as const }; }
 
   health(): ProfileHealth {
     return { ...this.#health };
@@ -307,6 +312,7 @@ test("runs Profile maintenance only behind a stopped migration boundary", async 
       async executeWhatsAppAccountAction(): Promise<never> {
         throw new Error("not configured in this test");
       },
+      async resetCodexCircuit() { return { kind: "reset" as const }; },
       health: () => ({ ...current }),
       subscribe(listener) {
         listeners.add(listener);
@@ -336,6 +342,69 @@ test("rejects Profile maintenance while the Profile is ready", async () => {
     /must be stopped or unavailable/
   );
   await supervisor.stop();
+});
+
+test("durably holds one Profile stopped until the exact token releases it", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-hold-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const stateDirectory = join(root, "state");
+  await mkdir(stateDirectory, { mode: 0o700 });
+  await chmod(stateDirectory, 0o700);
+  const configuration = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: ${join(root, "workspace")}
+    codexHome: ${join(root, "codex-home")}
+    stateDirectory: ${stateDirectory}
+`);
+  const factory = new FakeFactory();
+  const supervisor = new Supervisor(factory);
+  await supervisor.apply(configuration);
+
+  const hold = await supervisor.holdProfile("alpha");
+
+  assert.equal(supervisor.status().profiles[0]?.readiness, "stopped");
+  assert.equal(supervisor.status().profiles[0]?.reason, "maintenance_hold");
+  assert.equal(factory.created[0]?.stops, 1);
+  assert.equal(
+    JSON.parse(await readFile(join(stateDirectory, "maintenance-hold.json"), "utf8")).token,
+    hold.token
+  );
+  await assert.rejects(supervisor.releaseProfileHold("alpha", "wrong"), /token did not match/);
+  const resumed = await supervisor.releaseProfileHold("alpha", hold.token);
+  assert.equal(resumed.readiness, "ready");
+  assert.equal(factory.created.length, 2);
+  await supervisor.stop();
+});
+
+test("honors a durable maintenance hold after Supervisor restart", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-hold-restart-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const stateDirectory = join(root, "state");
+  await mkdir(stateDirectory, { mode: 0o700 });
+  await chmod(stateDirectory, 0o700);
+  const configuration = parseConfiguration(`
+schemaVersion: 1
+profiles:
+  alpha:
+    workspace: ${join(root, "workspace")}
+    codexHome: ${join(root, "codex-home")}
+    stateDirectory: ${stateDirectory}
+`);
+  const first = new Supervisor(new FakeFactory());
+  await first.apply(configuration);
+  const hold = await first.holdProfile("alpha");
+  await first.stop();
+
+  const restartedFactory = new FakeFactory();
+  const restarted = new Supervisor(restartedFactory);
+  await restarted.apply(configuration);
+  assert.equal(restartedFactory.created.length, 0);
+  assert.equal(restarted.status().profiles[0]?.reason, "maintenance_hold");
+  await restarted.releaseProfileHold("alpha", hold.token);
+  assert.equal(restartedFactory.created.length, 1);
+  await restarted.stop();
 });
 
 async function eventually(predicate: () => boolean): Promise<void> {

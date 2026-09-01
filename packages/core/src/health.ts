@@ -21,6 +21,8 @@ export type ProfileReasonCode =
   | "worker_restart_exhausted"
   | "worker_start_failed"
   | "worker_stop_timeout"
+  | "maintenance_hold"
+  | "storage_pressure"
   | null;
 
 export type CodexVerification = "tested" | "unverified";

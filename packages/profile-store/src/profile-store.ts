@@ -425,6 +425,25 @@ export interface AppendAuditRecordInput {
   readonly atMs: number;
 }
 
+export interface AuditQuery {
+  readonly fromMs?: number;
+  readonly toMs?: number;
+  readonly limit?: number;
+}
+
+export interface AuditRetentionPreview {
+  readonly profileId: string;
+  readonly beforeMs: number;
+  readonly recordCount: number;
+  readonly oldestAtMs: number | null;
+  readonly newestAtMs: number | null;
+  readonly selectionDigest: string;
+}
+
+export interface AuditRetentionResult extends AuditRetentionPreview {
+  readonly auditRecordId: string;
+}
+
 interface ArchiveRow {
   readonly record_id: string;
   readonly profile_id: string;
@@ -1738,6 +1757,89 @@ export class SqliteProfileStore {
       .map(toAuditRecord);
   }
 
+  public queryAuditRecords(query: AuditQuery = {}): readonly AuditRecord[] {
+    this.#requireOpen();
+    const fromMs = query.fromMs ?? 0;
+    const toMs = query.toMs ?? Number.MAX_SAFE_INTEGER;
+    const limit = validateLimit(query.limit ?? DEFAULT_LIMIT);
+    if (
+      !Number.isSafeInteger(fromMs) ||
+      !Number.isSafeInteger(toMs) ||
+      fromMs < 0 ||
+      toMs < fromMs
+    ) throw new ProfileStoreError("invalid_audit_record", "Audit query range is invalid");
+    return this.#database
+      .prepare<{ profileId: string; fromMs: number; toMs: number; limit: number }, AuditRecordRow>(
+        `SELECT audit_record_id, correlation_id, action, result, target_reference, at_ms
+           FROM audit_records
+          WHERE profile_id = @profileId
+            AND at_ms >= @fromMs
+            AND at_ms <= @toMs
+          ORDER BY at_ms DESC, row_id DESC
+          LIMIT @limit`
+      )
+      .all({ profileId: this.#profileId, fromMs, toMs, limit })
+      .map(toAuditRecord);
+  }
+
+  public previewAuditRetention(beforeMs: number): AuditRetentionPreview {
+    this.#requireOpen();
+    validateRetentionTimestamp(beforeMs);
+    const rows = this.#auditRetentionRows(beforeMs);
+    return auditRetentionPreview(this.#profileId, beforeMs, rows);
+  }
+
+  public applyAuditRetention(input: {
+    readonly beforeMs: number;
+    readonly expectedRecordCount: number;
+    readonly expectedSelectionDigest: string;
+    readonly correlationId: string;
+    readonly atMs: number;
+  }): AuditRetentionResult {
+    this.#requireOpen();
+    validateRetentionTimestamp(input.beforeMs);
+    if (
+      !Number.isSafeInteger(input.expectedRecordCount) ||
+      input.expectedRecordCount < 0 ||
+      !/^[a-f0-9]{64}$/.test(input.expectedSelectionDigest) ||
+      !validExternalId(input.correlationId) ||
+      !validTimestamp(input.atMs)
+    ) throw new ProfileStoreError("invalid_audit_record", "Audit retention confirmation is invalid");
+    const apply = this.#database.transaction(() => {
+      const rows = this.#auditRetentionRows(input.beforeMs);
+      const preview = auditRetentionPreview(this.#profileId, input.beforeMs, rows);
+      if (
+        preview.recordCount !== input.expectedRecordCount ||
+        preview.selectionDigest !== input.expectedSelectionDigest
+      ) throw new ProfileStoreError("invalid_audit_record", "Audit retention selection changed");
+      if (rows.length > 0) {
+        const remove = this.#database.prepare("DELETE FROM audit_records WHERE audit_record_id = ?");
+        for (const row of rows) remove.run(row.audit_record_id);
+      }
+      const targetReference = JSON.stringify({
+        beforeMs: preview.beforeMs,
+        recordCount: preview.recordCount,
+        oldestAtMs: preview.oldestAtMs,
+        newestAtMs: preview.newestAtMs,
+        selectionDigest: preview.selectionDigest
+      });
+      this.#appendAudit(
+        input.correlationId,
+        "audit_retention_cleanup",
+        "succeeded",
+        targetReference,
+        input.atMs
+      );
+      return { ...preview, auditRecordId: this.auditRecords(1)[0]!.auditRecordId };
+    });
+    try {
+      return apply.immediate();
+    } catch (error) {
+      if (error instanceof ProfileStoreError) throw error;
+      throw new ProfileStoreError("storage_failure", "Unable to apply Audit retention");
+    }
+  }
+
   public appendAuditRecord(input: AppendAuditRecordInput): AuditRecord {
     this.#requireOpen();
     if (
@@ -2237,6 +2339,19 @@ export class SqliteProfileStore {
          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(randomUUID(), this.#profileId, correlationId, action, result, targetReference, atMs);
+  }
+
+  #auditRetentionRows(beforeMs: number): readonly AuditRecordRow[] {
+    return this.#database
+      .prepare<{ profileId: string; beforeMs: number }, AuditRecordRow>(
+        `SELECT audit_record_id, correlation_id, action, result, target_reference, at_ms
+           FROM audit_records
+          WHERE profile_id = @profileId
+            AND at_ms < @beforeMs
+            AND action <> 'audit_retention_cleanup'
+          ORDER BY at_ms ASC, row_id ASC`
+      )
+      .all({ profileId: this.#profileId, beforeMs });
   }
 
   #outboxIds(logicalResultId: string): readonly string[] {
@@ -3198,6 +3313,36 @@ function validExternalId(value: unknown): value is string {
     value.length > 0 &&
     Buffer.byteLength(value, "utf8") <= MAX_EXTERNAL_ID_BYTES
   );
+}
+
+function validateRetentionTimestamp(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new ProfileStoreError("invalid_audit_record", "Audit retention timestamp is invalid");
+  }
+}
+
+function auditRetentionPreview(
+  profileId: string,
+  beforeMs: number,
+  rows: readonly AuditRecordRow[]
+): AuditRetentionPreview {
+  return {
+    profileId,
+    beforeMs,
+    recordCount: rows.length,
+    oldestAtMs: rows[0]?.at_ms ?? null,
+    newestAtMs: rows.at(-1)?.at_ms ?? null,
+    selectionDigest: createHash("sha256")
+      .update(JSON.stringify(rows.map((row) => [
+        row.audit_record_id,
+        row.correlation_id,
+        row.action,
+        row.result,
+        row.target_reference,
+        row.at_ms
+      ])))
+      .digest("hex")
+  };
 }
 
 function invalidMessage(): never {

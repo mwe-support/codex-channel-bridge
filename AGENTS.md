@@ -506,6 +506,10 @@ and observed boundary. Unit, mock, and contract tests supplement this live
 acceptance and do not replace it. Keep the credentials and raw provider
 identities only in the existing local secret boundary; never copy them into the
 repository, test fixtures, command output, logs, or acceptance evidence.
+Once the user authorizes real QQ acceptance for the current development
+session, treat that authorization as covering all non-destructive test messages
+to the configured test Bot and signed-in QQ client in that session; proceed
+without asking for repeated project-level confirmation.
 
 Install one Bridge Supervisor service per deployment, not one operating-system
 service per Profile. The Supervisor owns the configured Profile-worker child

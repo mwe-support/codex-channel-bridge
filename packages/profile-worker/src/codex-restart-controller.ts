@@ -20,6 +20,8 @@ export class CodexRestartController {
   readonly #random: () => number;
   #running?: Promise<boolean>;
   #stopped = false;
+  #circuitOpen = false;
+  #releaseCooldown?: () => void;
 
   public constructor(options: CodexRestartControllerOptions = {}) {
     this.#delaysMs = options.delaysMs ?? DEFAULT_DELAYS_MS;
@@ -52,6 +54,16 @@ export class CodexRestartController {
 
   public stop(): void {
     this.#stopped = true;
+    this.#releaseCooldown?.();
+  }
+
+  public reset(): boolean {
+    if (!this.#circuitOpen || !this.#releaseCooldown) return false;
+    const release = this.#releaseCooldown;
+    this.#releaseCooldown = undefined;
+    this.#circuitOpen = false;
+    release();
+    return true;
   }
 
   async #run(attempt: () => Promise<boolean>, onCircuitOpen: () => void): Promise<boolean> {
@@ -68,7 +80,13 @@ export class CodexRestartController {
       }
       if (this.#stopped) return false;
       onCircuitOpen();
-      await this.#sleep(this.#cooldownMs);
+      this.#circuitOpen = true;
+      let release!: () => void;
+      const reset = new Promise<void>((resolve) => { release = resolve; });
+      this.#releaseCooldown = release;
+      await Promise.race([this.#sleep(this.#cooldownMs), reset]);
+      this.#releaseCooldown = undefined;
+      this.#circuitOpen = false;
     }
     return false;
   }

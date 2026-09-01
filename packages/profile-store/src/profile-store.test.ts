@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import type { LogicalResultInput, NormalizedChannelMessage } from "@codex-channel-bridge/core";
 
 import { ProfileStoreError, SqliteProfileStore } from "./profile-store.js";
+import { inspectProfileStore } from "./inspection.js";
 
 function message(overrides: Partial<NormalizedChannelMessage> = {}): NormalizedChannelMessage {
   return {
@@ -70,6 +71,19 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
   const reopened = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   assert.equal(reopened.recentMessages("qq:private:conversation-1")[0]?.recordId, inserted.recordId);
   reopened.close();
+});
+
+test("inspects Profile storage read-only without requiring a runtime open", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  store.commitMessage(message());
+  store.close();
+  const report = await inspectProfileStore({ profileId: "alpha", databasePath });
+  assert.equal(report.schemaVersion, 9);
+  assert.equal(report.migrationRequired, false);
+  assert.equal(report.quickCheck, "ok");
+  assert.equal(report.profileMatches, true);
+  assert.equal(report.counts.message_archive, 1);
 });
 
 test("commits attachment metadata with its message and settles mirrored bytes once", async (context) => {

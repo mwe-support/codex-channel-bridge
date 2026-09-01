@@ -20,6 +20,10 @@ export type SupervisorToWorkerMessage =
       readonly requestId: string;
       readonly channelAccountId: string;
       readonly action: WhatsAppChannelAccountAction;
+    }
+  | {
+      readonly type: "codex_circuit_reset";
+      readonly requestId: string;
     };
 
 export type WorkerToSupervisorMessage =
@@ -54,11 +58,27 @@ export type WorkerToSupervisorMessage =
           | "action_failed";
         readonly message: string;
       };
+    }
+  | {
+      readonly type: "codex_circuit_reset_result";
+      readonly requestId: string;
+      readonly result: { readonly kind: "reset" };
+    }
+  | {
+      readonly type: "codex_circuit_reset_error";
+      readonly requestId: string;
+      readonly error: {
+        readonly code: "profile_unavailable" | "circuit_not_open" | "action_failed";
+        readonly message: string;
+      };
     };
 
 export function isSupervisorToWorkerMessage(value: unknown): value is SupervisorToWorkerMessage {
   if (!isRecord(value)) return false;
   if (value.type === "stop") return true;
+  if (value.type === "codex_circuit_reset") {
+    return typeof value.requestId === "string" && value.requestId.length > 0;
+  }
   if (value.type === "whatsapp_action") {
     return (
       typeof value.requestId === "string" &&
@@ -81,6 +101,14 @@ export function isWorkerToSupervisorMessage(value: unknown): value is WorkerToSu
       typeof value.health.readiness === "string";
   }
   if (typeof value.requestId !== "string" || value.requestId.length === 0) return false;
+  if (value.type === "codex_circuit_reset_result") {
+    return isRecord(value.result) && value.result.kind === "reset";
+  }
+  if (value.type === "codex_circuit_reset_error") {
+    return isRecord(value.error) &&
+      typeof value.error.code === "string" &&
+      typeof value.error.message === "string";
+  }
   if (value.type === "whatsapp_action_event") return isWhatsAppEvent(value.event);
   if (value.type === "whatsapp_action_result") return isWhatsAppResult(value.result);
   if (value.type === "whatsapp_action_error") {

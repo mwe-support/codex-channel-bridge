@@ -22,6 +22,8 @@ export interface MediaArchiveOptions {
   readonly perAttachmentLimitBytes?: number;
   readonly profileQuotaBytes?: number;
   readonly now?: () => number;
+  readonly storageSafetyFloorBytes?: number;
+  readonly availableStorageBytes?: () => Promise<number>;
 }
 
 export class MediaArchive {
@@ -30,6 +32,8 @@ export class MediaArchive {
   readonly #perAttachmentLimitBytes: number;
   readonly #profileQuotaBytes: number;
   readonly #now: () => number;
+  readonly #storageSafetyFloorBytes?: number;
+  readonly #availableStorageBytes?: () => Promise<number>;
   #tail: Promise<void> = Promise.resolve();
 
   public constructor(store: MediaArchiveStore, options: MediaArchiveOptions) {
@@ -38,6 +42,8 @@ export class MediaArchive {
     this.#perAttachmentLimitBytes = options.perAttachmentLimitBytes ?? 64 * 1024 * 1024;
     this.#profileQuotaBytes = options.profileQuotaBytes ?? 10 * 1024 * 1024 * 1024;
     this.#now = options.now ?? Date.now;
+    this.#storageSafetyFloorBytes = options.storageSafetyFloorBytes;
+    this.#availableStorageBytes = options.availableStorageBytes;
   }
 
   public async mirror(
@@ -67,6 +73,13 @@ export class MediaArchive {
       usedBytes + attachment.declaredSizeBytes > this.#profileQuotaBytes
     ) {
       return toInboundAttachment(await this.#unavailable(attachment, "profile_media_quota"));
+    }
+    if (this.#storageSafetyFloorBytes !== undefined && this.#availableStorageBytes) {
+      const reserve = attachment.declaredSizeBytes ?? this.#perAttachmentLimitBytes;
+      const available = await this.#availableStorageBytes().catch(() => 0);
+      if (available < this.#storageSafetyFloorBytes + reserve) {
+        return toInboundAttachment(await this.#unavailable(attachment, "storage_pressure"));
+      }
     }
 
     const temporaryDirectory = join(this.#rootDirectory, ".tmp");

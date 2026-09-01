@@ -10,6 +10,10 @@ export {
   applyProfileStoreMigration,
   planProfileStoreMigration
 } from "./migration.js";
+export { inspectProfileStore } from "./inspection.js";
+export type { ProfileStoreInspection } from "./inspection.js";
+export { checkpointProfileStore } from "./maintenance.js";
+export type { ProfileStoreCheckpoint } from "./maintenance.js";
 export type {
   ApplyProfileMigrationOptions,
   ProfileMigrationPlan,
@@ -58,6 +62,9 @@ export type {
   OutboxSettlement,
   OutboxSettlementResult,
   AuditRecord,
+  AuditQuery,
+  AuditRetentionPreview,
+  AuditRetentionResult,
   ProfileStoreReason,
   ProfilePurgeState,
   SettleApprovalRequestInput,

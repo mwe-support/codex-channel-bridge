@@ -901,6 +901,49 @@ test("routes an allowed QQ message through Codex correlation into the durable Ou
   await worker.stop();
 });
 
+test("disconnects the adapter and commits no Archive record below the disk safety floor", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      diskSafetyFloorBytes: 100,
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    {
+      ...dependencies(runtime, store),
+      createQQAdapter: () => adapter,
+      availableStorageBytes: async () => 99
+    }
+  );
+  await worker.start();
+  await adapter.receive(inboundEvent());
+  assert.equal(worker.health().readiness, "unavailable");
+  assert.equal(worker.health().reason, "storage_pressure");
+  assert.equal(store.messages.length, 0);
+  assert.equal(adapter.stopped, true);
+  await worker.stop();
+});
+
 test("routes a second message on an active conversation through native turn/steer", async () => {
   const runtime = new FakeRuntime();
   runtime.completeTurns = false;
@@ -1403,13 +1446,15 @@ test("restarts the App Server generation when a server-request response cannot b
   await worker.stop();
 });
 
-test("opens a Profile-local circuit after the bounded App Server restart budget", async () => {
+test("opens a Profile-local circuit and resumes only after an explicit reset or cooldown", async () => {
   const firstRuntime = new FakeRuntime();
   const failedOne = new FakeRuntime();
   failedOne.startFailure = true;
   const failedTwo = new FakeRuntime();
   failedTwo.startFailure = true;
-  const runtimes = [firstRuntime, failedOne, failedTwo];
+  const recoveredRuntime = new FakeRuntime();
+  const runtimes = [firstRuntime, failedOne, failedTwo, recoveredRuntime];
+  const store = new FakeStore();
   const cooldown = new Promise<void>(() => undefined);
   const worker = new ProfileWorker(
     {
@@ -1419,7 +1464,7 @@ test("opens a Profile-local circuit after the bounded App Server restart budget"
       stateDirectory: "/tmp/bridge-state"
     },
     {
-      ...dependencies(firstRuntime),
+      ...dependencies(firstRuntime, store),
       createRuntime: () => {
         const runtime = runtimes.shift();
         if (!runtime) throw new Error("unexpected runtime generation");
@@ -1431,10 +1476,25 @@ test("opens a Profile-local circuit after the bounded App Server restart budget"
     }
   );
   await worker.start();
+  await assert.rejects(worker.resetCodexCircuit(), /not open/);
   firstRuntime.emit("protocolFault", new Error("child exited"));
   await eventually(() => worker.health().reason === "codex_restart_exhausted");
   assert.equal(worker.health().readiness, "unavailable");
-  assert.equal(runtimes.length, 0);
+  assert.equal(runtimes.length, 1);
+  const recovered = once(worker, "codexGenerationRecovered");
+  assert.deepEqual(await worker.resetCodexCircuit(), { kind: "reset" });
+  await recovered;
+  assert.equal(worker.health().readiness, "ready");
+  assert.equal(
+    worker.health().reason,
+    null
+  );
+  assert.equal(
+    store.auditRecords.some((record) =>
+      record.action === "codex_circuit_reset" && record.result === "succeeded"
+    ),
+    true
+  );
   await worker.stop();
 });
 

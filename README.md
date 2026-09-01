@@ -29,7 +29,10 @@ the owner-only local control plane, stream expiring QR material only to the
 initiating interactive CLI, replace only the selected adapter, retain durable
 revocation uncertainty, and preserve quoted-reply facts introduced in schema version 8.
 Profile-local Archive retrieval, read-only MCP projection, bounded media
-mirroring, and explicit Archive/Profile purge are now implemented. Production
+mirroring, and explicit Archive/Profile purge are now implemented.
+Host-local operations now include read-only diagnostics, durable backup holds,
+restore validation, body-free Audit query/export/retention, Support Bundles,
+disk-pressure fail-closed behavior, and manual Codex circuit recovery. Production
 packaging and the remaining cross-platform acceptance work are incomplete, so
 the Bridge is not ready for deployment.
 
@@ -52,6 +55,7 @@ the Bridge is not ready for deployment.
 - [Tencent QQ SDK contract research](docs/research/qq-official-sdk-contract.md)
 - [Development and Codex protocol verification](docs/development.md)
 - [Configuration and Supervisor operation](docs/configuration.md)
+- [Host-local operations](docs/operations.md)
 - [Message Archive persistence baseline](docs/message-archive.md)
 - [Access and admission](docs/admission.md)
 - [Thread Binding and Codex input correlation](docs/thread-binding.md)

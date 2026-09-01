@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { statfs } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import {
@@ -110,6 +111,7 @@ export interface ProfileWorkerConfig {
   readonly drainTimeoutMs?: number;
   readonly childExitTimeoutMs?: number;
   readonly codexRestartCooldownMs?: number;
+  readonly diskSafetyFloorBytes?: number;
 }
 
 export interface ProfileWorkerDependencies {
@@ -124,6 +126,7 @@ export interface ProfileWorkerDependencies {
   readonly sleep?: (delayMs: number) => Promise<void>;
   readonly codexRestartDelaysMs?: readonly number[];
   readonly codexRestartCooldownMs?: number;
+  readonly availableStorageBytes?: (path: string) => Promise<number>;
 }
 
 export interface ProfileStoreRuntime {
@@ -172,6 +175,10 @@ export interface ManagedWhatsAppChannelAccount extends ChannelAdapter {
     action: WhatsAppChannelAccountAction,
     onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
   ): Promise<WhatsAppChannelAccountResult>;
+}
+
+export interface CodexCircuitResetResult {
+  readonly kind: "reset";
 }
 
 const defaultDependencies: ProfileWorkerDependencies = {
@@ -282,7 +289,13 @@ export class ProfileWorker extends EventEmitter {
                       perAttachmentLimitBytes: this.#config.media.perAttachmentLimitBytes,
                       profileQuotaBytes: this.#config.media.profileQuotaBytes
                     }
-                  : {})
+                  : {}),
+                ...(this.#config.diskSafetyFloorBytes === undefined
+                  ? {}
+                  : {
+                      storageSafetyFloorBytes: this.#config.diskSafetyFloorBytes,
+                      availableStorageBytes: () => this.#availableStorageBytes()
+                    })
               }
             )
           : undefined;
@@ -581,6 +594,26 @@ export class ProfileWorker extends EventEmitter {
     }
   }
 
+  public async resetCodexCircuit(): Promise<CodexCircuitResetResult> {
+    if (this.#health.reason !== "codex_restart_exhausted") {
+      throw new Error("Codex circuit breaker is not open");
+    }
+    const correlationId = randomUUID();
+    const store = this.#store;
+    if (!store) throw new ProfileUnavailableError(this.health());
+    if (!this.#codexRestartController.reset()) {
+      throw new Error("Codex circuit breaker is not open");
+    }
+    await store.appendAuditRecord({
+      correlationId,
+      action: "codex_circuit_reset",
+      result: "succeeded",
+      targetReference: this.#config.profileId,
+      atMs: Date.now()
+    });
+    return { kind: "reset" };
+  }
+
   public async stop(): Promise<ProfileHealth> {
     if (this.#stopPromise) return this.#stopPromise;
     this.#stopPromise = this.#drainAndStop();
@@ -733,7 +766,10 @@ export class ProfileWorker extends EventEmitter {
         (Number.isSafeInteger(this.#config.childExitTimeoutMs) && this.#config.childExitTimeoutMs > 0)) &&
       (this.#config.codexRestartCooldownMs === undefined ||
         (Number.isSafeInteger(this.#config.codexRestartCooldownMs) &&
-          this.#config.codexRestartCooldownMs > 0))
+          this.#config.codexRestartCooldownMs > 0)) &&
+      (this.#config.diskSafetyFloorBytes === undefined ||
+        (Number.isSafeInteger(this.#config.diskSafetyFloorBytes) &&
+          this.#config.diskSafetyFloorBytes > 0))
     );
   }
 
@@ -854,6 +890,12 @@ export class ProfileWorker extends EventEmitter {
     context: TrustedChannelContext,
     event: ProviderInboundEvent
   ): Promise<void> {
+    if (!await this.#storageIsSafe()) {
+      this.#channelIngress.setReady(false, Date.now());
+      this.#transition("unavailable", "storage_pressure");
+      await this.#stopChannelAdapters();
+      return;
+    }
     const pipeline = this.#inboundPipeline;
     if (!pipeline) throw new Error("Inbound Pipeline is unavailable");
     try {
@@ -878,6 +920,25 @@ export class ProfileWorker extends EventEmitter {
       void this.#stopChannelAdapters();
       throw new Error("Unable to persist Channel event");
     }
+  }
+
+  async #storageIsSafe(): Promise<boolean> {
+    const floor = this.#config.diskSafetyFloorBytes;
+    if (floor === undefined) return true;
+    try {
+      return await this.#availableStorageBytes() >= floor;
+    } catch {
+      return false;
+    }
+  }
+
+  async #availableStorageBytes(): Promise<number> {
+    if (this.#dependencies.availableStorageBytes) {
+      return this.#dependencies.availableStorageBytes(this.#config.stateDirectory);
+    }
+    const value = await statfs(this.#config.stateDirectory);
+    const bytes = value.bavail * value.bsize;
+    return Number.isSafeInteger(bytes) ? bytes : Number.MAX_SAFE_INTEGER;
   }
 
   #routeObservedChannelEvent(

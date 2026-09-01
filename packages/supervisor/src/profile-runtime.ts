@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { ProfileConfiguration, SupervisorConfiguration } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 import {
+  type CodexCircuitResetResult,
   isWorkerToSupervisorMessage,
   type SupervisorToWorkerMessage,
   type WhatsAppChannelAccountAction,
@@ -23,6 +24,7 @@ export interface ProfileRuntime {
     action: WhatsAppChannelAccountAction,
     onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
   ): Promise<WhatsAppChannelAccountResult>;
+  resetCodexCircuit(): Promise<CodexCircuitResetResult>;
 }
 
 export class ProfileRuntimeActionError extends Error {
@@ -48,7 +50,8 @@ export class ForkedProfileRuntimeFactory implements ProfileRuntimeFactory {
       profile,
       supervisor.drainTimeoutMs,
       supervisor.childExitTimeoutMs,
-      supervisor.codexRestartCooldownMs
+      supervisor.codexRestartCooldownMs,
+      supervisor.diskSafetyFloorBytes
     );
   }
 }
@@ -58,6 +61,7 @@ class ForkedProfileRuntime implements ProfileRuntime {
   readonly #drainTimeoutMs: number;
   readonly #childExitTimeoutMs: number;
   readonly #supervisorCodexRestartCooldownMs: number;
+  readonly #diskSafetyFloorBytes: number;
   readonly #listeners = new Set<(health: ProfileHealth) => void>();
   #child?: ChildProcess;
   #health: ProfileHealth;
@@ -68,17 +72,24 @@ class ForkedProfileRuntime implements ProfileRuntime {
     readonly onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void;
     readonly timer: NodeJS.Timeout;
   }>();
+  readonly #pendingCircuitResets = new Map<string, {
+    readonly resolve: (result: CodexCircuitResetResult) => void;
+    readonly reject: (error: Error) => void;
+    readonly timer: NodeJS.Timeout;
+  }>();
 
   public constructor(
     profile: ProfileConfiguration,
     drainTimeoutMs: number,
     childExitTimeoutMs: number,
-    codexRestartCooldownMs: number
+    codexRestartCooldownMs: number,
+    diskSafetyFloorBytes: number
   ) {
     this.#profile = profile;
     this.#drainTimeoutMs = drainTimeoutMs;
     this.#childExitTimeoutMs = childExitTimeoutMs;
     this.#supervisorCodexRestartCooldownMs = codexRestartCooldownMs;
+    this.#diskSafetyFloorBytes = diskSafetyFloorBytes;
     this.#health = { profileId: profile.id, readiness: "stopped", reason: null };
   }
 
@@ -134,6 +145,7 @@ class ForkedProfileRuntime implements ProfileRuntime {
         drainTimeoutMs: this.#drainTimeoutMs,
         childExitTimeoutMs: this.#childExitTimeoutMs,
         codexRestartCooldownMs: this.#supervisorCodexRestartCooldownMs,
+        diskSafetyFloorBytes: this.#diskSafetyFloorBytes,
         ...(this.#profile.codexExecutable
           ? { codexExecutable: this.#profile.codexExecutable }
           : {})
@@ -221,9 +233,44 @@ class ForkedProfileRuntime implements ProfileRuntime {
     });
   }
 
+  public async resetCodexCircuit(): Promise<CodexCircuitResetResult> {
+    const child = this.#child;
+    if (!child || this.#expectedExit) {
+      throw new ProfileRuntimeActionError("profile_unavailable", "Profile worker is unavailable");
+    }
+    const requestId = randomUUID();
+    return new Promise<CodexCircuitResetResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pendingCircuitResets.delete(requestId);
+        reject(new ProfileRuntimeActionError("action_timeout", "Codex circuit reset timed out"));
+      }, 30_000);
+      timer.unref();
+      this.#pendingCircuitResets.set(requestId, { resolve, reject, timer });
+      void send(child, { type: "codex_circuit_reset", requestId }).catch((error) => {
+        const pending = this.#pendingCircuitResets.get(requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.#pendingCircuitResets.delete(requestId);
+        pending.reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+  }
+
   #handleActionMessage(
     message: Exclude<WorkerToSupervisorMessage, { readonly type: "health" | "fatal" }>
   ): void {
+    if (
+      message.type === "codex_circuit_reset_result" ||
+      message.type === "codex_circuit_reset_error"
+    ) {
+      const pending = this.#pendingCircuitResets.get(message.requestId);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      this.#pendingCircuitResets.delete(message.requestId);
+      if (message.type === "codex_circuit_reset_result") pending.resolve(message.result);
+      else pending.reject(new ProfileRuntimeActionError(message.error.code, message.error.message));
+      return;
+    }
     const pending = this.#pendingActions.get(message.requestId);
     if (!pending) return;
     if (message.type === "whatsapp_action_event") {
@@ -242,6 +289,11 @@ class ForkedProfileRuntime implements ProfileRuntime {
       pending.reject(error);
     }
     this.#pendingActions.clear();
+    for (const pending of this.#pendingCircuitResets.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.#pendingCircuitResets.clear();
   }
 
   #transitionUnavailable(reason: "worker_process_exit" | "worker_start_failed"): void {

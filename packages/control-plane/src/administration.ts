@@ -36,6 +36,10 @@ import {
   planProfilePurge,
   type ProfilePurgePreview
 } from "./profile-purge.js";
+import { OperationsInspector } from "./operations-inspector.js";
+import { BackupCoordinator } from "./backup-coordinator.js";
+import { AuditManager } from "./audit-manager.js";
+import { SupportBundleManager } from "./support-bundle.js";
 
 export interface AdministrationHandler {
   handle(
@@ -90,12 +94,26 @@ export class SupervisorAdministration implements AdministrationHandler {
   readonly #migrationPlans = new Map<string, PendingMigrationPlan>();
   readonly #archivePurgePlans = new Map<string, PendingArchivePurgePlan>();
   readonly #profilePurgePlans = new Map<string, PendingProfilePurgePlan>();
+  readonly #operationsInspector: OperationsInspector;
+  readonly #backupCoordinator: BackupCoordinator;
+  readonly #auditManager: AuditManager;
+  readonly #supportBundleManager: SupportBundleManager;
 
   public constructor(supervisor: Supervisor, options: AdministrationOptions = {}) {
     this.#supervisor = supervisor;
     this.#planLifetimeMs = options.planLifetimeMs ?? 5 * 60_000;
     this.#now = options.now ?? (() => Date.now());
     this.#loadCandidate = options.loadCandidate ?? ((path) => loadConfiguration(path));
+    this.#operationsInspector = new OperationsInspector(supervisor, this.#now);
+    this.#backupCoordinator = new BackupCoordinator(supervisor, this.#now);
+    this.#auditManager = new AuditManager(supervisor, this.#now, this.#planLifetimeMs);
+    this.#supportBundleManager = new SupportBundleManager(
+      supervisor,
+      this.#operationsInspector,
+      this.#auditManager,
+      this.#now,
+      this.#planLifetimeMs
+    );
   }
 
   public async handle(
@@ -104,6 +122,17 @@ export class SupervisorAdministration implements AdministrationHandler {
   ): Promise<unknown> {
     this.#expirePlans();
     if (request.method === "status/get") return this.#supervisor.status();
+    if (request.method === "doctor/run") return this.#doctor(request.params);
+    if (request.method === "backup/prepare") return this.#prepareBackup(request.params);
+    if (request.method === "backup/finish") return this.#finishBackup(request.params);
+    if (request.method === "restore/validate") return this.#validateRestore(request.params);
+    if (request.method === "audit/query") return this.#queryAudit(request.params);
+    if (request.method === "audit/export") return this.#exportAudit(request.params);
+    if (request.method === "audit/retention-plan") return this.#planAuditRetention(request.params);
+    if (request.method === "audit/retention-apply") return this.#applyAuditRetention(request.params);
+    if (request.method === "support/plan") return this.#planSupportBundle(request.params);
+    if (request.method === "support/apply") return this.#applySupportBundle(request.params);
+    if (request.method === "circuit/reset") return this.#resetCircuit(request.params);
     if (request.method === "config/plan") return this.#plan(request.params);
     if (request.method === "config/apply") return this.#apply(request.params);
     if (request.method === "migrate/plan") return this.#planMigration(request.params);
@@ -113,6 +142,234 @@ export class SupervisorAdministration implements AdministrationHandler {
     if (request.method === "profile/purge-plan") return this.#planProfilePurge(request.params);
     if (request.method === "profile/purge-apply") return this.#applyProfilePurge(request.params);
     return this.#channelAction(request.method, request.params, emitEvent);
+  }
+
+  async #doctor(params: unknown): Promise<unknown> {
+    if (params === undefined) return this.#operationsInspector.inspect();
+    const record = asRecord(params);
+    if (!record || Object.keys(record).some((key) => key !== "profileId")) {
+      throw new AdministrationError("invalid_params", "doctor/run accepts only an optional profileId");
+    }
+    if (record.profileId === undefined) return this.#operationsInspector.inspect();
+    if (typeof record.profileId !== "string" || record.profileId.length === 0) {
+      throw new AdministrationError("invalid_params", "doctor/run profileId must be non-empty");
+    }
+    try {
+      return await this.#operationsInspector.inspect([record.profileId]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("is not configured")) {
+        throw new AdministrationError("profile_not_found", "Profile is not configured");
+      }
+      throw error;
+    }
+  }
+
+  async #prepareBackup(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.profileId !== "string" ||
+      typeof record.manifestPath !== "string" ||
+      typeof record.includeWorkspace !== "boolean"
+    ) {
+      throw new AdministrationError(
+        "invalid_params",
+        "backup/prepare requires profileId, manifestPath, and includeWorkspace"
+      );
+    }
+    try {
+      return await this.#backupCoordinator.prepare({
+        profileId: record.profileId,
+        manifestPath: record.manifestPath,
+        includeWorkspace: record.includeWorkspace
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "backup_prepare_failed",
+        error instanceof Error ? error.message : "Backup prepare failed"
+      );
+    }
+  }
+
+  async #finishBackup(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.profileId !== "string" ||
+      typeof record.manifestPath !== "string" ||
+      typeof record.holdToken !== "string" ||
+      record.snapshotConfirmed !== true
+    ) {
+      throw new AdministrationError(
+        "invalid_params",
+        "backup/finish requires profileId, manifestPath, holdToken, and snapshotConfirmed=true"
+      );
+    }
+    try {
+      return await this.#backupCoordinator.finish({
+        profileId: record.profileId,
+        manifestPath: record.manifestPath,
+        holdToken: record.holdToken,
+        snapshotConfirmed: true
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "backup_finish_failed",
+        error instanceof Error ? error.message : "Backup finish failed"
+      );
+    }
+  }
+
+  async #validateRestore(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (!record || typeof record.profileId !== "string" || typeof record.manifestPath !== "string") {
+      throw new AdministrationError(
+        "invalid_params",
+        "restore/validate requires profileId and manifestPath"
+      );
+    }
+    try {
+      return await this.#backupCoordinator.validateRestore({
+        profileId: record.profileId,
+        manifestPath: record.manifestPath
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "restore_validation_failed",
+        error instanceof Error ? error.message : "Restore validation failed"
+      );
+    }
+  }
+
+  #queryAudit(params: unknown): unknown {
+    const input = parseAuditSelection(params, false);
+    try {
+      return this.#auditManager.query(input);
+    } catch (error) {
+      throw new AdministrationError(
+        "audit_query_failed",
+        error instanceof Error ? error.message : "Audit query failed"
+      );
+    }
+  }
+
+  async #exportAudit(params: unknown): Promise<unknown> {
+    const input = parseAuditSelection(params, true);
+    try {
+      return await this.#auditManager.export(input as typeof input & { destination: string });
+    } catch (error) {
+      throw new AdministrationError(
+        "audit_export_failed",
+        error instanceof Error ? error.message : "Audit export failed"
+      );
+    }
+  }
+
+  #planAuditRetention(params: unknown): unknown {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.profileId !== "string" ||
+      typeof record.beforeMs !== "number" ||
+      !Number.isSafeInteger(record.beforeMs) ||
+      record.beforeMs < 0
+    ) throw new AdministrationError("invalid_params", "audit/retention-plan requires profileId and beforeMs");
+    try {
+      return this.#auditManager.planRetention(record.profileId, record.beforeMs);
+    } catch (error) {
+      throw new AdministrationError(
+        "audit_retention_plan_failed",
+        error instanceof Error ? error.message : "Audit retention planning failed"
+      );
+    }
+  }
+
+  #applyAuditRetention(params: unknown): unknown {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.planToken !== "string" ||
+      typeof record.confirmProfileId !== "string" ||
+      typeof record.confirmRecordCount !== "number" ||
+      !Number.isSafeInteger(record.confirmRecordCount) ||
+      typeof record.confirmSelectionDigest !== "string"
+    ) throw new AdministrationError("invalid_params", "Audit retention apply confirmation is incomplete");
+    try {
+      return this.#auditManager.applyRetention({
+        planToken: record.planToken,
+        confirmProfileId: record.confirmProfileId,
+        confirmRecordCount: record.confirmRecordCount,
+        confirmSelectionDigest: record.confirmSelectionDigest
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "audit_retention_apply_failed",
+        error instanceof Error ? error.message : "Audit retention apply failed"
+      );
+    }
+  }
+
+  async #planSupportBundle(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (
+      !record ||
+      typeof record.fromMs !== "number" ||
+      typeof record.toMs !== "number" ||
+      typeof record.outputPath !== "string" ||
+      (record.profileIds !== undefined && (
+        !Array.isArray(record.profileIds) ||
+        !record.profileIds.every((profileId) => typeof profileId === "string")
+      ))
+    ) throw new AdministrationError("invalid_params", "support/plan requires time range and outputPath");
+    try {
+      return await this.#supportBundleManager.plan({
+        ...(record.profileIds === undefined ? {} : { profileIds: record.profileIds as string[] }),
+        fromMs: record.fromMs,
+        toMs: record.toMs,
+        outputPath: record.outputPath
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "support_plan_failed",
+        error instanceof Error ? error.message : "Support Bundle planning failed"
+      );
+    }
+  }
+
+  async #applySupportBundle(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (!record || typeof record.planToken !== "string" || typeof record.confirmPlanDigest !== "string") {
+      throw new AdministrationError("invalid_params", "support/apply requires planToken and confirmPlanDigest");
+    }
+    try {
+      return await this.#supportBundleManager.apply({
+        planToken: record.planToken,
+        confirmPlanDigest: record.confirmPlanDigest
+      });
+    } catch (error) {
+      throw new AdministrationError(
+        "support_apply_failed",
+        error instanceof Error ? error.message : "Support Bundle creation failed"
+      );
+    }
+  }
+
+  async #resetCircuit(params: unknown): Promise<unknown> {
+    const record = asRecord(params);
+    if (!record || typeof record.profileId !== "string") {
+      throw new AdministrationError("invalid_params", "circuit/reset requires profileId");
+    }
+    try {
+      return await this.#supervisor.executeCodexCircuitReset(record.profileId);
+    } catch (error) {
+      if (error instanceof ProfileRuntimeActionError) {
+        throw new AdministrationError(error.code, error.message);
+      }
+      throw new AdministrationError(
+        "circuit_reset_failed",
+        error instanceof Error ? error.message : "Circuit reset failed"
+      );
+    }
   }
 
   async #planProfilePurge(params: unknown): Promise<ProfilePurgePlanResult> {
@@ -564,4 +821,34 @@ function migrationAdministrationError(error: unknown): AdministrationError {
     return new AdministrationError("profile_not_quiescent", error.message);
   }
   return new AdministrationError("migration_failed", "Profile migration operation failed");
+}
+
+function parseAuditSelection(params: unknown, requireDestination: boolean): {
+  readonly profileId?: string;
+  readonly fromMs?: number;
+  readonly toMs?: number;
+  readonly limit?: number;
+  readonly destination?: string;
+} {
+  const record = asRecord(params);
+  if (!record) throw new AdministrationError("invalid_params", "Audit selection must be an object");
+  if (record.profileId !== undefined && typeof record.profileId !== "string") {
+    throw new AdministrationError("invalid_params", "Audit profileId must be a string");
+  }
+  for (const key of ["fromMs", "toMs", "limit"] as const) {
+    const value = record[key];
+    if (value !== undefined && (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)) {
+      throw new AdministrationError("invalid_params", `Audit ${key} must be a nonnegative integer`);
+    }
+  }
+  if (requireDestination && typeof record.destination !== "string") {
+    throw new AdministrationError("invalid_params", "Audit export requires destination");
+  }
+  return {
+    ...(record.profileId === undefined ? {} : { profileId: record.profileId }),
+    ...(record.fromMs === undefined ? {} : { fromMs: record.fromMs as number }),
+    ...(record.toMs === undefined ? {} : { toMs: record.toMs as number }),
+    ...(record.limit === undefined ? {} : { limit: record.limit as number }),
+    ...(record.destination === undefined ? {} : { destination: record.destination as string })
+  };
 }

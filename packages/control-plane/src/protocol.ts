@@ -12,11 +12,32 @@ import type {
   ProfileMigrationResult
 } from "@codex-channel-bridge/profile-store";
 import type { ProfilePurgePreview, ProfilePurgeResult } from "./profile-purge.js";
+import type { OperationsInspection } from "./operations-inspector.js";
+import type {
+  BackupPrepareResult,
+  RestoreValidationResult
+} from "./backup-coordinator.js";
+import type {
+  AuditRetentionPlan,
+  ProfileAuditRecord
+} from "./audit-manager.js";
+import type { SupportBundlePlan } from "./support-bundle.js";
 
 export const CONTROL_PROTOCOL_VERSION = 1 as const;
 
 export type AdministrationMethod =
   | "status/get"
+  | "doctor/run"
+  | "backup/prepare"
+  | "backup/finish"
+  | "restore/validate"
+  | "audit/query"
+  | "audit/export"
+  | "audit/retention-plan"
+  | "audit/retention-apply"
+  | "support/plan"
+  | "support/apply"
+  | "circuit/reset"
   | "config/plan"
   | "config/apply"
   | "migrate/plan"
@@ -104,6 +125,22 @@ export interface ProfilePurgePlanResult extends ProfilePurgePreview {
 
 export interface AdministrationResults {
   readonly "status/get": SupervisorStatus;
+  readonly "doctor/run": OperationsInspection;
+  readonly "backup/prepare": BackupPrepareResult;
+  readonly "backup/finish": { readonly profileId: string; readonly resumed: boolean };
+  readonly "restore/validate": RestoreValidationResult;
+  readonly "audit/query": readonly ProfileAuditRecord[];
+  readonly "audit/export": { readonly recordCount: number; readonly destination: string };
+  readonly "audit/retention-plan": AuditRetentionPlan;
+  readonly "audit/retention-apply": import("@codex-channel-bridge/profile-store").AuditRetentionResult;
+  readonly "support/plan": SupportBundlePlan;
+  readonly "support/apply": {
+    readonly outputPath: string;
+    readonly profileIds: readonly string[];
+    readonly fileCount: number;
+    readonly manifestDigest: string;
+  };
+  readonly "circuit/reset": import("@codex-channel-bridge/supervisor").CodexCircuitResetResult;
   readonly "config/plan": ConfigurationPlanResult;
   readonly "config/apply": ConfigurationApplyResult;
   readonly "migrate/plan": MigrationPlanResult;
@@ -126,6 +163,17 @@ export function isAdministrationRequest(value: unknown): value is Administration
     typeof value.id === "string" &&
     value.id.length > 0 &&
     (value.method === "status/get" ||
+      value.method === "doctor/run" ||
+      value.method === "backup/prepare" ||
+      value.method === "backup/finish" ||
+      value.method === "restore/validate" ||
+      value.method === "audit/query" ||
+      value.method === "audit/export" ||
+      value.method === "audit/retention-plan" ||
+      value.method === "audit/retention-apply" ||
+      value.method === "support/plan" ||
+      value.method === "support/apply" ||
+      value.method === "circuit/reset" ||
       value.method === "config/plan" ||
       value.method === "config/apply" ||
       value.method === "migrate/plan" ||

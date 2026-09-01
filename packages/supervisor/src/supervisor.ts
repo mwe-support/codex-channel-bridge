@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
+import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 
 import type {
   ConfigurationCandidate,
@@ -6,6 +9,7 @@ import type {
 } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 import type {
+  CodexCircuitResetResult,
   WhatsAppChannelAccountAction,
   WhatsAppChannelAccountEvent,
   WhatsAppChannelAccountResult
@@ -48,6 +52,15 @@ export type ProfileMaintenanceOperation<T> = (
   profile: Readonly<ProfileConfiguration>
 ) => Promise<T>;
 
+export interface ProfileMaintenanceHold {
+  readonly schemaVersion: 1;
+  readonly profileId: string;
+  readonly token: string;
+  readonly purpose: "backup";
+  readonly createdAtMs: number;
+  readonly drainCompleted: boolean;
+}
+
 export interface WorkerRestartPolicy {
   readonly delaysMs: readonly number[];
   readonly windowMs: number;
@@ -81,6 +94,7 @@ export class Supervisor extends EventEmitter {
   readonly #health = new Map<string, ProfileHealth>();
   readonly #unsubscribers = new Map<string, () => void>();
   readonly #workerCrashes = new Map<string, number[]>();
+  readonly #maintenanceHolds = new Map<string, ProfileMaintenanceHold>();
   #candidate?: ConfigurationCandidate;
   #liveness: SupervisorLiveness = "starting";
   #operation: Promise<unknown> = Promise.resolve();
@@ -134,6 +148,24 @@ export class Supervisor extends EventEmitter {
     return maintenance;
   }
 
+  public holdProfile(profileId: string, purpose: "backup" = "backup"): Promise<ProfileMaintenanceHold> {
+    const operation = this.#operation.then(() => this.#holdProfile(profileId, purpose));
+    this.#operation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  public releaseProfileHold(profileId: string, token: string): Promise<ProfileHealth> {
+    const operation = this.#operation.then(() => this.#releaseProfileHold(profileId, token));
+    this.#operation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  public async profileHold(profileId: string): Promise<ProfileMaintenanceHold | null> {
+    const profile = this.#candidate?.configuration.profiles[profileId];
+    if (!profile) throw new Error("Profile is not configured");
+    return this.#maintenanceHolds.get(profileId) ?? await readMaintenanceHold(profile);
+  }
+
   public executeWhatsAppAccountAction(
     profileId: string,
     channelAccountId: string,
@@ -148,6 +180,15 @@ export class Supervisor extends EventEmitter {
     return runtime.executeWhatsAppAccountAction(channelAccountId, action, onEvent);
   }
 
+  public executeCodexCircuitReset(profileId: string): Promise<CodexCircuitResetResult> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    const profile = this.#candidate?.configuration.profiles[profileId];
+    if (!profile?.enabled) throw new Error("Profile is not enabled");
+    const runtime = this.#runtimes.get(profileId);
+    if (!runtime) throw new Error("Profile worker is unavailable");
+    return runtime.resetCodexCircuit();
+  }
+
   public stop(): Promise<SupervisorStatus> {
     const operation = this.#operation.then(() => this.#stop());
     this.#operation = operation.catch(() => undefined);
@@ -160,6 +201,13 @@ export class Supervisor extends EventEmitter {
     }
     const previous = this.#candidate;
     const entries = planConfiguration(previous, candidate);
+    for (const [profileId] of this.#maintenanceHolds) {
+      const before = previous?.configuration.profiles[profileId];
+      const after = candidate.configuration.profiles[profileId];
+      if (!before || !after || !sameRestartConfiguration(before, after)) {
+        throw new Error(`Profile ${profileId} configuration cannot change during a maintenance hold`);
+      }
+    }
 
     // Acceptance is transactional: no runtime transition begins before the
     // complete candidate has been parsed and assigned a Configuration Revision.
@@ -172,14 +220,16 @@ export class Supervisor extends EventEmitter {
     const stopEntries = entries.filter((entry) => entry.action === "stop" || entry.action === "restart");
     await Promise.all(stopEntries.map((entry) => this.#stopProfile(entry.profileId)));
 
+    const starts: Promise<void>[] = [];
     for (const entry of entries) {
       const profile = candidate.configuration.profiles[entry.profileId];
       if (entry.action === "start" || entry.action === "restart") {
-        if (profile?.enabled) void this.#startProfile(profile, candidate);
+        if (profile?.enabled) starts.push(this.#startProfile(profile, candidate));
       } else if (entry.action === "unchanged" && profile && !profile.enabled) {
         this.#setHealth({ profileId: profile.id, readiness: "stopped", reason: null });
       }
     }
+    await Promise.all(starts);
 
     await Promise.all(
       entries
@@ -209,6 +259,12 @@ export class Supervisor extends EventEmitter {
     candidate: ConfigurationCandidate
   ): Promise<void> {
     try {
+      const hold = await readMaintenanceHold(profile);
+      if (hold) {
+        this.#maintenanceHolds.set(profile.id, hold);
+        this.#setHealth({ profileId: profile.id, readiness: "stopped", reason: "maintenance_hold" });
+        return;
+      }
       const runtime = this.#factory.create(profile, candidate.configuration.supervisor);
       this.#runtimes.set(profile.id, runtime);
       const unsubscribe = runtime.subscribe((health) =>
@@ -264,6 +320,64 @@ export class Supervisor extends EventEmitter {
     } finally {
       if (profile.enabled && this.#liveness === "live") await this.#startProfile(profile, candidate);
     }
+  }
+
+  async #holdProfile(profileId: string, purpose: "backup"): Promise<ProfileMaintenanceHold> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    const profile = this.#candidate?.configuration.profiles[profileId];
+    if (!profile) throw new Error("Profile is not configured");
+    const existing = this.#maintenanceHolds.get(profileId) ?? await readMaintenanceHold(profile);
+    if (existing) {
+      this.#maintenanceHolds.set(profileId, existing);
+      throw new Error(`Profile ${profileId} already has a maintenance hold`);
+    }
+    const hold: ProfileMaintenanceHold = {
+      schemaVersion: 1,
+      profileId,
+      token: randomUUID(),
+      purpose,
+      createdAtMs: this.#clock.now(),
+      drainCompleted: false
+    };
+    await writeMaintenanceHold(profile, hold);
+    this.#maintenanceHolds.set(profileId, hold);
+    await this.#stopProfile(profileId);
+    const stopped = this.#health.get(profileId);
+    if (stopped?.reason === "worker_stop_timeout") return hold;
+    const drainedHold = { ...hold, drainCompleted: true };
+    await writeMaintenanceHold(profile, drainedHold);
+    this.#maintenanceHolds.set(profileId, drainedHold);
+    this.#setHealth({
+      profileId,
+      readiness: "stopped",
+      reason: "maintenance_hold",
+      ...(stopped?.codexVersion ? { codexVersion: stopped.codexVersion } : {}),
+      ...(stopped?.codexVerification ? { codexVerification: stopped.codexVerification } : {})
+    });
+    return drainedHold;
+  }
+
+  async #releaseProfileHold(profileId: string, token: string): Promise<ProfileHealth> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    const candidate = this.#candidate;
+    const profile = candidate?.configuration.profiles[profileId];
+    if (!candidate || !profile) throw new Error("Profile is not configured");
+    const hold = this.#maintenanceHolds.get(profileId) ?? await readMaintenanceHold(profile);
+    if (!hold) throw new Error(`Profile ${profileId} has no maintenance hold`);
+    if (hold.token !== token) throw new Error("Maintenance hold token did not match");
+    await removeMaintenanceHold(profile);
+    this.#maintenanceHolds.delete(profileId);
+    if (!profile.enabled) {
+      const health = { profileId, readiness: "stopped" as const, reason: null };
+      this.#setHealth(health);
+      return health;
+    }
+    await this.#startProfile(profile, candidate);
+    return this.#health.get(profileId) ?? {
+      profileId,
+      readiness: "unavailable",
+      reason: "worker_start_failed"
+    };
   }
 
   #setHealth(health: ProfileHealth): void {
@@ -323,7 +437,11 @@ export class Supervisor extends EventEmitter {
   }
 
   async #restartCrashedProfile(profileId: string, crashedRuntime: ProfileRuntime): Promise<void> {
-    if (this.#liveness !== "live" || this.#runtimes.get(profileId) !== crashedRuntime) return;
+    if (
+      this.#liveness !== "live" ||
+      this.#runtimes.get(profileId) !== crashedRuntime ||
+      this.#maintenanceHolds.has(profileId)
+    ) return;
     const candidate = this.#candidate;
     const profile = candidate?.configuration.profiles[profileId];
     if (!candidate || !profile?.enabled) return;
@@ -332,6 +450,90 @@ export class Supervisor extends EventEmitter {
     this.#runtimes.delete(profileId);
     await this.#startProfile(profile, candidate);
   }
+}
+
+const MAINTENANCE_HOLD_FILE = "maintenance-hold.json";
+
+async function readMaintenanceHold(
+  profile: Pick<ProfileConfiguration, "id" | "stateDirectory">
+): Promise<ProfileMaintenanceHold | null> {
+  const path = maintenanceHoldPath(profile);
+  let metadata;
+  try {
+    metadata = await lstat(path);
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("Invalid maintenance hold file");
+  if (
+    process.platform !== "win32" &&
+    (metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600)
+  ) throw new Error("Maintenance hold file is not owner-only");
+  const value = JSON.parse(await readFile(path, "utf8")) as Partial<ProfileMaintenanceHold>;
+  if (
+    value.schemaVersion !== 1 ||
+    value.profileId !== profile.id ||
+    typeof value.token !== "string" ||
+    value.token.length === 0 ||
+    value.purpose !== "backup" ||
+    typeof value.drainCompleted !== "boolean" ||
+    !Number.isSafeInteger(value.createdAtMs) ||
+    (value.createdAtMs ?? -1) < 0
+  ) throw new Error("Maintenance hold file is invalid");
+  return value as ProfileMaintenanceHold;
+}
+
+async function writeMaintenanceHold(
+  profile: Pick<ProfileConfiguration, "id" | "stateDirectory">,
+  hold: ProfileMaintenanceHold
+): Promise<void> {
+  const path = maintenanceHoldPath(profile);
+  await requireOwnerDirectory(profile.stateDirectory);
+  const temporary = `${path}.tmp-${randomUUID()}`;
+  const handle = await open(temporary, "wx", 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify(hold)}\n`, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(temporary, path);
+  await syncDirectory(dirname(path));
+}
+
+async function removeMaintenanceHold(
+  profile: Pick<ProfileConfiguration, "id" | "stateDirectory">
+): Promise<void> {
+  await unlink(maintenanceHoldPath(profile));
+  await syncDirectory(profile.stateDirectory);
+}
+
+function maintenanceHoldPath(profile: Pick<ProfileConfiguration, "stateDirectory">): string {
+  if (!isAbsolute(profile.stateDirectory)) throw new Error("Profile state directory must be absolute");
+  return join(profile.stateDirectory, MAINTENANCE_HOLD_FILE);
+}
+
+async function requireOwnerDirectory(path: string): Promise<void> {
+  const metadata = await lstat(path);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error("Invalid Profile state directory");
+  if (
+    process.platform !== "win32" &&
+    (metadata.uid !== process.getuid?.() || (metadata.mode & 0o077) !== 0)
+  ) throw new Error("Profile state directory is not owner-only");
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function sameHealth(left: ProfileHealth, right: ProfileHealth): boolean {

@@ -45,3 +45,19 @@ test("accepts pairing material only as a correlated Worker event", () => {
     }
   }), false);
 });
+
+test("accepts only correlated Codex circuit reset messages", () => {
+  assert.equal(isSupervisorToWorkerMessage({
+    type: "codex_circuit_reset",
+    requestId: "request-1"
+  }), true);
+  assert.equal(isSupervisorToWorkerMessage({
+    type: "codex_circuit_reset",
+    requestId: ""
+  }), false);
+  assert.equal(isWorkerToSupervisorMessage({
+    type: "codex_circuit_reset_result",
+    requestId: "request-1",
+    result: { kind: "reset" }
+  }), true);
+});

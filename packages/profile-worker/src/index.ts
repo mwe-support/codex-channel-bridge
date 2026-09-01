@@ -63,6 +63,7 @@ export type {
   ProfileWorkerConfig,
   ProfileWorkerDependencies,
   ManagedWhatsAppChannelAccount,
+  CodexCircuitResetResult,
   ProfileStoreRuntime,
   TurnResult
 } from "./profile-worker.js";

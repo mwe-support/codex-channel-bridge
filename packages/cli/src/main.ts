@@ -26,6 +26,133 @@ try {
     rejectUnknownOptions(options, ["endpoint"]);
     const client = new ControlPlaneClient(options.endpoint);
     stdout.write(`${JSON.stringify(await client.request("status/get"), null, 2)}\n`);
+  } else if (area === "doctor") {
+    const options = parseOptions(argv.slice(1));
+    rejectUnknownOptions(options, ["profile", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request("doctor/run", {
+      ...(options.profile === undefined ? {} : { profileId: options.profile })
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (!result.ok) process.exitCode = 2;
+  } else if (area === "backup" && action === "prepare") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "manifest", "include-workspace", "endpoint"]);
+    const includeWorkspace = options["include-workspace"] ?? "no";
+    if (includeWorkspace !== "yes" && includeWorkspace !== "no") {
+      throw new Error("--include-workspace must equal yes or no");
+    }
+    const result = await new ControlPlaneClient(options.endpoint).request("backup/prepare", {
+      profileId: required(options, "profile"),
+      manifestPath: required(options, "manifest"),
+      includeWorkspace: includeWorkspace === "yes"
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "backup" && action === "finish") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "manifest", "hold-token", "snapshot-confirmed", "endpoint"]);
+    if (required(options, "snapshot-confirmed") !== "yes") {
+      throw new Error("--snapshot-confirmed must equal yes");
+    }
+    const result = await new ControlPlaneClient(options.endpoint).request("backup/finish", {
+      profileId: required(options, "profile"),
+      manifestPath: required(options, "manifest"),
+      holdToken: required(options, "hold-token"),
+      snapshotConfirmed: true
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "restore" && action === "validate") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "manifest", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request("restore/validate", {
+      profileId: required(options, "profile"),
+      manifestPath: required(options, "manifest")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (!result.valid) process.exitCode = 2;
+  } else if (area === "audit" && action === "query") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "from-ms", "to-ms", "limit", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request(
+      "audit/query",
+      auditSelection(options)
+    );
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "audit" && action === "export") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "from-ms", "to-ms", "limit", "destination", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request("audit/export", {
+      ...auditSelection(options),
+      destination: required(options, "destination")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else if (area === "audit" && action === "retain") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, [
+      "profile",
+      "before-ms",
+      "confirm-count",
+      "confirm-digest",
+      "endpoint"
+    ]);
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("audit/retention-plan", {
+      profileId: required(options, "profile"),
+      beforeMs: boundedInteger(required(options, "before-ms"), "--before-ms", 0, Number.MAX_SAFE_INTEGER)
+    });
+    if (options["confirm-count"] === undefined || options["confirm-digest"] === undefined) {
+      stdout.write(`${JSON.stringify({
+        applied: false,
+        ...plan,
+        confirmationRequired: {
+          profileId: plan.profileId,
+          recordCount: plan.recordCount,
+          selectionDigest: plan.selectionDigest
+        }
+      }, null, 2)}\n`);
+    } else {
+      const count = boundedInteger(options["confirm-count"], "--confirm-count", 0, Number.MAX_SAFE_INTEGER);
+      if (count !== plan.recordCount || options["confirm-digest"] !== plan.selectionDigest) {
+        throw new Error("Audit retention confirmation does not match the current plan");
+      }
+      const result = await client.request("audit/retention-apply", {
+        planToken: plan.planToken,
+        confirmProfileId: plan.profileId,
+        confirmRecordCount: count,
+        confirmSelectionDigest: options["confirm-digest"]
+      });
+      stdout.write(`${JSON.stringify({ applied: true, ...result }, null, 2)}\n`);
+    }
+  } else if (area === "support" && action === "bundle") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "from-ms", "to-ms", "output", "confirm", "endpoint"]);
+    const client = new ControlPlaneClient(options.endpoint);
+    const plan = await client.request("support/plan", {
+      ...(options.profile === undefined ? {} : { profileIds: [options.profile] }),
+      fromMs: boundedInteger(required(options, "from-ms"), "--from-ms", 0, Number.MAX_SAFE_INTEGER),
+      toMs: boundedInteger(required(options, "to-ms"), "--to-ms", 0, Number.MAX_SAFE_INTEGER),
+      outputPath: required(options, "output")
+    });
+    if (options.confirm === undefined) {
+      stdout.write(`${JSON.stringify({
+        created: false,
+        ...plan,
+        confirmationRequired: plan.planDigest
+      }, null, 2)}\n`);
+    } else {
+      if (options.confirm !== plan.planDigest) throw new Error("--confirm must equal the Support Bundle plan digest");
+      const result = await client.request("support/apply", {
+        planToken: plan.planToken,
+        confirmPlanDigest: options.confirm
+      });
+      stdout.write(`${JSON.stringify({ created: true, ...result }, null, 2)}\n`);
+    }
+  } else if (area === "circuit" && action === "reset") {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["profile", "endpoint"]);
+    const result = await new ControlPlaneClient(options.endpoint).request("circuit/reset", {
+      profileId: required(options, "profile")
+    });
+    stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (area === "config" && action === "check") {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config"]);
@@ -351,6 +478,26 @@ function boundedInteger(value: string, name: string, minimum: number, maximum: n
   return parsed;
 }
 
+function auditSelection(options: Record<string, string>): {
+  readonly profileId?: string;
+  readonly fromMs?: number;
+  readonly toMs?: number;
+  readonly limit?: number;
+} {
+  return {
+    ...(options.profile === undefined ? {} : { profileId: options.profile }),
+    ...(options["from-ms"] === undefined
+      ? {}
+      : { fromMs: boundedInteger(options["from-ms"], "--from-ms", 0, Number.MAX_SAFE_INTEGER) }),
+    ...(options["to-ms"] === undefined
+      ? {}
+      : { toMs: boundedInteger(options["to-ms"], "--to-ms", 0, Number.MAX_SAFE_INTEGER) }),
+    ...(options.limit === undefined
+      ? {}
+      : { limit: boundedInteger(options.limit, "--limit", 1, 500) })
+  };
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of stdin) chunks.push(Buffer.from(chunk));
@@ -374,6 +521,15 @@ function usage(): never {
     [
       "Usage:",
       "  bridge status [--endpoint /absolute/path/control.sock]",
+      "  bridge doctor [--profile ID] [--endpoint /absolute/path/control.sock]",
+      "  bridge backup prepare --profile ID --manifest /absolute/path/manifest.json [--include-workspace yes|no] [--endpoint PATH]",
+      "  bridge backup finish --profile ID --manifest /absolute/path/manifest.json --hold-token TOKEN --snapshot-confirmed yes [--endpoint PATH]",
+      "  bridge restore validate --profile ID --manifest /absolute/path/manifest.json [--endpoint PATH]",
+      "  bridge audit query [--profile ID] [--from-ms N] [--to-ms N] [--limit N] [--endpoint PATH]",
+      "  bridge audit export --destination /absolute/path/audit.json [--profile ID] [--from-ms N] [--to-ms N] [--limit N] [--endpoint PATH]",
+      "  bridge audit retain --profile ID --before-ms N [--confirm-count N --confirm-digest DIGEST] [--endpoint PATH]",
+      "  bridge support bundle --output /absolute/path/directory --from-ms N --to-ms N [--profile ID] [--confirm PLAN_DIGEST] [--endpoint PATH]",
+      "  bridge circuit reset --profile ID [--endpoint PATH]",
       "  bridge config check --config /absolute/path/config.yaml",
       "  bridge config apply --config /absolute/path/config.yaml [--confirm FULL_REVISION] [--endpoint PATH]",
       "  bridge migrate plan --profile ID [--endpoint PATH]",

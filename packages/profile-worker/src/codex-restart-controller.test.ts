@@ -73,6 +73,31 @@ test("cancels a pending recovery before another generation starts", async () => 
   assert.equal(attempts, 0);
 });
 
+test("an explicit reset releases only an open circuit cooldown", async () => {
+  let attempts = 0;
+  let opened = 0;
+  const controller = new CodexRestartController({
+    delaysMs: [0],
+    cooldownMs: 60_000,
+    random: () => 0.5,
+    sleep: async (delayMs) => {
+      if (delayMs === 0) return;
+      await new Promise<void>(() => undefined);
+    }
+  });
+  assert.equal(controller.reset(), false);
+  const recovery = controller.recover(async () => {
+    attempts += 1;
+    return attempts === 2;
+  }, () => { opened += 1; });
+  await eventually(() => opened === 1);
+  assert.equal(controller.reset(), true);
+  assert.equal(controller.reset(), false);
+  assert.equal(await recovery, true);
+  assert.equal(attempts, 2);
+  assert.equal(controller.reset(), false);
+});
+
 async function eventually(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (predicate()) return;

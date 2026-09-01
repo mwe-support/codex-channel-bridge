@@ -13,7 +13,8 @@ const TOP_LEVEL_KEYS = new Set(["schemaVersion", "supervisor", "profiles"]);
 const SUPERVISOR_KEYS = new Set([
   "drainTimeoutMs",
   "childExitTimeoutMs",
-  "codexRestartCooldownMs"
+  "codexRestartCooldownMs",
+  "diskSafetyFloorBytes"
 ]);
 const PROFILE_KEYS = new Set([
   "enabled",
@@ -128,6 +129,7 @@ export interface SupervisorConfiguration {
   readonly drainTimeoutMs: number;
   readonly childExitTimeoutMs: number;
   readonly codexRestartCooldownMs: number;
+  readonly diskSafetyFloorBytes: number;
 }
 
 export interface BridgeConfiguration {
@@ -293,6 +295,14 @@ function validateShape(raw: unknown): BridgeConfiguration {
     "supervisor.codexRestartCooldownMs",
     issues
   );
+  const diskSafetyFloorBytes = integerWithin(
+    isRecord(supervisorRaw) ? supervisorRaw.diskSafetyFloorBytes : undefined,
+    512 * 1024 * 1024,
+    16 * 1024 * 1024,
+    1024 * 1024 * 1024 * 1024,
+    "supervisor.diskSafetyFloorBytes",
+    issues
+  );
 
   const profiles: Record<string, ProfileConfiguration> = {};
   if (!isRecord(raw.profiles)) {
@@ -368,7 +378,12 @@ function validateShape(raw: unknown): BridgeConfiguration {
 
   return {
     schemaVersion: 1,
-    supervisor: { drainTimeoutMs, childExitTimeoutMs, codexRestartCooldownMs },
+    supervisor: {
+      drainTimeoutMs,
+      childExitTimeoutMs,
+      codexRestartCooldownMs,
+      diskSafetyFloorBytes
+    },
     profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
   };
 }

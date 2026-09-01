@@ -4,6 +4,7 @@ supervisor:
   drainTimeoutMs: 300000
   childExitTimeoutMs: 10000
   codexRestartCooldownMs: 30000
+  diskSafetyFloorBytes: 536870912
 
 profiles:
   example-primary:

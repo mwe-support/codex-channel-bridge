@@ -21,6 +21,23 @@ export type {
   RequestAuthorizer
 } from "./server.js";
 export { CONTROL_PROTOCOL_VERSION } from "./protocol.js";
+export { OperationsInspector } from "./operations-inspector.js";
+export type {
+  OperationsInspection,
+  OperationsInspectionSource,
+  PathInspection,
+  ProfileOperationsInspection
+} from "./operations-inspector.js";
+export { BackupCoordinator, readBackupManifest } from "./backup-coordinator.js";
+export type {
+  BackupPrepareResult,
+  ProfileBackupManifest,
+  RestoreValidationResult
+} from "./backup-coordinator.js";
+export { AuditManager } from "./audit-manager.js";
+export type { AuditRetentionPlan, ProfileAuditRecord } from "./audit-manager.js";
+export { SupportBundleManager } from "./support-bundle.js";
+export type { SupportBundlePlan } from "./support-bundle.js";
 export type {
   AdministrationMethod,
   AdministrationRequest,

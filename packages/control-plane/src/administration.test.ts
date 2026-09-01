@@ -57,6 +57,8 @@ class ReadyRuntime implements ProfileRuntime {
     return { kind: "connected" as const };
   }
 
+  async resetCodexCircuit() { return { kind: "reset" as const }; }
+
   health(): ProfileHealth {
     return { ...this.#health };
   }

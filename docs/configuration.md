@@ -19,6 +19,7 @@ supervisor:
   drainTimeoutMs: 300000
   childExitTimeoutMs: 10000
   codexRestartCooldownMs: 30000
+  diskSafetyFloorBytes: 536870912
 
 profiles:
   primary:
@@ -64,6 +65,11 @@ profiles:
 `codexRestartCooldownMs` is the configured Profile-local circuit-breaker
 cooldown after a bounded App Server restart budget is exhausted. Every new
 generation repeats the full capability probe before it can become ready.
+
+`diskSafetyFloorBytes` reserves deployment storage for durable Bridge state.
+Below the floor, a Profile rejects new work, stops media mirroring, disconnects
+its Channel adapters, and reports `unavailable: storage_pressure`; it never
+claims that an event was persisted when the Archive commit was unsafe.
 
 The Profile mapping key is the Profile ID. IDs use lowercase ASCII letters,
 digits, and hyphens, start with a letter, and are at most 63 characters.
