@@ -552,6 +552,17 @@ Profile worker, QQ adapter, WhatsApp adapter, Archive MCP Server, CLI, and
 platform packaging as explicit monorepo package boundaries. Do not introduce a
 second core runtime without an accepted ADR demonstrating the need.
 
+## Release Discipline
+
+Before changing a project version, preparing a release commit, creating a tag,
+or publishing an artifact, read `docs/release.md` and its Chinese counterpart.
+Use the root `package.json` version as the single source of truth and run the
+repository release preparation and check commands. A release is complete only
+when its annotated `vVERSION` tag, workspace versions, lockfile, English and
+Chinese changelogs, `docs/VERSION`, `docs/zh/VERSION`, acceptance evidence, and
+published artifact all identify the same version. Treat published tags and
+GitHub Releases as immutable; corrections use a new version.
+
 ## Documentation and Completion
 
 - Every human-authored document under `docs/` must have a Chinese counterpart

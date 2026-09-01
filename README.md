@@ -2,6 +2,12 @@
 
 Codex Channel Bridge is a standalone, self-hosted bridge between external messaging channels and Codex App Server. It is designed to connect QQ through Tencent's official SDK and WhatsApp through Baileys without depending on Hermes, OpenClaw, or another agent-gateway runtime.
 
+The current development version is recorded in [`docs/VERSION`](docs/VERSION).
+Use the documentation inside the matching release tag for deployments; `main`
+documents the next release. Start at the
+[English documentation index](docs/README.md) or the
+[Chinese documentation index](docs/zh/README.md).
+
 ## Status
 
 This repository contains a typed stdio JSONL Codex client, a foreground
@@ -52,6 +58,9 @@ a stable release.
 
 - [Agent and implementation constraints](AGENTS.md)
 - [Domain glossary](CONTEXT.md)
+- [Documentation index](docs/README.md) / [中文文档中心](docs/zh/README.md)
+- [Release and documentation versioning](docs/release.md)
+- [Changelog](CHANGELOG.md) / [中文变更日志](docs/zh/CHANGELOG.md)
 - [Architecture decisions](docs/adr/)
 - [Codex-native history and compaction research](docs/research/codex-native-thread-history-retrieval-and-compaction.md)
 - [Open-source implementation landscape](docs/research/github-codex-channel-bridge-landscape.md)

@@ -1,0 +1,72 @@
+name: Verify and release
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - if: startsWith(github.ref, 'refs/tags/')
+        run: npm run release:check -- --tag="$GITHUB_REF_NAME"
+      - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npm run release:check
+      - run: npm test
+      - run: npm run test:control-contract
+      - run: npm run test:supervisor-contract
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify annotated tag
+        run: test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+      - name: Build release archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          node scripts/release.mjs notes "$version" > dist/release-notes.md
+          git archive --format=tar.gz \
+            --prefix="codex-channel-bridge-$version/" \
+            --output="dist/codex-channel-bridge-$version.tar.gz" \
+            "$GITHUB_REF_NAME"
+          cd dist
+          sha256sum "codex-channel-bridge-$version.tar.gz" \
+            > "codex-channel-bridge-$version.tar.gz.sha256"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(
+            "$GITHUB_REF_NAME"
+            "dist/codex-channel-bridge-${GITHUB_REF_NAME#v}.tar.gz"
+            "dist/codex-channel-bridge-${GITHUB_REF_NAME#v}.tar.gz.sha256"
+            --verify-tag
+            --title "Codex Channel Bridge $GITHUB_REF_NAME"
+            --notes-file dist/release-notes.md
+          )
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "${args[@]}"

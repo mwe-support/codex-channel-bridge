@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 
+import { BRIDGE_VERSION } from "@codex-channel-bridge/core";
 import {
   ProfileStore,
   type ArchiveHybridSearch,
@@ -50,7 +51,7 @@ export async function recentArchive(reader: ArchiveReader, input: ArchiveRecentT
 }
 
 export function createArchiveMcpServer(reader: ArchiveReader): McpServer {
-  const server = new McpServer({ name: "codex-channel-bridge-archive", version: "0.1.0-dev" });
+  const server = new McpServer({ name: "codex-channel-bridge-archive", version: BRIDGE_VERSION });
 
   server.registerTool(
     "archive_search",

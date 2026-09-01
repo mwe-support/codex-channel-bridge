@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import { BRIDGE_VERSION } from "@codex-channel-bridge/core";
+
 import { CodexAppServerProcess } from "./app-server-process.js";
 import {
   PINNED_CODEX_VERSION,
@@ -19,7 +21,7 @@ const server = new CodexAppServerProcess({
   executable,
   codexHome: process.env.CODEX_HOME ?? `${process.env.HOME}/.codex`,
   workspace: process.cwd(),
-  bridgeVersion: "0.1.0-dev",
+  bridgeVersion: BRIDGE_VERSION,
   experimentalApi: true
 });
 

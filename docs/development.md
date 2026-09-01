@@ -84,6 +84,84 @@ npm install
 npm test
 ```
 
+## Downstream development workflow
+
+Use `main` for new development and a fixed release tag when reproducing a
+deployed version. Start a change with `npm ci`, `npm run release:check`, and the
+smallest existing test that exercises the affected boundary. Finish with
+`npm run check` plus the relevant real protocol, platform, and Channel
+acceptance. Never make a native Codex upgrade part of a Bridge build or test.
+
+Keep dependency direction shallow:
+
+```text
+core
+  <- adapters, config, codex-app-server, profile-store
+  <- profile-worker
+  <- supervisor, control-plane
+  <- cli
+```
+
+`core` stays free of I/O and provider SDKs. Adapters expose provider facts and
+receipts but cannot choose a Profile, Thread, command meaning, or Codex policy.
+`profile-worker` composes one Profile boundary; it should delegate storage,
+Codex protocol, and provider behavior to their owning packages. The CLI uses
+the host-local control plane instead of reaching into a Worker or database.
+
+### Add or change a Channel adapter
+
+1. Read the current official provider contract and pin the exact SDK version.
+2. Implement the existing channel-neutral Adapter contract using provider facts
+   only. Trusted Profile, Channel Account, and Epoch context is injected after
+   the adapter boundary.
+3. Preserve provider-specific reply, rate-limit, retry, ambiguity, and receipt
+   semantics inside the adapter.
+4. Route all inbound messages through the shared Inbound Pipeline and all
+   commands through the one core parser. Do not create an adapter-local command
+   set or direct Codex path.
+5. Add contract coverage for private and group identity, duplicate provider
+   events, mentions or passive messages, delivery failure, and reconnect.
+6. Update the adapter guide, configuration guide, deployment implications, and
+   matching Chinese documents.
+7. Run a real provider acceptance before claiming the changed behavior.
+
+### Change Codex protocol behavior
+
+Classify the behavior as Codex-owned before writing Bridge code. Regenerate the
+schema with the administrator-supplied tested Codex executable, update the
+versioned manifest only after reviewing the diff, and use the native stable
+method or setting. Required missing capabilities fail the Profile closed;
+optional experimental capabilities degrade without Bridge emulation. Contract
+tests must cover initialize/initialized, capability probing, terminal
+`turn/completed`, process-generation loss, and request cleanup relevant to the
+change.
+
+### Change persistence or delivery
+
+Bridge schema changes require an explicit forward migration, migration plan,
+disk estimate, snapshot gate, failure behavior, and restore/rollback notes.
+Never migrate during service start or modify Codex-owned files. A terminal Codex
+result and its Outbox records remain one transaction; delivery retries retain
+the same Logical Result. Exercise duplicate input, send ambiguity, process
+restart, pending Outbox reconciliation, and sibling-Profile isolation.
+
+### Change commands or administration
+
+Add a Channel command only when it projects a Channel action into existing
+Bridge or native Codex ownership. Parse it once in core, authorize it from
+trusted participant context, and keep private-chat and group-chat policy
+distinct. Administrative mutations use the structured local control plane with
+plan/confirm semantics where required; Channel messages never become a hidden
+administration API.
+
+### Documentation and release completion
+
+Update English and Chinese documents in the same change. Keep
+[`CHANGELOG.md`](../CHANGELOG.md) under `Unreleased` until a release is prepared.
+Do not edit workspace versions by hand; use `npm run release:prepare` and follow
+[`release.md`](release.md). `npm run release:check` is the fast guard against
+code, lockfile, and documentation version drift.
+
 ## Platform verification priority
 
 Implement and accept platform behavior in this order:

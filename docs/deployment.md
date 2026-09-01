@@ -14,16 +14,20 @@ Codex homes, Workspaces, and Secret files outside the repository.
 
 Before registering a service:
 
-1. Install Node.js 22 or newer and Codex CLI `0.149.1` as the service identity.
+1. Select an immutable `vVERSION` GitHub Release. Download
+   `codex-channel-bridge-VERSION.tar.gz` and its `.sha256` file, verify the
+   checksum, and use only the documentation inside that archive. Do not deploy
+   a moving `main` checkout as a production version.
+2. Install Node.js 22 or newer and Codex CLI `0.149.1` as the service identity.
    Put the verified absolute Node path in the service definition and the
    verified absolute `codexExecutable` path in every Profile configuration;
    service-manager `PATH` lookup is not a version-selection mechanism.
-2. Copy this repository to `/opt/codex-channel-bridge`, run `npm ci`, then
+3. Extract the verified release to `/opt/codex-channel-bridge`, run `npm ci`, then
    `npm run build`. A normal service start never runs npm.
-3. Create `/etc/codex-channel-bridge/config.yaml` and every configured Profile
+4. Create `/etc/codex-channel-bridge/config.yaml` and every configured Profile
    directory. State and Secret directories must satisfy the owner-only checks
    in [`configuration.md`](configuration.md).
-4. Run `bridge config check`, `npm run test:contract`, and
+5. Run `bridge config check`, `npm run test:contract`, and
    `npm run test:platform-contract` before enabling the service.
 
 ## Native macOS
@@ -63,8 +67,9 @@ sudo -u codex-bridge node /opt/codex-channel-bridge/packages/cli/dist/main.js st
 Build the production multi-stage image from the repository root:
 
 ```sh
+BRIDGE_VERSION="$(cat docs/VERSION)"
 docker build -f packages/platform/docker/Dockerfile \
-  -t codex-channel-bridge:0.1.0-dev .
+  -t "codex-channel-bridge:$BRIDGE_VERSION" .
 ```
 
 The build stage includes the native compiler toolchain from the full Bookworm
@@ -78,12 +83,13 @@ Workspace. Docker operators run the Bridge CLI inside the same container; no
 administration port is published.
 
 ```sh
+BRIDGE_VERSION="$(cat docs/VERSION)"
 docker run --name codex-channel-bridge \
   --init \
   --stop-timeout 320 \
   -v /host/config.yaml:/etc/codex-channel-bridge/config.yaml:ro \
   -v /host/profiles:/var/lib/codex-channel-bridge/profiles \
-  codex-channel-bridge:0.1.0-dev
+  "codex-channel-bridge:$BRIDGE_VERSION"
 ```
 
 The image declares `SIGTERM` as its stop signal and uses `bridge status` over

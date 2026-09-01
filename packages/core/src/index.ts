@@ -33,6 +33,7 @@ export type {
 } from "./access-policy.js";
 export { parseChannelText } from "./bridge-command.js";
 export type { BridgeCommand, ParsedChannelText } from "./bridge-command.js";
+export { BRIDGE_VERSION } from "./version.js";
 export { ChannelDeliveryError } from "./channel-adapter.js";
 export type {
   ChannelAdapter,

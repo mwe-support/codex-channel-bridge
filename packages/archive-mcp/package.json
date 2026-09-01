@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
+    "@codex-channel-bridge/core": "0.1.0-dev",
     "@codex-channel-bridge/profile-store": "0.1.0-dev",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.5.4"

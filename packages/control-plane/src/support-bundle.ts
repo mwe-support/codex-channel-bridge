@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { rmdir, unlink } from "node:fs/promises";
 
+import { BRIDGE_VERSION } from "@codex-channel-bridge/core";
 import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 import type { Supervisor } from "@codex-channel-bridge/supervisor";
 
@@ -139,7 +140,7 @@ export class SupportBundleManager {
       schemaVersion: 1,
       kind: "codex-channel-bridge-support-bundle-metadata",
       createdAtMs: this.#now(),
-      bridgeVersion: "0.1.0-dev",
+      bridgeVersion: BRIDGE_VERSION,
       operatingSystem: process.platform,
       timeRange: { fromMs: plan.fromMs, toMs: plan.toMs },
       inspection

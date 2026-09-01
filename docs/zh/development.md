@@ -41,6 +41,73 @@ npm install
 npm test
 ```
 
+## 二次开发流程
+
+新功能开发使用 `main`，复现某个已部署版本时使用固定 release tag。开始改动前
+执行 `npm ci`、`npm run release:check`，并运行能覆盖目标边界的最小现有测试。
+完成时执行 `npm run check`，再运行与改动相关的真实协议、平台和 Channel
+验收。原生 Codex 升级绝不能成为 Bridge build 或 test 的一部分。
+
+依赖方向保持简单：
+
+```text
+core
+  <- adapters, config, codex-app-server, profile-store
+  <- profile-worker
+  <- supervisor, control-plane
+  <- cli
+```
+
+`core` 不包含 I/O 和 provider SDK。Adapter 只暴露 provider fact 与 receipt，
+不能选择 Profile、Thread、命令语义或 Codex policy。`profile-worker` 负责组装一个
+Profile boundary，并把存储、Codex 协议和 provider 行为交给对应 package。CLI
+通过 host-local control plane 工作，不能直接访问 Worker 或数据库。
+
+### 新增或修改 Channel Adapter
+
+1. 阅读当前官方 provider contract，并固定准确的 SDK 版本。
+2. 使用 provider fact 实现现有 Channel-neutral Adapter contract。Trusted
+   Profile、Channel Account 和 Epoch context 在 Adapter 边界之后注入。
+3. 在 Adapter 内保留 provider 特有的回复、rate limit、retry、歧义与 receipt
+   语义。
+4. 所有入站消息都必须经过共享 Inbound Pipeline，所有命令都必须经过唯一 core
+   parser。不能增加 Adapter 私有命令集或直接 Codex 路径。
+5. 为私聊与群聊身份、重复 provider event、@ 或被动消息、投递失败和重连增加
+   contract coverage。
+6. 同步更新 Adapter、配置、部署影响文档及其英文版本。
+7. 声明行为可用前完成真实 provider 验收。
+
+### 修改 Codex 协议行为
+
+写 Bridge 代码前，先把行为归类为 Codex-owned。使用管理员提供且已测试的 Codex
+Executable 重新生成 schema，审查 diff 后才能更新版本化 manifest，并使用原生
+稳定 method 或 setting。缺少必需能力时 Profile 失败关闭；缺少可选 experimental
+能力时只降级，不在 Bridge 内模拟。Contract test 必须覆盖与改动相关的
+initialize/initialized、capability probe、终态 `turn/completed`、process-generation
+丢失和 request 清理。
+
+### 修改持久化或投递
+
+Bridge schema 变化必须提供显式向前 migration、migration plan、磁盘估算、快照
+门禁、失败行为和 restore/rollback 说明。Service start 不能自动迁移，也不能修改
+Codex-owned 文件。Codex 终态结果与 Outbox record 仍在同一 transaction 中提交；
+retry 继续使用同一 Logical Result。必须测试重复 input、send 歧义、process
+restart、pending Outbox reconciliation 和 sibling-Profile 隔离。
+
+### 修改命令或管理接口
+
+只有在 Channel action 需要投射到现有 Bridge 或原生 Codex 所有权时，才新增
+Channel command。命令只在 core 解析一次，使用 trusted participant context 授权，
+并区分私聊与群聊 policy。管理变更使用结构化本地 control plane，并在需要时提供
+plan/confirm；Channel message 不能成为隐藏管理 API。
+
+### 文档与发布完成条件
+
+同一改动必须同步更新中英文文档。准备 release 前，变更保留在
+[`CHANGELOG.md`](CHANGELOG.md) 的 `Unreleased` 下。不得手工分别修改 workspace
+版本；应执行 `npm run release:prepare` 并遵循 [`release.md`](release.md)。
+`npm run release:check` 是防止代码、lockfile 与文档版本漂移的快速门禁。
+
 ## 平台验证优先级
 
 按以下顺序实现并验收平台行为：

@@ -36,7 +36,7 @@ import type {
   ThreadBindingKey,
   TrustedChannelContext
 } from "@codex-channel-bridge/core";
-import { ChannelDeliveryError } from "@codex-channel-bridge/core";
+import { BRIDGE_VERSION, ChannelDeliveryError } from "@codex-channel-bridge/core";
 import {
   ProfileStore,
   ProfileStoreError,
@@ -356,7 +356,7 @@ export class ProfileWorker extends EventEmitter {
         executable,
         codexHome: this.#config.codexHome,
         workspace: this.#config.workspace,
-        bridgeVersion: "0.1.0-dev",
+        bridgeVersion: BRIDGE_VERSION,
         experimentalApi: probe.experimentalMethods.includes("thread/settings/update"),
         ...(this.#config.childExitTimeoutMs !== undefined
           ? { childExitTimeoutMs: this.#config.childExitTimeoutMs }
