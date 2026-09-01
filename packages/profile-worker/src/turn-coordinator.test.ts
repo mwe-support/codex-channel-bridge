@@ -35,8 +35,26 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
       return { thread: { id: `thread-${this.#threadSequence}` } } as TResult;
     }
     if (method === "thread/resume") {
-      return { thread: { id: (params as { threadId: string }).threadId } } as TResult;
+      return {
+        thread: { id: (params as { threadId: string }).threadId },
+        model: "model-a",
+        modelProvider: "openai",
+        reasoningEffort: "medium",
+        cwd: "/tmp/workspace"
+      } as TResult;
     }
+    if (method === "model/list") {
+      return {
+        data: [{
+          id: "model-a",
+          model: "model-a",
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "medium" }]
+        }],
+        nextCursor: null
+      } as TResult;
+    }
+    if (method === "thread/settings/update") return {} as TResult;
     if (method === "turn/start") {
       const input = params as { threadId: string };
       const turnId = `turn-for-${input.threadId}`;
@@ -177,6 +195,25 @@ test("projects steer into native turn/steer with an exact active Turn target", a
       input: [{ type: "text", text: "change direction" }],
       expectedTurnId: "turn-1"
     }
+  });
+});
+
+test("projects model discovery and settings into native App Server methods", async () => {
+  const router = new CodexEventRouter();
+  const runtime = new FakeRuntime(router);
+  const coordinator = new TurnCoordinator({ runtime, workspace: "/tmp/workspace", eventRouter: router });
+
+  assert.equal((await coordinator.listModels())[0]?.model, "model-a");
+  assert.deepEqual(await coordinator.readThreadSettings("thread-1"), {
+    threadId: "thread-1",
+    model: "model-a",
+    reasoningEffort: "medium",
+    cwd: "/tmp/workspace"
+  });
+  await coordinator.updateThreadSettings("thread-1", { model: "model-a", effort: "medium" });
+  assert.deepEqual(runtime.requests.at(-1), {
+    method: "thread/settings/update",
+    params: { threadId: "thread-1", model: "model-a", effort: "medium" }
   });
 });
 

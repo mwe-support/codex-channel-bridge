@@ -34,9 +34,10 @@ Host-local operations now include read-only diagnostics, durable backup holds,
 restore validation, body-free Audit query/export/retention, Support Bundles,
 disk-pressure fail-closed behavior, and manual Codex circuit recovery. Native
 macOS launchd, native Linux systemd, and Linux Docker packaging have passed
-their Stage 7 target-host acceptance. Native Windows verification and the final
-release-candidate gate remain incomplete, so the Bridge is not ready for a
-stable release.
+their Stage 8 release-candidate acceptance, including real QQ command and
+Thread-binding interaction on macOS. Native Windows verification and real
+WhatsApp account acceptance remain incomplete, so the Bridge is not ready for
+a stable release.
 
 ## First-release direction
 

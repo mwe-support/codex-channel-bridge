@@ -46,7 +46,8 @@ const testedProbe: ProtocolProbeResult = {
   cliVersion: "0.149.1",
   verification: "tested",
   schemaSha256: "test",
-  requiredMethods: []
+  requiredMethods: [],
+  experimentalMethods: ["thread/settings/update"]
 };
 
 class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
@@ -56,6 +57,15 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
   completeTurns = true;
   startFailure = false;
   respondErrorFailure = false;
+  readonly models = [{
+    id: "model-a",
+    model: "model-a",
+    defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: [
+      { reasoningEffort: "low", description: "low" },
+      { reasoningEffort: "medium", description: "medium" }
+    ]
+  }];
 
   async start() {
     if (this.startFailure) throw new Error("start failed");
@@ -69,11 +79,20 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
 
   async request<TResult>(method: string, params?: unknown): Promise<TResult> {
     this.requests.push({ method, params });
-    if (method === "model/list") return { data: [] } as TResult;
-    if (method === "thread/start") return { thread: { id: "thread-1" } } as TResult;
-    if (method === "thread/resume") {
-      return { thread: { id: (params as { threadId: string }).threadId } } as TResult;
+    if (method === "model/list") return { data: this.models, nextCursor: null } as TResult;
+    if (method === "thread/start") {
+      return { thread: { id: "thread-1" }, model: "model-a", modelProvider: "openai", cwd: "/tmp/workspace", reasoningEffort: "medium" } as TResult;
     }
+    if (method === "thread/resume") {
+      return {
+        thread: { id: (params as { threadId: string }).threadId },
+        model: "model-a",
+        modelProvider: "openai",
+        cwd: "/tmp/workspace",
+        reasoningEffort: "medium"
+      } as TResult;
+    }
+    if (method === "thread/settings/update") return {} as TResult;
     if (method === "turn/start") {
       queueMicrotask(() => this.emit("turnStarted"));
       if (this.completeTurns) queueMicrotask(() => this.completeTurn());
@@ -168,6 +187,18 @@ class FakeStore implements ProfileStoreRuntime {
       binding: this.binding,
       inserted: true
     };
+  }
+
+  async replaceThreadBinding(input: CreateThreadBindingInput) {
+    const inserted = this.binding === undefined;
+    this.binding = { bindingId: this.binding?.bindingId ?? "binding-1", ...input };
+    return { binding: this.binding, inserted };
+  }
+
+  async detachThreadBinding(_key: ThreadBindingKey) {
+    const binding = this.binding;
+    this.binding = undefined;
+    return binding;
   }
 
   async acceptCodexInput(input: CodexInputAcceptance) {
@@ -898,6 +929,63 @@ test("routes an allowed QQ message through Codex correlation into the durable Ou
   assert.equal(store.logicalResults.length, 1);
   assert.equal(store.logicalResults[0]?.segments[0]?.text, "done");
   assert.equal(store.logicalResults[0]?.target.providerReplyEventId, "message-1");
+  await worker.stop();
+});
+
+test("projects private QQ Thread commands into native Codex settings and bindings", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker(
+    {
+      profileId: "profile-a",
+      workspace: "/tmp/workspace",
+      codexHome: "/tmp/codex-home",
+      stateDirectory: "/tmp/bridge-state",
+      channelAccounts: {
+        "qq-primary": {
+          id: "qq-primary",
+          provider: "qq",
+          enabled: true,
+          epochId: "epoch-1",
+          appId: "env:QQ_APP_ID",
+          appSecret: "env:QQ_APP_SECRET",
+          groupThreadScope: "conversation",
+          accessPolicy: {
+            privateChats: { mode: "open", allow: [] },
+            groupChats: { mode: "deny", allow: [] },
+            groupParticipants: { mode: "deny", allow: [] }
+          }
+        }
+      }
+    },
+    { ...dependencies(runtime, store), createQQAdapter: () => adapter }
+  );
+  await worker.start();
+
+  const completed = once(worker, "channelTurnCompleted");
+  await adapter.receive(inboundEvent(1));
+  await completed;
+
+  for (const [sequence, text] of [[2, "/model model-a"], [3, "/reasoning low"]] as const) {
+    const delivered = once(worker, "channelCommandDelivered");
+    await adapter.receive(inboundEvent(sequence, text));
+    await delivered;
+  }
+  assert.deepEqual(
+    runtime.requests.filter(({ method }) => method === "thread/settings/update"),
+    [
+      { method: "thread/settings/update", params: { threadId: "thread-1", model: "model-a" } },
+      { method: "thread/settings/update", params: { threadId: "thread-1", effort: "low" } }
+    ]
+  );
+
+  const detached = once(worker, "channelCommandDelivered");
+  await adapter.receive(inboundEvent(4, "/new"));
+  await detached;
+  assert.equal(store.binding, undefined);
+  assert.equal(adapter.deliveries.at(-1)?.providerReplySequence, 1);
+  assert.equal(adapter.deliveries.at(-1)?.text, "The next ordinary message will start a new Codex Thread.");
   await worker.stop();
 });
 

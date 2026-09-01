@@ -22,12 +22,17 @@ The parser recognizes `/help`, `/status`, `/new`, `/attach THREAD_ID`, `/detach`
 slash and becomes ordinary Codex input. Unknown commands and wrong argument
 counts are explicit invalid-command dispositions and are never passed to Codex.
 
-This slice establishes the one parser and typed action vocabulary. `/stop` is
-connected to native `turn/interrupt` with both the active Thread and Turn IDs,
+`/stop` calls native `turn/interrupt` with both the active Thread and Turn IDs,
 and only the Provider Identity that initiated that Turn may invoke it.
 `/approve` answers an exact pending native Approval Request after the same
-initiator check. The other listed commands still require later control-transport
-work; recognizing them does not claim they are available through QQ.
+initiator check. `/help` and `/status` are local read-only projections.
+`/new`, `/attach`, and `/detach` change only the Bridge-owned Thread Binding;
+`/attach` rejects a native Thread whose resolved working directory differs from
+the Profile Workspace. `/model` and `/reasoning` validate the native model
+catalog and call the optional native `thread/settings/update` method. Missing
+native capability is reported as unsupported rather than emulated. Shared
+conversation-scoped group settings require host-local Profile Administrator
+control; private and participant-scoped group bindings can use these commands.
 
 ## Steer mode
 

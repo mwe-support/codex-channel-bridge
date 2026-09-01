@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { statfs } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import {
   CodexAppServerProcess,
@@ -84,7 +84,10 @@ import { CodexInputReconciler } from "./codex-input-reconciler.js";
 import { CodexRestartController } from "./codex-restart-controller.js";
 import { CodexEventRouter } from "./codex-event-router.js";
 import { CodexServerRequestRouter } from "./codex-server-request-router.js";
-import { ConversationTurnCoordinator } from "./conversation-turn-coordinator.js";
+import {
+  ConversationTurnCoordinator,
+  threadBindingKeyFor
+} from "./conversation-turn-coordinator.js";
 import { DeliveryOutbox } from "./delivery-outbox.js";
 import { InboundPipeline, InboundPipelineError } from "./inbound-pipeline.js";
 import { MediaArchive } from "./media-archive.js";
@@ -145,6 +148,8 @@ export interface ProfileStoreRuntime {
   clearChannelTransportCheckpoint(channelAccountId: string): Promise<void>;
   getThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined>;
   createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult>;
+  replaceThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult>;
+  detachThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined>;
   acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult>;
   transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation>;
   nonterminalCodexInputs(): Promise<readonly CodexInputCorrelation[]>;
@@ -363,6 +368,7 @@ export class ProfileWorker extends EventEmitter {
         codexHome: this.#config.codexHome,
         workspace: this.#config.workspace,
         bridgeVersion: "0.1.0-dev",
+        experimentalApi: probe.experimentalMethods.includes("thread/settings/update"),
         ...(this.#config.childExitTimeoutMs !== undefined
           ? { childExitTimeoutMs: this.#config.childExitTimeoutMs }
           : {})
@@ -969,6 +975,12 @@ export class ProfileWorker extends EventEmitter {
         decision.disposition.work,
         decision.disposition.command
       );
+    } else if (decision.disposition.kind === "invalid_command") {
+      void this.#sendChannelCommandReply(
+        input,
+        "invalid",
+        `Invalid /${decision.disposition.commandName} command. Use /help for the supported syntax.`
+      );
     } else if (
       decision.disposition.kind === "rejected" &&
       (decision.disposition.reason === "unavailable" ||
@@ -1019,6 +1031,23 @@ export class ProfileWorker extends EventEmitter {
     work: ChannelIngressInput,
     command: BridgeCommand
   ): Promise<void> {
+    if (command.kind === "help") {
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        "Commands: /help, /status, /new, /attach THREAD_ID, /detach, /stop, /approve TOKEN DECISION, /model MODEL_ID, /reasoning EFFORT. Prefix // to send a literal slash command to Codex."
+      );
+      return;
+    }
+    if (command.kind === "status") {
+      const admission = this.#channelIngress.snapshot();
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        `Profile ${this.#health.readiness}${this.#health.reason ? ` (${this.#health.reason})` : ""}; active=${admission.active}; queued=${admission.queued}.`
+      );
+      return;
+    }
     if (command.kind === "approval.respond") {
       const router = this.#serverRequestRouter;
       if (!router) return;
@@ -1054,34 +1083,215 @@ export class ProfileWorker extends EventEmitter {
       }
       return;
     }
-    if (command.kind !== "turn.stop") {
+    if (command.kind === "turn.stop") {
+      const control = this.#channelIngress.activeTurnFor(work);
+      if (control.kind !== "allowed") {
+        this.emit("channelCommandRejected", {
+          archiveRecordId: work.archiveRecordId,
+          commandKind: command.kind,
+          reason: control.kind === "forbidden" ? "not_turn_initiator" : "no_active_turn"
+        });
+        await this.#sendChannelCommandReply(
+          work,
+          command.kind,
+          control.kind === "forbidden"
+            ? "Only the active Turn initiator may stop it."
+            : "No active Turn is available to stop."
+        );
+        return;
+      }
+      const coordinator = this.#turnCoordinator;
+      if (!coordinator) return;
+      try {
+        await coordinator.interruptTurn(control.target);
+        this.emit("channelTurnInterruptRequested", {
+          archiveRecordId: work.archiveRecordId,
+          target: control.target
+        });
+      } catch (error) {
+        this.emit("channelTurnFailed", {
+          archiveRecordId: work.archiveRecordId,
+          error: error instanceof Error ? error : new Error(String(error))
+        });
+      }
+      return;
+    }
+
+    if (
+      work.event.message.conversationKind === "group" &&
+      work.groupThreadScope === "conversation"
+    ) {
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        "This shared group Thread setting requires host-local Profile Administrator control."
+      );
+      return;
+    }
+
+    try {
+      await this.#executeThreadCommand(work, command);
+    } catch (error) {
+      this.emit("channelCommandRejected", {
+        archiveRecordId: work.archiveRecordId,
+        commandKind: command.kind,
+        reason: error instanceof Error ? error.message : "command_failed"
+      });
+      await this.#sendChannelCommandReply(work, command.kind, "The command could not be applied.");
+    }
+  }
+
+  async #executeThreadCommand(work: ChannelIngressInput, command: BridgeCommand): Promise<void> {
+    const store = this.#store;
+    const coordinator = this.#turnCoordinator;
+    if (!store || !coordinator) throw new Error("Codex is unavailable");
+    const key = threadBindingKeyFor(work.event, work.groupThreadScope);
+
+    if (
+      command.kind === "thread.new" ||
+      command.kind === "thread.attach" ||
+      command.kind === "thread.detach"
+    ) {
+      if (this.#channelIngress.activeTurnFor(work).kind !== "none") {
+        throw new Error("Cannot change a Thread Binding while its Turn is active");
+      }
+    }
+
+    if (command.kind === "thread.new" || command.kind === "thread.detach") {
+      const detached = await store.detachThreadBinding(key);
+      await this.#auditChannelCommand(
+        work,
+        command.kind,
+        detached ? "succeeded" : "unchanged",
+        detached?.bindingId ?? this.#config.profileId
+      );
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        command.kind === "thread.new"
+          ? "The next ordinary message will start a new Codex Thread."
+          : detached
+            ? "The current Codex Thread is detached."
+            : "No Codex Thread is currently attached."
+      );
+      return;
+    }
+
+    if (command.kind === "thread.attach") {
+      const settings = await coordinator.readThreadSettings(command.threadId);
+      if (resolve(settings.cwd) !== resolve(this.#config.workspace)) {
+        throw new Error("The Codex Thread belongs to a different Workspace");
+      }
+      const replaced = await store.replaceThreadBinding({
+        profileId: this.#config.profileId,
+        ...key,
+        codexThreadId: command.threadId,
+        boundAtMs: Date.now()
+      });
+      await this.#auditChannelCommand(work, command.kind, "succeeded", replaced.binding.bindingId);
+      await this.#sendChannelCommandReply(work, command.kind, "The Codex Thread is attached.");
+      return;
+    }
+
+    const binding = await store.getThreadBinding(key);
+    if (!binding) {
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        "No Codex Thread is attached. Send an ordinary message first."
+      );
+      return;
+    }
+    if (!this.#probe?.experimentalMethods.includes("thread/settings/update")) {
       this.emit("channelCommandUnsupported", {
         archiveRecordId: work.archiveRecordId,
         commandKind: command.kind
       });
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        "This Codex version does not provide native Thread settings updates."
+      );
       return;
     }
-    const control = this.#channelIngress.activeTurnFor(work);
-    if (control.kind !== "allowed") {
-      this.emit("channelCommandRejected", {
-        archiveRecordId: work.archiveRecordId,
-        commandKind: command.kind,
-        reason: control.kind === "forbidden" ? "not_turn_initiator" : "no_active_turn"
-      });
+
+    const models = await coordinator.listModels();
+    const current = await coordinator.readThreadSettings(binding.codexThreadId);
+    if (command.kind === "model.select") {
+      const selected = models.find(
+        (model) => model.id === command.modelId || model.model === command.modelId
+      );
+      if (!selected) {
+        await this.#sendChannelCommandReply(work, command.kind, "The requested model is not available.");
+        return;
+      }
+      await coordinator.updateThreadSettings(binding.codexThreadId, { model: selected.model });
+      await this.#auditChannelCommand(work, command.kind, "succeeded", binding.bindingId);
+      await this.#sendChannelCommandReply(work, command.kind, "The native Codex Thread model was updated.");
       return;
     }
-    const coordinator = this.#turnCoordinator;
-    if (!coordinator) return;
+
+    if (command.kind === "reasoning.select") {
+      const selected = models.find((model) => model.model === current.model);
+      if (!selected?.supportedReasoningEfforts.some(
+        (option) => option.reasoningEffort === command.effort
+      )) {
+        await this.#sendChannelCommandReply(
+          work,
+          command.kind,
+          "The requested reasoning effort is not available for the current model."
+        );
+        return;
+      }
+      await coordinator.updateThreadSettings(binding.codexThreadId, { effort: command.effort });
+      await this.#auditChannelCommand(work, command.kind, "succeeded", binding.bindingId);
+      await this.#sendChannelCommandReply(
+        work,
+        command.kind,
+        "The native Codex Thread reasoning effort was updated."
+      );
+    }
+  }
+
+  async #auditChannelCommand(
+    work: ChannelIngressInput,
+    action: string,
+    result: string,
+    targetReference: string
+  ): Promise<void> {
+    await this.#store?.appendAuditRecord({
+      correlationId: work.archiveRecordId,
+      action,
+      result,
+      targetReference,
+      atMs: Date.now()
+    });
+  }
+
+  async #sendChannelCommandReply(
+    work: ChannelIngressInput,
+    commandKind: string,
+    text: string
+  ): Promise<void> {
+    const adapter = this.#channelAdapters.get(work.event.message.channelAccountId);
+    if (!adapter) return;
     try {
-      await coordinator.interruptTurn(control.target);
-      this.emit("channelTurnInterruptRequested", {
+      await adapter.sendText({
+        logicalResultId: `bridge-command:${work.archiveRecordId}:${commandKind}`,
+        segmentIndex: 0,
+        target: work.event.replyTarget,
+        ...(work.event.message.provider === "qq" ? { providerReplySequence: 1 } : {}),
+        text
+      });
+      this.emit("channelCommandDelivered", {
         archiveRecordId: work.archiveRecordId,
-        target: control.target
+        commandKind
       });
     } catch (error) {
-      this.emit("channelTurnFailed", {
+      this.emit("channelCommandDeliveryFailed", {
         archiveRecordId: work.archiveRecordId,
-        error: error instanceof Error ? error : new Error(String(error))
+        commandKind,
+        outcome: error instanceof ChannelDeliveryError ? error.outcome : "delivery_exception"
       });
     }
   }

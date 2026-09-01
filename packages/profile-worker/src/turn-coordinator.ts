@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   ManagedCodexRpcRuntime,
+  ModelListResponse,
   ThreadResumeResponse,
   ThreadStartResponse,
   TurnInterruptResponse,
@@ -35,6 +36,13 @@ export interface TurnCoordinatorOptions {
   readonly workspace: string;
   readonly eventRouter: CodexEventRouter;
   readonly turnTimeoutMs?: number;
+}
+
+export interface ThreadSettings {
+  readonly threadId: string;
+  readonly model: string;
+  readonly reasoningEffort: string | null;
+  readonly cwd: string;
 }
 
 export class TurnCoordinator {
@@ -148,6 +156,40 @@ export class TurnCoordinator {
       threadId: target.threadId,
       turnId: target.turnId
     });
+  }
+
+  public async listModels(): Promise<ModelListResponse["data"]> {
+    const models: ModelListResponse["data"][number][] = [];
+    let cursor: string | null | undefined;
+    do {
+      const response = await this.#runtime.request<ModelListResponse>("model/list", {
+        limit: 100,
+        ...(cursor ? { cursor } : {})
+      });
+      models.push(...response.data);
+      cursor = response.nextCursor;
+    } while (cursor);
+    return models;
+  }
+
+  public async readThreadSettings(threadId: string): Promise<ThreadSettings> {
+    const response = await this.#runtime.request<ThreadResumeResponse>("thread/resume", { threadId });
+    if (response.thread.id !== threadId) throw new Error("Codex resumed a different Thread than requested");
+    this.#loadedThreadIds.add(threadId);
+    return {
+      threadId,
+      model: response.model,
+      reasoningEffort: response.reasoningEffort ?? null,
+      cwd: response.cwd
+    };
+  }
+
+  public async updateThreadSettings(
+    threadId: string,
+    settings: { readonly model?: string; readonly effort?: string }
+  ): Promise<void> {
+    if (!this.#loadedThreadIds.has(threadId)) await this.#resumeThread(threadId);
+    await this.#runtime.request("thread/settings/update", { threadId, ...settings });
   }
 
   async #startThread(): Promise<string> {

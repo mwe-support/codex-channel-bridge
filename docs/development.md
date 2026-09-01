@@ -213,7 +213,9 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   this release must reside in the isolated Profile Codex home.
 - App Server stderr is consumed separately. The first slice retains only
   bounded content-free byte and chunk counts, never raw stderr text.
-- Experimental APIs are not enabled.
+- Experimental APIs are enabled only when the generated schema advertises the
+  optional `thread/settings/update` method. Its absence disables `/model` and
+  `/reasoning`; the Bridge does not emulate native Thread settings.
 - One Profile runtime has one notification listener and one generation-local
   event router. Per-Turn notification listeners are not used.
 - Stable command-execution and file-change Approval Requests are routed by their
@@ -231,8 +233,8 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   two, and five seconds within a sixty-second window. A further crash opens the
   Profile-local stop condition `worker_restart_exhausted`; the Supervisor and
   sibling Profiles remain live. A thirty-second cooldown resets the bounded
-  budget before one new Worker generation is attempted. An explicit
-  administrator reset is not exposed yet.
+  budget before one new Worker generation is attempted. An administrator can
+  explicitly reset the circuit through the host-local control plane.
 - Unix access currently relies on verified service-user ownership and modes
   because Node.js does not expose peer credentials. The Windows named-pipe path
   is present, but strict ACL setup and verification remain untested platform
@@ -263,8 +265,12 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   bounded jittered circuit, and use native `thread/resume` plus
   `thread/read(includeTurns)` before accepting new work. Recovered input is never
   replayed automatically. An uncertainty found during restart is atomically
-  committed with its Channel Logical Result and durable Outbox records. The
-  other Channel commands remain incomplete.
+  committed with its Channel Logical Result and durable Outbox records.
+  `/help` and `/status` are local projections; `/new`, `/attach`, and `/detach`
+  mutate only the Bridge-owned Thread Binding; `/model` and `/reasoning` use
+  the probed native `thread/settings/update` method. Shared conversation-scoped
+  group settings fail closed because Channel-side administrator capabilities
+  are not implemented.
   Passive QQ reply
   sequences are now allocated with the Outbox transaction and forwarded through
   the explicit raw-send path. The QQ SDK still does not expose a

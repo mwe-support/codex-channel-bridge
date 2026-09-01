@@ -26,11 +26,14 @@ export const REQUIRED_STABLE_METHODS = [
   "model/list"
 ] as const;
 
+export const OPTIONAL_EXPERIMENTAL_METHODS = ["thread/settings/update"] as const;
+
 export interface ProtocolProbeResult {
   readonly cliVersion: string;
   readonly verification: CodexVerification;
   readonly schemaSha256: string;
   readonly requiredMethods: readonly string[];
+  readonly experimentalMethods: readonly string[];
 }
 
 export class CodexProtocolProbeError extends Error {
@@ -90,7 +93,8 @@ export function assessProtocolSchema(
     cliVersion,
     verification,
     schemaSha256: schemaSha256 ?? "not-computed",
-    requiredMethods: [...REQUIRED_STABLE_METHODS]
+    requiredMethods: [...REQUIRED_STABLE_METHODS],
+    experimentalMethods: []
   };
 }
 
@@ -136,9 +140,37 @@ export async function probeCodexProtocol(
     const bundle = await readFile(join(directory, "codex_app_server_protocol.v2.schemas.json"));
     const sha256 = createHash("sha256").update(bundle).digest("hex");
     const schema = JSON.parse(bundle.toString("utf8")) as unknown;
-    return assessProtocolSchema(cliVersion, schema, sha256);
+    const stable = assessProtocolSchema(cliVersion, schema, sha256);
+    const experimentalMethods = await probeExperimentalMethods(
+      codexExecutable,
+      directory,
+      timeoutMs
+    );
+    return { ...stable, experimentalMethods };
   } finally {
     await rm(directory, { force: true, recursive: true });
+  }
+}
+
+async function probeExperimentalMethods(
+  codexExecutable: string,
+  directory: string,
+  timeoutMs: number
+): Promise<readonly string[]> {
+  const experimentalDirectory = join(directory, "experimental");
+  try {
+    await execFileAsync(
+      codexExecutable,
+      ["app-server", "generate-json-schema", "--experimental", "--out", experimentalDirectory],
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024 }
+    );
+    const bundle = await readFile(
+      join(experimentalDirectory, "codex_app_server_protocol.v2.schemas.json")
+    );
+    const methods = extractProtocolMethods(JSON.parse(bundle.toString("utf8")) as unknown);
+    return OPTIONAL_EXPERIMENTAL_METHODS.filter((method) => methods.has(method));
+  } catch {
+    return [];
   }
 }
 

@@ -71,6 +71,8 @@ type StorageOperation =
   | { readonly name: "profilePurgeState" }
   | { readonly name: "getThreadBinding"; readonly key: ThreadBindingKey }
   | { readonly name: "createThreadBinding"; readonly value: CreateThreadBindingInput }
+  | { readonly name: "replaceThreadBinding"; readonly value: CreateThreadBindingInput }
+  | { readonly name: "detachThreadBinding"; readonly key: ThreadBindingKey }
   | { readonly name: "acceptCodexInput"; readonly value: CodexInputAcceptance }
   | { readonly name: "transitionCodexInput"; readonly transition: CodexInputTransition }
   | { readonly name: "nonterminalCodexInputs" }
@@ -236,6 +238,14 @@ export class ProfileStore {
 
   public createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult> {
     return this.#request({ name: "createThreadBinding", value: input });
+  }
+
+  public replaceThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult> {
+    return this.#request({ name: "replaceThreadBinding", value: input });
+  }
+
+  public detachThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined> {
+    return this.#request({ name: "detachThreadBinding", key });
   }
 
   public acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult> {

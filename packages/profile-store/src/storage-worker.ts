@@ -77,6 +77,10 @@ function execute(store: SqliteProfileStore, operation: StorageOperation): unknow
       return store.getThreadBinding(operation.key);
     case "createThreadBinding":
       return store.createThreadBinding(operation.value);
+    case "replaceThreadBinding":
+      return store.replaceThreadBinding(operation.value);
+    case "detachThreadBinding":
+      return store.detachThreadBinding(operation.key);
     case "acceptCodexInput":
       return store.acceptCodexInput(operation.value);
     case "transitionCodexInput":
@@ -138,6 +142,8 @@ function isStorageRequest(value: unknown): value is StorageRequest {
       value.operation.name === "profilePurgeState" ||
       value.operation.name === "getThreadBinding" ||
       value.operation.name === "createThreadBinding" ||
+      value.operation.name === "replaceThreadBinding" ||
+      value.operation.name === "detachThreadBinding" ||
       value.operation.name === "acceptCodexInput" ||
       value.operation.name === "transitionCodexInput" ||
       value.operation.name === "nonterminalCodexInputs" ||

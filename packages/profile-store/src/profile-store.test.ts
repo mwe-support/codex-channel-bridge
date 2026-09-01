@@ -439,6 +439,27 @@ test("binds conversation and participant scopes without copying Codex history", 
     }),
     { ...conversation, inserted: false }
   );
+  const replaced = store.replaceThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:qq-primary:group:group-1",
+    scope: "conversation",
+    codexThreadId: "thread-replacement",
+    boundAtMs: 1_003
+  });
+  assert.equal(replaced.binding.bindingId, conversation.binding.bindingId);
+  assert.equal(replaced.binding.codexThreadId, "thread-replacement");
+  assert.equal(store.detachThreadBinding(replaced.binding)?.codexThreadId, "thread-replacement");
+  assert.equal(store.getThreadBinding(replaced.binding), undefined);
+  const rebound = store.createThreadBinding({
+    profileId: "alpha",
+    conversationKey: "qq:qq-primary:group:group-1",
+    scope: "conversation",
+    codexThreadId: "thread-new",
+    boundAtMs: 1_004
+  });
+  assert.equal(rebound.binding.bindingId, conversation.binding.bindingId);
+  assert.equal(rebound.binding.codexThreadId, "thread-new");
+  assert.equal(rebound.inserted, false);
   store.close();
 });
 

@@ -42,9 +42,25 @@ export interface ThreadStartResponse {
   readonly model: string;
   readonly modelProvider: string;
   readonly cwd: string;
+  readonly reasoningEffort?: string | null;
 }
 
 export type ThreadResumeResponse = ThreadStartResponse;
+
+export interface CodexModel {
+  readonly id: string;
+  readonly model: string;
+  readonly defaultReasoningEffort: string;
+  readonly supportedReasoningEfforts: readonly {
+    readonly reasoningEffort: string;
+    readonly description: string;
+  }[];
+}
+
+export interface ModelListResponse {
+  readonly data: readonly CodexModel[];
+  readonly nextCursor?: string | null;
+}
 
 export type CodexTurnStatus = "completed" | "interrupted" | "failed" | "inProgress";
 

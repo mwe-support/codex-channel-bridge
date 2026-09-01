@@ -1187,7 +1187,8 @@ export class SqliteProfileStore {
           WHERE profile_id = @profileId
             AND conversation_key = @conversationKey
             AND scope = @scope
-            AND scope_identity = @scopeIdentity`
+            AND scope_identity = @scopeIdentity
+            AND codex_thread_id <> ''`
       )
       .get({
         profileId: this.#profileId,
@@ -1204,6 +1205,35 @@ export class SqliteProfileStore {
     try {
       const existing = this.getThreadBinding(input);
       if (existing) return { binding: existing, inserted: false };
+      const detached = this.#database
+        .prepare(
+          `SELECT binding_id
+             FROM thread_bindings
+            WHERE profile_id = @profileId
+              AND conversation_key = @conversationKey
+              AND scope = @scope
+              AND scope_identity = @scopeIdentity
+              AND codex_thread_id = ''`
+        )
+        .get({
+          profileId: this.#profileId,
+          conversationKey: input.conversationKey,
+          scope: input.scope,
+          scopeIdentity: bindingScopeIdentity(input)
+        }) as { binding_id: string } | undefined;
+      if (detached) {
+        this.#database
+          .prepare(
+            `UPDATE thread_bindings
+                SET codex_thread_id = ?, bound_at_ms = ?
+              WHERE binding_id = ?`
+          )
+          .run(input.codexThreadId, input.boundAtMs, detached.binding_id);
+        return {
+          binding: { bindingId: detached.binding_id, ...input },
+          inserted: false
+        };
+      }
       const bindingId = randomUUID();
       this.#database
         .prepare(
@@ -1241,6 +1271,43 @@ export class SqliteProfileStore {
     } catch (error) {
       if (error instanceof ProfileStoreError) throw error;
       throw new ProfileStoreError("storage_failure", "Unable to create Thread Binding");
+    }
+  }
+
+  public replaceThreadBinding(input: CreateThreadBindingInput): ThreadBindingCommitResult {
+    this.#requireOpen();
+    validateCreateThreadBinding(input, this.#profileId);
+    const existing = this.getThreadBinding(input);
+    if (!existing) return this.createThreadBinding(input);
+    try {
+      this.#database
+        .prepare(
+          `UPDATE thread_bindings
+              SET codex_thread_id = ?, bound_at_ms = ?
+            WHERE binding_id = ?`
+        )
+        .run(input.codexThreadId, input.boundAtMs, existing.bindingId);
+      return {
+        binding: { ...existing, codexThreadId: input.codexThreadId, boundAtMs: input.boundAtMs },
+        inserted: false
+      };
+    } catch {
+      throw new ProfileStoreError("storage_failure", "Unable to replace Thread Binding");
+    }
+  }
+
+  public detachThreadBinding(key: ThreadBindingKey): ThreadBinding | undefined {
+    this.#requireOpen();
+    validateThreadBindingKey(key);
+    const existing = this.getThreadBinding(key);
+    if (!existing) return undefined;
+    try {
+      this.#database
+        .prepare(`UPDATE thread_bindings SET codex_thread_id = '' WHERE binding_id = ?`)
+        .run(existing.bindingId);
+      return existing;
+    } catch {
+      throw new ProfileStoreError("storage_failure", "Unable to detach Thread Binding");
     }
   }
 

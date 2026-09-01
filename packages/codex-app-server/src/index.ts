@@ -15,6 +15,7 @@ export {
   CodexProtocolProbeError,
   extractProtocolMethods,
   MINIMUM_CODEX_VERSION,
+  OPTIONAL_EXPERIMENTAL_METHODS,
   PINNED_CODEX_VERSION,
   PINNED_STABLE_SCHEMA_SHA256,
   probeCodexProtocol,
@@ -23,12 +24,14 @@ export {
 export type { ProtocolProbeResult } from "./protocol-schema.js";
 export type {
   AgentMessageItem,
+  CodexModel,
   InitializeParams,
   InitializeResponse,
   JsonRpcErrorObject,
   JsonRpcId,
   JsonRpcNotification,
   JsonRpcRequest,
+  ModelListResponse,
   ThreadResumeResponse,
   ThreadReadResponse,
   CodexTurnStatus,

@@ -16,7 +16,7 @@ Adapter 只提供 Provider Fact。Profile Worker 会在该 Boundary 前注入 Pr
 
 Parser 识别 `/help`、`/status`、`/new`、`/attach THREAD_ID`、`/detach`、`/stop`、`/approve TOKEN DECISION`、`/model MODEL_ID` 和 `/reasoning EFFORT`。`//text` 会转义开头 Slash，并成为普通 Codex Input。未知命令或参数数量错误会形成明确的 Invalid-command Disposition，绝不传给 Codex。
 
-当前阶段建立了唯一 Parser 与 Typed Action Vocabulary。`/stop` 已使用 Active Thread ID 与 Turn ID 连接原生 `turn/interrupt`，并且只有发起该 Turn 的 Provider Identity 可以调用。`/approve` 在同一 Initiator 检查后响应准确的 Pending Native Approval Request。其余命令仍需后续 Control-transport Work；识别命令不代表 QQ 已可执行这些操作。
+`/stop` 使用 Active Thread ID 与 Turn ID 调用原生 `turn/interrupt`，并且只有发起该 Turn 的 Provider Identity 可以调用。`/approve` 在同一 Initiator 检查后响应准确的 Pending Native Approval Request。`/help` 与 `/status` 是本地只读投射。`/new`、`/attach` 与 `/detach` 只修改 Bridge-owned Thread Binding；若 Native Thread 的解析后工作目录不同于 Profile Workspace，`/attach` 会拒绝。`/model` 与 `/reasoning` 校验原生 Model Catalog，并调用可选的原生 `thread/settings/update` Method。缺少 Native Capability 时会报告不支持，而不会模拟。共享 Conversation-scoped Group Setting 需要 Host-local Profile Administrator Control；私聊和 Participant-scoped Group Binding 可以使用这些命令。
 
 ## Steer Mode
 

@@ -182,7 +182,7 @@ export class ConversationTurnCoordinator {
   public async steer(input: ConversationSteerInput): Promise<ConversationSteerResult> {
     const text = input.event.message.text;
     if (!text?.trim()) throw new Error("Steer input requires a non-empty text body");
-    const key = bindingKey(input.event, input.groupThreadScope);
+    const key = threadBindingKeyFor(input.event, input.groupThreadScope);
     const binding = await this.#store.getThreadBinding(key);
     if (!binding || binding.codexThreadId !== input.target.threadId) {
       throw new Error("Steer target does not match the current Thread Binding");
@@ -244,7 +244,7 @@ export class ConversationTurnCoordinator {
     event: InboundChannelEvent,
     groupThreadScope: ThreadBindingScope
   ): Promise<ThreadBinding> {
-    const key = bindingKey(event, groupThreadScope);
+    const key = threadBindingKeyFor(event, groupThreadScope);
     const existing = await this.#store.getThreadBinding(key);
     if (existing) {
       await this.#turnDriver.prepareThread(existing.codexThreadId);
@@ -300,7 +300,7 @@ function uncertainResultText(reasonCode: string): string {
   return `The ${operation} outcome could not be verified. The input was not replayed automatically. You may retry or continue deliberately.`;
 }
 
-function bindingKey(
+export function threadBindingKeyFor(
   event: InboundChannelEvent,
   groupThreadScope: ThreadBindingScope
 ): ThreadBindingKey {

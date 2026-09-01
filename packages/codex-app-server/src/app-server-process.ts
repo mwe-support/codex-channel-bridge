@@ -16,6 +16,7 @@ export interface CodexAppServerOptions {
   readonly codexHome: string;
   readonly workspace: string;
   readonly bridgeVersion: string;
+  readonly experimentalApi?: boolean;
   /**
    * Source environment used to construct the isolated child environment.
    * Production callers should omit this; it exists so the boundary can be
@@ -113,7 +114,7 @@ export class CodexAppServerProcess extends EventEmitter implements ManagedCodexR
         title: "Codex Channel Bridge",
         version: this.#options.bridgeVersion
       },
-      capabilities: { experimentalApi: false }
+      capabilities: { experimentalApi: this.#options.experimentalApi === true }
     };
     const initialized = await rpc.request<InitializeResponse>("initialize", params);
     await rpc.notify("initialized");
