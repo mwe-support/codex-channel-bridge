@@ -131,6 +131,9 @@ function classifyWhatsAppActionError(error: unknown): Extract<
   if (message.includes("confirmation did not match")) {
     return { code: "confirmation_mismatch", message: "Complete Channel Account ID confirmation did not match" };
   }
+  if (message.startsWith("WhatsApp pairing ")) {
+    return { code: "action_failed", message };
+  }
   return { code: "action_failed", message: "WhatsApp Channel Account action failed" };
 }
 

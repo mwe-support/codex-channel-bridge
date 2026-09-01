@@ -66,7 +66,10 @@ export interface AdapterSocket {
       readonly messages: readonly WhatsAppInboundMessage[];
     }) => void): void;
   };
-  readonly user?: { readonly id?: string | null };
+  readonly user?: {
+    readonly id?: string | null;
+    readonly lid?: string | null;
+  };
   sendMessage(
     jid: string,
     content: { readonly text: string },
@@ -218,7 +221,13 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
       if (upsert.type !== "notify" || upsert.requestId !== undefined) return;
       const receivedAtMs = Date.now();
       for (const message of upsert.messages) {
-        const event = normalizeWhatsAppMessage(message, socket.user?.id ?? undefined, receivedAtMs);
+        const event = normalizeWhatsAppMessage(
+          message,
+          [socket.user?.id, socket.user?.lid].filter(
+            (jid): jid is string => typeof jid === "string"
+          ),
+          receivedAtMs
+        );
         if (event) {
           void this.#onEvent?.(event).catch(() => {
             this.#setReadiness("degraded");
@@ -413,7 +422,7 @@ function waitForDelay(delayMs: number, signal: AbortSignal): Promise<boolean> {
 
 export function normalizeWhatsAppMessage(
   message: WhatsAppInboundMessage,
-  selfJid: string | undefined,
+  selfJids: string | readonly string[] | undefined,
   receivedAtMs: number,
   downloadMedia: WhatsAppMediaDownloader = async (value) =>
     downloadMediaMessage(value as WAMessage, "stream", {})
@@ -430,9 +439,10 @@ export function normalizeWhatsAppMessage(
   const content = normalizeMessageContent(message.message as WAMessage["message"]);
   const text = extractText(content);
   const attachment = extractMediaAttachment(message, content, downloadMedia);
-  const mentioned = selfJid
-    ? extractMentions(content).some((jid) => areJidsSameUser(jid, selfJid))
-    : false;
+  const ownJids = typeof selfJids === "string" ? [selfJids] : selfJids ?? [];
+  const mentioned = extractMentions(content).some((mentionedJid) =>
+    ownJids.some((ownJid) => areJidsSameUser(mentionedJid, ownJid))
+  );
   return {
     message: {
       provider: "whatsapp",

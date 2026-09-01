@@ -46,7 +46,10 @@ test("presents QR material, proves identity, and activates staged auth", async (
     });
     await waitUntil(() => auth !== undefined);
     socket.emitter.emit("connection.update", { qr: "short-lived-qr" });
-    auth!.creds.registered = true;
+    Object.assign(auth!.creds, {
+      me: { id: "15551112222:4@s.whatsapp.net" },
+      account: {}
+    });
     socket.emitter.emit("creds.update", {});
     socket.user = { id: "15551112222:4@s.whatsapp.net" };
     socket.emitter.emit("connection.update", { connection: "open" });
@@ -86,7 +89,6 @@ test("fails closed on Provider Identity mismatch and discards staged auth", asyn
       }
     });
     await waitUntil(() => auth !== undefined);
-    auth!.creds.registered = true;
     socket.user = { id: "15559999999@s.whatsapp.net" };
     socket.emitter.emit("connection.update", { connection: "open" });
     await assert.rejects(pairing, /Identity did not match/);
@@ -126,7 +128,10 @@ test("recreates the pairing Socket for bounded restartRequired", async () => {
       lastDisconnect: { error: { output: { statusCode: 515 } } }
     });
     await waitUntil(() => created.length === 2);
-    auth!.creds.registered = true;
+    Object.assign(auth!.creds, {
+      me: { id: "15551112222@s.whatsapp.net" },
+      account: {}
+    });
     created[1]!.user = { id: "15551112222@s.whatsapp.net" };
     created[1]!.emitter.emit("connection.update", { connection: "open" });
     assert.equal((await pairing).providerIdentity, "15551112222@s.whatsapp.net");

@@ -19,7 +19,10 @@ import {
 class FakeSocket {
   readonly emitter = new EventEmitter();
   readonly ev = this.emitter as unknown as AdapterSocket["ev"];
-  readonly user = { id: "15550000000:1@s.whatsapp.net" };
+  readonly user = {
+    id: "15550000000:1@s.whatsapp.net",
+    lid: "123456789012345@lid"
+  };
   readonly sends: Array<{ jid: string; content: unknown; options?: unknown }> = [];
   ended = false;
   logoutCount = 0;
@@ -104,6 +107,22 @@ test("normalizes private and mentioned group messages with provider-owned identi
   assert.equal(group?.message.conversationKind, "group");
   assert.equal(group?.message.providerIdentity, "15553334444@s.whatsapp.net");
   assert.equal(group?.attention, "mention");
+
+  const lidMention = normalizeWhatsAppMessage({
+    key: {
+      id: "group-2",
+      remoteJid: "120363000000000000@g.us",
+      participant: "15553334444@s.whatsapp.net"
+    },
+    messageTimestamp: 3,
+    message: {
+      extendedTextMessage: {
+        text: "@bridge please help",
+        contextInfo: { mentionedJid: ["123456789012345@lid"] }
+      }
+    }
+  } as WAMessage, ["15550000000:1@s.whatsapp.net", "123456789012345@lid"], 9_000);
+  assert.equal(lidMention?.attention, "mention");
 });
 
 test("exposes one-shot Baileys decrypted media as a bounded stream source", async () => {

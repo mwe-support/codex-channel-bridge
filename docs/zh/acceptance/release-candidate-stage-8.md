@@ -1,7 +1,7 @@
 # 阶段 8 候选发布版验收
 
 - 日期：2026-09-01
-- 候选版本：基于 `2cffd29` 的阶段 8 工作树
+- 候选版本：基于 `1bc2e0e` 并加入 WhatsApp 验收修复的阶段 8 工作树
 - 受测 Codex CLI：`0.149.1`
 
 ## 原生 macOS 与真实 QQ
@@ -12,7 +12,7 @@
   客户端显示准确的 `STAGE8-COMMANDS-READY` 标记。
 - `/status` 与 `/help` 显示 Bridge-owned Reply。首次真实 `/status` 暴露 QQ
   被动回复缺少 Sequence；共享 Command Reply 出口现固定使用该入站消息的
- 首个回复序号，重复命令显示 `Profile ready; active=0; queued=0.`。
+  首个回复序号，重复命令显示 `Profile ready; active=0; queued=0.`。
 - `/model` 从原生 `model/list` 发现的条目中选择 Model；`/reasoning` 从该
   Model 的原生 Supported Effort 中选择强度。两者都通过
   `thread/settings/update` 成功，Bridge 不持久化竞争性的 Model 或 Effort
@@ -22,6 +22,20 @@
   Correlation Foreign Key。重复真实消息创建新的原生 Thread，并显示准确的
   `STAGE8-NEW-THREAD-READY` 标记。
 - launchd Stop 完成统一的有界 Drain，并成功退出。
+
+## 原生 macOS 与真实 WhatsApp
+
+- Owner-only Host-local Pairing 激活真实 Baileys Auth Generation，Adapter
+  达到 `ready`；验收 Evidence 未保留 Pairing Material。
+- 真实私聊消息完成一次 Codex Turn 与 Provider `accepted` 的 Outbox
+  Delivery；原生客户端可见回复已到达，Graceful Restart 无需再次扫码即可
+  打开 Active Authentication。
+- 真实本地 `/status` 命令完成回复且不创建 Codex Input。测试群内未选择成员的
+  `@` 文本保持 Passive；从成员候选中选择真实 Momo 后，Archive、Codex
+  Correlation、Logical Result、Accepted Outbox 与客户端可见群回复均完成。
+- 本次验收修复首次配对 Parent Creation、Baileys 7 Activation Criteria，以及
+  账号 Phone-number JID 与 LID 间的群提及匹配。临时群聊 Access 已在测试后恢复
+  为 `deny`。
 
 ## 原生 Linux
 
@@ -43,8 +57,6 @@
 
 ## 剩余发布边界
 
-- 本次未配对真实 WhatsApp Account；Baileys Provider 验收仍只覆盖确定性的
-  Adapter、Authentication、Lifecycle、Media 与 Delivery Test。
 - 尚未指定原生 Windows Host；Windows Service 与 Named-pipe ACL 验收仍未
   完成。
 - `/attach` 已覆盖 Native-runtime 与 Binding Test，但本次未通过真实 QQ

@@ -1,7 +1,8 @@
 # Stage 8 release-candidate acceptance
 
 - Date: 2026-09-01
-- Candidate: Stage 8 working tree based on `2cffd29`
+- Candidate: Stage 8 working tree based on `1bc2e0e` plus the WhatsApp
+  acceptance fixes
 - Tested Codex CLI: `0.149.1`
 
 ## Native macOS and real QQ
@@ -26,6 +27,21 @@
   `STAGE8-NEW-THREAD-READY` marker.
 - launchd stop completed the common bounded drain and exited successfully.
 
+## Native macOS and real WhatsApp
+
+- Owner-only host-local pairing activated a real Baileys Auth Generation and
+  the Adapter reached `ready`; no pairing material was retained as evidence.
+- A real private message completed one Codex Turn and provider-accepted Outbox
+  delivery. The native client visibly received the reply, and a graceful
+  restart reopened the active authentication without another QR.
+- A real local `/status` command replied without creating Codex input. In the
+  test group, non-selected `@` text remained passive; selecting the actual Momo
+  member completed Archive, Codex correlation, Logical Result, accepted Outbox,
+  and visible group reply.
+- Acceptance fixed first-pair parent creation, Baileys 7 activation criteria,
+  and group mention matching across the account's phone-number JID and LID.
+  Temporary group access was restored to `deny` after the test.
+
 ## Native Linux
 
 - Target: `marvel-mini-pc`, Node.js 22.22.1, npm 10.9.4, administrator-supplied
@@ -46,9 +62,6 @@
 
 ## Remaining release boundaries
 
-- No real WhatsApp account was paired, so Baileys provider acceptance remains
-  unverified beyond deterministic adapter, authentication, lifecycle, media,
-  and delivery tests.
 - No native Windows host is designated; Windows service and named-pipe ACL
   acceptance remain unverified.
 - `/attach` is covered by native-runtime and binding tests but was not exercised

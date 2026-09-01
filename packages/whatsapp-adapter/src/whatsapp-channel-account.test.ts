@@ -77,7 +77,10 @@ test("pairs a missing account and replaces only its inner Adapter", async () => 
     );
     await waitUntil(() => pairingAuth !== undefined);
     pairingSocket.emitter.emit("connection.update", { qr: "short-lived-qr" });
-    pairingAuth!.creds.registered = true;
+    Object.assign(pairingAuth!.creds, {
+      me: { id: "15551112222:4@s.whatsapp.net" },
+      account: {}
+    });
     pairingSocket.user = { id: "15551112222:4@s.whatsapp.net" };
     pairingSocket.emitter.emit("connection.update", { connection: "open" });
     await waitUntil(() => runtimeSockets.length === 1);
@@ -181,8 +184,10 @@ test("requires exact confirmation before forgetting only local auth", async () =
 async function prepareRegisteredAuth(rootDirectoryPath: string): Promise<void> {
   const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
   const state = generation.state as AuthenticationState;
-  state.creds.registered = true;
-  state.creds.me = { id: "15551112222:1@s.whatsapp.net", name: "test" };
+  Object.assign(state.creds, {
+    me: { id: "15551112222:1@s.whatsapp.net", name: "test" },
+    account: {}
+  });
   await generation.saveCredentials();
   await activateBaileysAuthGeneration({
     rootDirectoryPath,

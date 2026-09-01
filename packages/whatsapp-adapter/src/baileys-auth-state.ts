@@ -86,7 +86,8 @@ export async function activateBaileysAuthGeneration(
   await prepareGenerationRoot(options.rootDirectoryPath, false);
   const directoryPath = generationPath(options.rootDirectoryPath, options.generationId);
   const handle = await openBaileysAuthState({ directoryPath });
-  if (!(handle.state as AuthenticationState).creds.registered) {
+  const credentials = (handle.state as AuthenticationState).creds;
+  if (!credentials.me?.id || !credentials.account) {
     throw new Error("Baileys authentication generation is not registered");
   }
   const previousGenerationId = await readActiveGenerationId(options.rootDirectoryPath, true);
@@ -279,6 +280,7 @@ async function prepareGenerationRoot(path: string, createIfMissing: boolean): Pr
   if (!isAbsolute(path)) {
     throw new Error("Baileys authentication generation root must be absolute");
   }
+  if (createIfMissing) await prepareDirectory(dirname(path), true);
   await prepareDirectory(path, createIfMissing);
   await prepareDirectory(join(path, GENERATIONS_DIRECTORY), createIfMissing);
 }

@@ -67,11 +67,15 @@ test("fails closed for missing, insecure, or symlinked auth directories", async 
 
 test("activates a registered staged generation through an atomic marker", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-generations-"));
-  const rootDirectoryPath = join(parent, "wa-primary");
+  const rootDirectoryPath = join(parent, "channel-auth", "wa-primary");
   try {
     const first = await createStagedBaileysAuthState({ rootDirectoryPath });
+    assert.equal((await lstat(join(parent, "channel-auth"))).mode & 0o777, 0o700);
     const firstState = first.state as AuthenticationState;
-    firstState.creds.registered = true;
+    Object.assign(firstState.creds, {
+      me: { id: "15551112222:1@s.whatsapp.net" },
+      account: {}
+    });
     await first.saveCredentials();
     assert.deepEqual(
       await activateBaileysAuthGeneration({
@@ -88,7 +92,10 @@ test("activates a registered staged generation through an atomic marker", async 
 
     const second = await createStagedBaileysAuthState({ rootDirectoryPath });
     const secondState = second.state as AuthenticationState;
-    secondState.creds.registered = true;
+    Object.assign(secondState.creds, {
+      me: { id: "15551112222:2@s.whatsapp.net" },
+      account: {}
+    });
     await second.saveCredentials();
     assert.deepEqual(
       await activateBaileysAuthGeneration({
@@ -108,7 +115,10 @@ test("rejects an unregistered generation without replacing active auth", async (
   const rootDirectoryPath = join(parent, "wa-primary");
   try {
     const first = await createStagedBaileysAuthState({ rootDirectoryPath });
-    (first.state as AuthenticationState).creds.registered = true;
+    Object.assign((first.state as AuthenticationState).creds, {
+      me: { id: "15551112222:1@s.whatsapp.net" },
+      account: {}
+    });
     await first.saveCredentials();
     await activateBaileysAuthGeneration({ rootDirectoryPath, generationId: first.generationId });
 
@@ -132,8 +142,8 @@ test("persists an uncertain revocation lock without exposing the provider identi
   try {
     const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
     const state = generation.state as AuthenticationState;
-    state.creds.registered = true;
     state.creds.me = { id: "15551112222:7@s.whatsapp.net", name: "test" };
+    Object.assign(state.creds, { account: {} });
     await generation.saveCredentials();
     await activateBaileysAuthGeneration({
       rootDirectoryPath,
@@ -164,7 +174,10 @@ test("forgets only the selected local Baileys account root", async () => {
   try {
     await mkdir(siblingPath, { mode: 0o700 });
     const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
-    (generation.state as AuthenticationState).creds.registered = true;
+    Object.assign((generation.state as AuthenticationState).creds, {
+      me: { id: "15551112222:1@s.whatsapp.net" },
+      account: {}
+    });
     await generation.saveCredentials();
     await activateBaileysAuthGeneration({
       rootDirectoryPath,
