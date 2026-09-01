@@ -32,9 +32,11 @@ Profile-local Archive retrieval, read-only MCP projection, bounded media
 mirroring, and explicit Archive/Profile purge are now implemented.
 Host-local operations now include read-only diagnostics, durable backup holds,
 restore validation, body-free Audit query/export/retention, Support Bundles,
-disk-pressure fail-closed behavior, and manual Codex circuit recovery. Production
-packaging and the remaining cross-platform acceptance work are incomplete, so
-the Bridge is not ready for deployment.
+disk-pressure fail-closed behavior, and manual Codex circuit recovery. Native
+macOS launchd, native Linux systemd, and Linux Docker packaging have passed
+their Stage 7 target-host acceptance. Native Windows verification and the final
+release-candidate gate remain incomplete, so the Bridge is not ready for a
+stable release.
 
 ## First-release direction
 
@@ -56,6 +58,7 @@ the Bridge is not ready for deployment.
 - [Development and Codex protocol verification](docs/development.md)
 - [Configuration and Supervisor operation](docs/configuration.md)
 - [Host-local operations](docs/operations.md)
+- [Platform deployment](docs/deployment.md)
 - [Message Archive persistence baseline](docs/message-archive.md)
 - [Access and admission](docs/admission.md)
 - [Thread Binding and Codex input correlation](docs/thread-binding.md)

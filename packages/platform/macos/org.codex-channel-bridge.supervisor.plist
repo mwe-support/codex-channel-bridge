@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.codex-channel-bridge.supervisor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/opt/codex-channel-bridge/packages/cli/dist/main.js</string>
+    <string>supervisor</string>
+    <string>run</string>
+    <string>--config</string>
+    <string>/etc/codex-channel-bridge/config.yaml</string>
+    <string>--endpoint</string>
+    <string>/var/tmp/codex-channel-bridge/control.sock</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/opt/codex-channel-bridge</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ExitTimeOut</key>
+  <integer>60</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+</dict>
+</plist>

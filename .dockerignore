@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+**/dist
+**/*.tsbuildinfo
+test-channel.env*
+**/secrets.env
+data
+state
+media
+profiles
+*.sqlite
+*.sqlite-*

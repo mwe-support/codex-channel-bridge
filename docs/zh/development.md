@@ -57,11 +57,14 @@ npm test
 
 | Target | Runtime | 结果 |
 | --- | --- | --- |
-| 原生 macOS，2026-08-27 | Node `22.23.1`、npm `10.9.8`、Codex `0.149.1` | Clean Build、143 项 Unit Test、3 项 Control-plane Contract、Supervisor Process Contract、Codex Protocol Contract 与 Dependency Audit 通过，0 项 Vulnerability |
-| 原生 Linux（`marvel-mini-pc`），2026-08-27 | Ubuntu Kernel `6.8.0-106`、Node `22.22.1`、npm `10.9.4`、Codex `0.149.1` | 全新 `npm ci`、143 项 Unit Test、3 项 Control-plane Contract、Supervisor Process Contract、Codex Protocol Contract 与 Dependency Audit 通过，0 项 Vulnerability |
-| Linux Docker（`marvel-mini-pc`），2026-08-27 | `node:22-bookworm`、Node `22.23.2`、npm `10.9.8`、只读挂载 Codex `0.149.1`、全新空 Codex home | 全新 `npm ci`、143 项 Unit Test、3 项 Control-plane Contract、Supervisor Process Contract、Codex Protocol Contract 与 Dependency Audit 通过，0 项 Vulnerability |
+| 原生 macOS，2026-09-01 | macOS `26.6.2`、Node `22.23.1`、npm `10.9.8`、Codex `0.149.1` | Clean Build、217 项 Unit Test、2 项 Platform-definition Test、4 项 Control-plane Contract、Supervisor Process Contract、Codex Protocol Contract、真实 Per-user launchd Lifecycle 与真实 QQ 验收通过 |
+| 原生 Linux（`marvel-mini-pc`），2026-09-01 | Ubuntu `24.04`、Kernel `6.8.0-106-generic`、Node `22.22.1`、npm `10.9.4`、Codex `0.149.1` | 全新 `npm ci`、217 项 Unit Test、2 项 Platform-definition Test、4 项 Control-plane Contract、Supervisor Process Contract、Codex Protocol Contract 与真实 User-systemd Lifecycle 通过 |
+| Linux Docker（`marvel-mini-pc`），2026-09-01 | Docker `29.3.0`、`node:22.23.1-bookworm-slim`、Image 内固定 Codex `0.149.1`、全新空 Codex Home | Production Multi-stage Image Build 通过；Non-root Runtime、无 Published Port、Liveness Health Check、Profile Readiness 与 Graceful `SIGTERM` Drain 通过 |
 
-Docker Run 没有挂载宿主 Codex home 或 Authentication State。Slim Node Image 因缺少 Python 和 C/C++ Toolchain，无法构建 `better-sqlite3`；完整 Bookworm Image 提供了预期 Build Stage 并通过测试。该结果验证 Runtime Behavior，不代表 Production Multi-stage Image 已完成；后者仍是未来 Packaging Work。
+Docker Run 没有挂载宿主 Codex Home 或 Authentication State。完整 Bookworm
+Build Stage 提供 `better-sqlite3` 所需 Native Toolchain；Slim Runtime 只包含
+Production Dependency 与固定的 Codex CLI。详见
+[`acceptance/platform-stage-7.md`](acceptance/platform-stage-7.md)。
 
 ## 已测试 Codex 矩阵
 

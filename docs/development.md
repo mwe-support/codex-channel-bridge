@@ -108,15 +108,14 @@ upgrade Codex on either host.
 
 | Target | Runtime | Result |
 | --- | --- | --- |
-| Native macOS, 2026-08-27 | Node `22.23.1`, npm `10.9.8`, Codex `0.149.1` | Clean build, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
-| Native Linux (`marvel-mini-pc`), 2026-08-27 | Ubuntu kernel `6.8.0-106`, Node `22.22.1`, npm `10.9.4`, Codex `0.149.1` | Fresh `npm ci`, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
-| Linux Docker (`marvel-mini-pc`), 2026-08-27 | `node:22-bookworm`, Node `22.23.2`, npm `10.9.8`, mounted read-only Codex `0.149.1`, fresh empty Codex home | Fresh `npm ci`, 143 unit tests, 3 control-plane contracts, Supervisor process contract, Codex protocol contract, and dependency audit passed with 0 vulnerabilities |
+| Native macOS, 2026-09-01 | macOS `26.6.2`, Node `22.23.1`, npm `10.9.8`, Codex `0.149.1` | Clean build, 217 unit tests, 2 platform-definition tests, 4 control-plane contracts, Supervisor process contract, Codex protocol contract, a real per-user launchd lifecycle, and live QQ acceptance passed |
+| Native Linux (`marvel-mini-pc`), 2026-09-01 | Ubuntu `24.04`, kernel `6.8.0-106-generic`, Node `22.22.1`, npm `10.9.4`, Codex `0.149.1` | Fresh `npm ci`, 217 unit tests, 2 platform-definition tests, 4 control-plane contracts, Supervisor process contract, Codex protocol contract, and a real user-systemd lifecycle passed |
+| Linux Docker (`marvel-mini-pc`), 2026-09-01 | Docker `29.3.0`, `node:22.23.1-bookworm-slim`, image-pinned Codex `0.149.1`, fresh empty Codex home | Production multi-stage image built; non-root runtime, no published port, liveness health check, Profile readiness, and graceful `SIGTERM` drain passed |
 
 The Docker run did not mount the host Codex home or authentication state. The
-slim Node image could not build `better-sqlite3` because it lacks Python and a
-C/C++ toolchain; the full Bookworm image supplied the expected Build Stage and
-passed. This verifies runtime behavior, not a production multi-stage image,
-which is still future packaging work.
+full Bookworm build stage supplies the native toolchain for `better-sqlite3`;
+the slim runtime contains only production dependencies and the pinned Codex
+CLI. See [`acceptance/platform-stage-7.md`](acceptance/platform-stage-7.md).
 
 ## Tested Codex matrix
 
