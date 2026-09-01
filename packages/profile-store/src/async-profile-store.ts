@@ -3,8 +3,6 @@ import { Worker } from "node:worker_threads";
 import type {
   CodexInputAcceptance,
   CodexInputCorrelation,
-  LogicalResultInput,
-  NormalizedChannelMessage,
   ThreadBinding,
   ThreadBindingKey
 } from "@codex-channel-bridge/core";
@@ -14,7 +12,6 @@ import {
   type AbandonArchiveAttachmentsInput,
   type ArchiveAttachmentRecord,
   type ArchiveObservationCommitResult,
-  type ArchiveCommitResult,
   type ArchiveHybridSearch,
   type ArchiveHybridSearchHit,
   type ArchivePurgePreview,
@@ -23,8 +20,6 @@ import {
   type ApplyArchivePurgeInput,
   type AppendAuditRecordInput,
   type ArchivedChannelMessage,
-  type ArchiveTextSearch,
-  type ArchiveTextSearchHit,
   type AbandonApprovalRequestsInput,
   type ApprovalRequestCommitResult,
   type ApprovalRequestRecord,
@@ -40,7 +35,6 @@ import {
   type CodexInputCommitResult,
   type CodexInputTransition,
   type CreateThreadBindingInput,
-  type LogicalResultCommitResult,
   type OpenProfileStoreOptions,
   type OutboxCounts,
   type OutboxDeliveryLease,
@@ -53,43 +47,81 @@ import {
   type ThreadBindingCommitResult
 } from "./profile-store.js";
 
-type StorageOperation =
-  | { readonly name: "commitMessage"; readonly value: NormalizedChannelMessage }
-  | { readonly name: "commitObservation"; readonly value: CommitArchiveObservationInput }
-  | { readonly name: "archiveAttachments"; readonly messageRecordId: string }
-  | { readonly name: "settleArchiveAttachment"; readonly value: SettleArchiveAttachmentInput }
-  | { readonly name: "mirroredMediaBytes" }
-  | { readonly name: "abandonPendingArchiveAttachments"; readonly value: AbandonArchiveAttachmentsInput }
-  | { readonly name: "getChannelTransportCheckpoint"; readonly channelAccountId: string }
-  | { readonly name: "putChannelTransportCheckpoint"; readonly value: ChannelTransportCheckpoint }
-  | { readonly name: "clearChannelTransportCheckpoint"; readonly channelAccountId: string }
-  | { readonly name: "recentMessages"; readonly conversationKey: string; readonly limit?: number }
-  | { readonly name: "searchText"; readonly query: ArchiveTextSearch }
-  | { readonly name: "searchHybrid"; readonly query: ArchiveHybridSearch }
-  | { readonly name: "previewArchivePurge"; readonly scope: ArchivePurgeScope }
-  | { readonly name: "applyArchivePurge"; readonly value: ApplyArchivePurgeInput }
-  | { readonly name: "profilePurgeState" }
-  | { readonly name: "getThreadBinding"; readonly key: ThreadBindingKey }
-  | { readonly name: "createThreadBinding"; readonly value: CreateThreadBindingInput }
-  | { readonly name: "replaceThreadBinding"; readonly value: CreateThreadBindingInput }
-  | { readonly name: "detachThreadBinding"; readonly key: ThreadBindingKey }
-  | { readonly name: "acceptCodexInput"; readonly value: CodexInputAcceptance }
-  | { readonly name: "transitionCodexInput"; readonly transition: CodexInputTransition }
-  | { readonly name: "nonterminalCodexInputs" }
-  | { readonly name: "commitCodexInputUncertainty"; readonly value: CommitCodexInputUncertaintyInput }
-  | { readonly name: "commitCodexTurnResult"; readonly value: CommitCodexTurnResultInput }
-  | { readonly name: "commitLogicalResult"; readonly value: LogicalResultInput }
-  | { readonly name: "commitApprovalRequest"; readonly value: CommitApprovalRequestInput }
-  | { readonly name: "settleApprovalRequest"; readonly value: SettleApprovalRequestInput }
-  | { readonly name: "abandonPendingApprovalRequests"; readonly value: AbandonApprovalRequestsInput }
-  | { readonly name: "auditRecords"; readonly limit?: number }
-  | { readonly name: "appendAuditRecord"; readonly value: AppendAuditRecordInput }
-  | { readonly name: "claimOutbox"; readonly options: ClaimOutboxOptions }
-  | { readonly name: "settleOutbox"; readonly settlement: OutboxSettlement }
-  | { readonly name: "outboxCounts" }
-  | { readonly name: "outboxCountsForChannelAccount"; readonly channelAccountId: string }
-  | { readonly name: "journalMode" }
-  | { readonly name: "close" };
+interface StorageOperationArguments {
+  readonly commitObservation: readonly [CommitArchiveObservationInput];
+  readonly settleArchiveAttachment: readonly [SettleArchiveAttachmentInput];
+  readonly mirroredMediaBytes: readonly [];
+  readonly abandonPendingArchiveAttachments: readonly [AbandonArchiveAttachmentsInput];
+  readonly getChannelTransportCheckpoint: readonly [string];
+  readonly putChannelTransportCheckpoint: readonly [ChannelTransportCheckpoint];
+  readonly clearChannelTransportCheckpoint: readonly [string];
+  readonly recentMessages: readonly [string, number?];
+  readonly searchHybrid: readonly [ArchiveHybridSearch];
+  readonly previewArchivePurge: readonly [ArchivePurgeScope];
+  readonly applyArchivePurge: readonly [ApplyArchivePurgeInput];
+  readonly profilePurgeState: readonly [];
+  readonly getThreadBinding: readonly [ThreadBindingKey];
+  readonly createThreadBinding: readonly [CreateThreadBindingInput];
+  readonly replaceThreadBinding: readonly [CreateThreadBindingInput];
+  readonly detachThreadBinding: readonly [ThreadBindingKey];
+  readonly acceptCodexInput: readonly [CodexInputAcceptance];
+  readonly transitionCodexInput: readonly [CodexInputTransition];
+  readonly nonterminalCodexInputs: readonly [];
+  readonly commitCodexInputUncertainty: readonly [CommitCodexInputUncertaintyInput];
+  readonly commitCodexTurnResult: readonly [CommitCodexTurnResultInput];
+  readonly commitApprovalRequest: readonly [CommitApprovalRequestInput];
+  readonly settleApprovalRequest: readonly [SettleApprovalRequestInput];
+  readonly abandonPendingApprovalRequests: readonly [AbandonApprovalRequestsInput];
+  readonly auditRecords: readonly [number?];
+  readonly appendAuditRecord: readonly [AppendAuditRecordInput];
+  readonly claimOutbox: readonly [ClaimOutboxOptions];
+  readonly settleOutbox: readonly [OutboxSettlement];
+  readonly outboxCounts: readonly [];
+  readonly outboxCountsForChannelAccount: readonly [string];
+  readonly close: readonly [];
+}
+
+interface StorageOperationResults {
+  readonly commitObservation: ArchiveObservationCommitResult;
+  readonly settleArchiveAttachment: ArchiveAttachmentRecord;
+  readonly mirroredMediaBytes: number;
+  readonly abandonPendingArchiveAttachments: number;
+  readonly getChannelTransportCheckpoint: ChannelTransportCheckpoint | undefined;
+  readonly putChannelTransportCheckpoint: ChannelTransportCheckpoint;
+  readonly clearChannelTransportCheckpoint: void;
+  readonly recentMessages: readonly ArchivedChannelMessage[];
+  readonly searchHybrid: readonly ArchiveHybridSearchHit[];
+  readonly previewArchivePurge: ArchivePurgePreview;
+  readonly applyArchivePurge: ArchivePurgeResult;
+  readonly profilePurgeState: ProfilePurgeState;
+  readonly getThreadBinding: ThreadBinding | undefined;
+  readonly createThreadBinding: ThreadBindingCommitResult;
+  readonly replaceThreadBinding: ThreadBindingCommitResult;
+  readonly detachThreadBinding: ThreadBinding | undefined;
+  readonly acceptCodexInput: CodexInputCommitResult;
+  readonly transitionCodexInput: CodexInputCorrelation;
+  readonly nonterminalCodexInputs: readonly CodexInputCorrelation[];
+  readonly commitCodexInputUncertainty: CodexInputUncertaintyCommitResult;
+  readonly commitCodexTurnResult: CodexTurnResultCommitResult;
+  readonly commitApprovalRequest: ApprovalRequestCommitResult;
+  readonly settleApprovalRequest: ApprovalRequestRecord;
+  readonly abandonPendingApprovalRequests: readonly ApprovalRequestRecord[];
+  readonly auditRecords: readonly AuditRecord[];
+  readonly appendAuditRecord: AuditRecord;
+  readonly claimOutbox: readonly OutboxDeliveryLease[];
+  readonly settleOutbox: OutboxSettlementResult;
+  readonly outboxCounts: OutboxCounts;
+  readonly outboxCountsForChannelAccount: OutboxCounts;
+  readonly close: null;
+}
+
+type StorageOperationName = keyof StorageOperationArguments;
+type StorageOperation = {
+  readonly [Name in StorageOperationName]: {
+    readonly name: Name;
+    readonly args: StorageOperationArguments[Name];
+  }
+}[StorageOperationName];
 
 interface StorageRequest {
   readonly type: "request";
@@ -157,169 +189,145 @@ export class ProfileStore {
     return store;
   }
 
-  public commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult> {
-    return this.#request({ name: "commitMessage", value: message });
-  }
-
   public commitObservation(
     input: CommitArchiveObservationInput
   ): Promise<ArchiveObservationCommitResult> {
-    return this.#request({ name: "commitObservation", value: input });
-  }
-
-  public archiveAttachments(messageRecordId: string): Promise<readonly ArchiveAttachmentRecord[]> {
-    return this.#request({ name: "archiveAttachments", messageRecordId });
+    return this.#request("commitObservation", input);
   }
 
   public settleArchiveAttachment(
     input: SettleArchiveAttachmentInput
   ): Promise<ArchiveAttachmentRecord> {
-    return this.#request({ name: "settleArchiveAttachment", value: input });
+    return this.#request("settleArchiveAttachment", input);
   }
 
   public mirroredMediaBytes(): Promise<number> {
-    return this.#request({ name: "mirroredMediaBytes" });
+    return this.#request("mirroredMediaBytes");
   }
 
   public abandonPendingArchiveAttachments(input: AbandonArchiveAttachmentsInput): Promise<number> {
-    return this.#request({ name: "abandonPendingArchiveAttachments", value: input });
+    return this.#request("abandonPendingArchiveAttachments", input);
   }
 
   public getChannelTransportCheckpoint(
     channelAccountId: string
   ): Promise<ChannelTransportCheckpoint | undefined> {
-    return this.#request({ name: "getChannelTransportCheckpoint", channelAccountId });
+    return this.#request("getChannelTransportCheckpoint", channelAccountId);
   }
 
   public putChannelTransportCheckpoint(
     checkpoint: ChannelTransportCheckpoint
   ): Promise<ChannelTransportCheckpoint> {
-    return this.#request({ name: "putChannelTransportCheckpoint", value: checkpoint });
+    return this.#request("putChannelTransportCheckpoint", checkpoint);
   }
 
   public clearChannelTransportCheckpoint(channelAccountId: string): Promise<void> {
-    return this.#request({ name: "clearChannelTransportCheckpoint", channelAccountId });
+    return this.#request("clearChannelTransportCheckpoint", channelAccountId);
   }
 
   public recentMessages(
     conversationKey: string,
     limit?: number
   ): Promise<readonly ArchivedChannelMessage[]> {
-    return this.#request({
-      name: "recentMessages",
-      conversationKey,
-      ...(limit !== undefined ? { limit } : {})
-    });
-  }
-
-  public searchText(query: ArchiveTextSearch): Promise<readonly ArchiveTextSearchHit[]> {
-    return this.#request({ name: "searchText", query });
+    return this.#request("recentMessages", conversationKey, limit);
   }
 
   public searchHybrid(query: ArchiveHybridSearch): Promise<readonly ArchiveHybridSearchHit[]> {
-    return this.#request({ name: "searchHybrid", query });
+    return this.#request("searchHybrid", query);
   }
 
   public previewArchivePurge(scope: ArchivePurgeScope): Promise<ArchivePurgePreview> {
-    return this.#request({ name: "previewArchivePurge", scope });
+    return this.#request("previewArchivePurge", scope);
   }
 
   public applyArchivePurge(input: ApplyArchivePurgeInput): Promise<ArchivePurgeResult> {
-    return this.#request({ name: "applyArchivePurge", value: input });
+    return this.#request("applyArchivePurge", input);
   }
 
   public profilePurgeState(): Promise<ProfilePurgeState> {
-    return this.#request({ name: "profilePurgeState" });
+    return this.#request("profilePurgeState");
   }
 
   public getThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined> {
-    return this.#request({ name: "getThreadBinding", key });
+    return this.#request("getThreadBinding", key);
   }
 
   public createThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult> {
-    return this.#request({ name: "createThreadBinding", value: input });
+    return this.#request("createThreadBinding", input);
   }
 
   public replaceThreadBinding(input: CreateThreadBindingInput): Promise<ThreadBindingCommitResult> {
-    return this.#request({ name: "replaceThreadBinding", value: input });
+    return this.#request("replaceThreadBinding", input);
   }
 
   public detachThreadBinding(key: ThreadBindingKey): Promise<ThreadBinding | undefined> {
-    return this.#request({ name: "detachThreadBinding", key });
+    return this.#request("detachThreadBinding", key);
   }
 
   public acceptCodexInput(input: CodexInputAcceptance): Promise<CodexInputCommitResult> {
-    return this.#request({ name: "acceptCodexInput", value: input });
+    return this.#request("acceptCodexInput", input);
   }
 
   public transitionCodexInput(transition: CodexInputTransition): Promise<CodexInputCorrelation> {
-    return this.#request({ name: "transitionCodexInput", transition });
+    return this.#request("transitionCodexInput", transition);
   }
 
   public nonterminalCodexInputs(): Promise<readonly CodexInputCorrelation[]> {
-    return this.#request({ name: "nonterminalCodexInputs" });
+    return this.#request("nonterminalCodexInputs");
   }
 
   public commitCodexInputUncertainty(
     input: CommitCodexInputUncertaintyInput
   ): Promise<CodexInputUncertaintyCommitResult> {
-    return this.#request({ name: "commitCodexInputUncertainty", value: input });
+    return this.#request("commitCodexInputUncertainty", input);
   }
 
   public commitCodexTurnResult(
     input: CommitCodexTurnResultInput
   ): Promise<CodexTurnResultCommitResult> {
-    return this.#request({ name: "commitCodexTurnResult", value: input });
-  }
-
-  public commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult> {
-    return this.#request({ name: "commitLogicalResult", value: input });
+    return this.#request("commitCodexTurnResult", input);
   }
 
   public commitApprovalRequest(
     input: CommitApprovalRequestInput
   ): Promise<ApprovalRequestCommitResult> {
-    return this.#request({ name: "commitApprovalRequest", value: input });
+    return this.#request("commitApprovalRequest", input);
   }
 
   public settleApprovalRequest(
     input: SettleApprovalRequestInput
   ): Promise<ApprovalRequestRecord> {
-    return this.#request({ name: "settleApprovalRequest", value: input });
+    return this.#request("settleApprovalRequest", input);
   }
 
   public abandonPendingApprovalRequests(
     input: AbandonApprovalRequestsInput
   ): Promise<readonly ApprovalRequestRecord[]> {
-    return this.#request({ name: "abandonPendingApprovalRequests", value: input });
+    return this.#request("abandonPendingApprovalRequests", input);
   }
 
   public auditRecords(limit?: number): Promise<readonly AuditRecord[]> {
-    return this.#request({ name: "auditRecords", ...(limit !== undefined ? { limit } : {}) });
+    return this.#request("auditRecords", limit);
   }
 
   public appendAuditRecord(input: AppendAuditRecordInput): Promise<AuditRecord> {
-    return this.#request({ name: "appendAuditRecord", value: input });
+    return this.#request("appendAuditRecord", input);
   }
 
   public claimOutbox(options: ClaimOutboxOptions): Promise<readonly OutboxDeliveryLease[]> {
-    return this.#request({ name: "claimOutbox", options });
+    return this.#request("claimOutbox", options);
   }
 
   public settleOutbox(settlement: OutboxSettlement): Promise<OutboxSettlementResult> {
-    return this.#request({ name: "settleOutbox", settlement });
+    return this.#request("settleOutbox", settlement);
   }
 
   public outboxCounts(): Promise<OutboxCounts> {
-    return this.#request({ name: "outboxCounts" });
+    return this.#request("outboxCounts");
   }
 
   public outboxCountsForChannelAccount(channelAccountId: string): Promise<OutboxCounts> {
-    return this.#request({ name: "outboxCountsForChannelAccount", channelAccountId });
-  }
-
-  public journalMode(): Promise<string> {
-    return this.#request({ name: "journalMode" });
+    return this.#request("outboxCountsForChannelAccount", channelAccountId);
   }
 
   public async close(): Promise<void> {
@@ -327,23 +335,30 @@ export class ProfileStore {
     await this.#ready;
     this.#closing = true;
     const exited = new Promise<void>((resolve) => this.#worker.once("exit", () => resolve()));
-    await this.#request({ name: "close" });
+    await this.#request("close");
     this.#closed = true;
     await exited;
   }
 
-  #request<TResult>(operation: StorageOperation): Promise<TResult> {
-    if (this.#closed || (this.#closing && operation.name !== "close")) {
+  #request<Name extends StorageOperationName>(
+    name: Name,
+    ...args: StorageOperationArguments[Name]
+  ): Promise<StorageOperationResults[Name]> {
+    if (this.#closed || (this.#closing && name !== "close")) {
       return Promise.reject(new ProfileStoreError("storage_failure", "Profile store is closed"));
     }
     const id = this.#nextRequestId;
     this.#nextRequestId += 1;
-    return new Promise<TResult>((resolve, reject) => {
+    return new Promise<StorageOperationResults[Name]>((resolve, reject) => {
       this.#pending.set(id, {
-        resolve: (value) => resolve(value as TResult),
+        resolve: (value) => resolve(value as StorageOperationResults[Name]),
         reject
       });
-      this.#worker.postMessage({ type: "request", id, operation } satisfies StorageRequest);
+      this.#worker.postMessage({
+        type: "request",
+        id,
+        operation: { name, args } as StorageOperation
+      } satisfies StorageRequest);
     });
   }
 

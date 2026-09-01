@@ -152,9 +152,17 @@ class FakeStore implements ProfileStoreRuntime {
     import("@codex-channel-bridge/profile-store").ChannelTransportCheckpoint
   >();
 
-  async commitMessage(message: NormalizedChannelMessage) {
-    this.messages.push(message);
-    return { recordId: `record-${this.messages.length}`, inserted: true };
+  async commitObservation(input: import("@codex-channel-bridge/profile-store").CommitArchiveObservationInput) {
+    this.messages.push(input.message);
+    return { recordId: `record-${this.messages.length}`, inserted: true, attachments: [] };
+  }
+
+  async mirroredMediaBytes() {
+    return 0;
+  }
+
+  async settleArchiveAttachment(): Promise<never> {
+    throw new Error("Unexpected media settlement");
   }
 
   async getChannelTransportCheckpoint(channelAccountId: string) {

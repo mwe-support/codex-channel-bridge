@@ -74,6 +74,80 @@ export interface ProfileMigrationResult {
   readonly auditCorrelationId: string;
 }
 
+interface MigrationStep {
+  readonly fromVersion: number;
+  readonly toVersion: number;
+  readonly requireFrom: (database: Database.Database) => void;
+  readonly migrate: (database: Database.Database) => void;
+  readonly requireTo: (database: Database.Database) => void;
+  readonly operations: readonly string[];
+  readonly irreversibleSteps: readonly string[];
+}
+
+const MIGRATION_STEPS: readonly MigrationStep[] = [
+  {
+    fromVersion: 3,
+    toVersion: 4,
+    requireFrom: requireVersionThreeShape,
+    migrate: migrateThreeToFour,
+    requireTo: requireVersionFourShape,
+    operations: [
+      "add delivery_outbox.provider_reply_sequence",
+      "backfill stable QQ passive reply sequences",
+      "create delivery_reply_sequences",
+      "set SQLite user_version to 4"
+    ],
+    irreversibleSteps: [
+      "rebuild delivery_outbox to add provider reply sequencing for schema version 4"
+    ]
+  },
+  {
+    fromVersion: 4,
+    toVersion: 5,
+    requireFrom: requireVersionFourShape,
+    migrate: migrateFourToFive,
+    requireTo: requireVersionFiveShape,
+    operations: versionFourToFiveOperations(),
+    irreversibleSteps: versionFourToFiveIrreversibleSteps()
+  },
+  {
+    fromVersion: 5,
+    toVersion: 6,
+    requireFrom: requireVersionFiveShape,
+    migrate: migrateFiveToSix,
+    requireTo: requireVersionSixShape,
+    operations: versionFiveToSixOperations(),
+    irreversibleSteps: versionFiveToSixIrreversibleSteps()
+  },
+  {
+    fromVersion: 6,
+    toVersion: 7,
+    requireFrom: requireVersionSixShape,
+    migrate: migrateSixToSeven,
+    requireTo: requireVersionSevenShape,
+    operations: versionSixToSevenOperations(),
+    irreversibleSteps: versionSixToSevenIrreversibleSteps()
+  },
+  {
+    fromVersion: 7,
+    toVersion: 8,
+    requireFrom: requireVersionSevenShape,
+    migrate: migrateSevenToEight,
+    requireTo: requireVersionEightShape,
+    operations: versionSevenToEightOperations(),
+    irreversibleSteps: versionSevenToEightIrreversibleSteps()
+  },
+  {
+    fromVersion: 8,
+    toVersion: 9,
+    requireFrom: requireVersionEightShape,
+    migrate: migrateEightToNine,
+    requireTo: requireVersionNineShape,
+    operations: versionEightToNineOperations(),
+    irreversibleSteps: versionEightToNineIrreversibleSteps()
+  }
+];
+
 export async function planProfileStoreMigration(
   target: ProfileMigrationTarget
 ): Promise<ProfileMigrationPlan> {
@@ -93,85 +167,13 @@ export async function planProfileStoreMigration(
       requireVersionNineShape(database);
       operations = [];
       irreversibleSteps = [];
-    } else if (currentVersion === 8) {
-      requireVersionEightShape(database);
-      operations = versionEightToNineOperations();
-      irreversibleSteps = versionEightToNineIrreversibleSteps();
-    } else if (currentVersion === 7) {
-      requireVersionSevenShape(database);
-      operations = [...versionSevenToEightOperations(), ...versionEightToNineOperations()];
-      irreversibleSteps = [
-        ...versionSevenToEightIrreversibleSteps(),
-        ...versionEightToNineIrreversibleSteps()
-      ];
-    } else if (currentVersion === 6) {
-      requireVersionSixShape(database);
-      operations = [
-        ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations(),
-        ...versionEightToNineOperations()
-      ];
-      irreversibleSteps = [
-        ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps(),
-        ...versionEightToNineIrreversibleSteps()
-      ];
-    } else if (currentVersion === 5) {
-      requireVersionFiveShape(database);
-      operations = [
-        ...versionFiveToSixOperations(),
-        ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations(),
-        ...versionEightToNineOperations()
-      ];
-      irreversibleSteps = [
-        ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps(),
-        ...versionEightToNineIrreversibleSteps()
-      ];
-    } else if (currentVersion === 4) {
-      requireVersionFourShape(database);
-      operations = [
-        ...versionFourToFiveOperations(),
-        ...versionFiveToSixOperations(),
-        ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations(),
-        ...versionEightToNineOperations()
-      ];
-      irreversibleSteps = [
-        ...versionFourToFiveIrreversibleSteps(),
-        ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps(),
-        ...versionEightToNineIrreversibleSteps()
-      ];
-    } else if (currentVersion === 3) {
-      requireVersionThreeShape(database);
-      operations = [
-        "add delivery_outbox.provider_reply_sequence",
-        "backfill stable QQ passive reply sequences",
-        "create delivery_reply_sequences",
-        "set SQLite user_version to 4",
-        ...versionFourToFiveOperations(),
-        ...versionFiveToSixOperations(),
-        ...versionSixToSevenOperations(),
-        ...versionSevenToEightOperations(),
-        ...versionEightToNineOperations()
-      ];
-      irreversibleSteps = [
-        "rebuild delivery_outbox to add provider reply sequencing for schema version 4",
-        ...versionFourToFiveIrreversibleSteps(),
-        ...versionFiveToSixIrreversibleSteps(),
-        ...versionSixToSevenIrreversibleSteps(),
-        ...versionSevenToEightIrreversibleSteps(),
-        ...versionEightToNineIrreversibleSteps()
-      ];
     } else {
-      throw new ProfileMigrationError(
-        "unsupported_schema",
-        `Profile schema ${currentVersion} cannot be migrated by this binary`
-      );
+      const firstStep = MIGRATION_STEPS.find((step) => step.fromVersion === currentVersion);
+      if (!firstStep) throw unsupportedSchema(currentVersion);
+      firstStep.requireFrom(database);
+      const steps = MIGRATION_STEPS.filter((step) => step.fromVersion >= currentVersion);
+      operations = steps.flatMap((step) => step.operations);
+      irreversibleSteps = steps.flatMap((step) => step.irreversibleSteps);
     }
   } finally {
     database?.close();
@@ -242,59 +244,32 @@ export async function applyProfileStoreMigration(
     database.pragma("foreign_keys = ON");
     database.pragma("synchronous = FULL");
     requireProfile(database, options.profileId);
-    if (plan.currentVersion === 3) {
-      requireVersionThreeShape(database);
-      activeStep = { fromVersion: 3, toVersion: 4 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 3, 4, "started");
-      migrateThreeToFour(database);
-      requireVersionFourShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 3, 4, "succeeded");
+    let version = Number(database.pragma("user_version", { simple: true }));
+    while (version < CURRENT_SCHEMA_VERSION) {
+      const step = MIGRATION_STEPS.find((candidate) => candidate.fromVersion === version);
+      if (!step) throw unsupportedSchema(version);
+      step.requireFrom(database);
+      activeStep = step;
+      appendMigrationStepAudit(
+        options.auditPath,
+        correlationId,
+        options.profileId,
+        step.fromVersion,
+        step.toVersion,
+        "started"
+      );
+      step.migrate(database);
+      step.requireTo(database);
+      appendMigrationStepAudit(
+        options.auditPath,
+        correlationId,
+        options.profileId,
+        step.fromVersion,
+        step.toVersion,
+        "succeeded"
+      );
       activeStep = undefined;
-    }
-    if (Number(database.pragma("user_version", { simple: true })) === 4) {
-      requireVersionFourShape(database);
-      activeStep = { fromVersion: 4, toVersion: 5 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "started");
-      migrateFourToFive(database);
-      requireVersionFiveShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 4, 5, "succeeded");
-      activeStep = undefined;
-    }
-    if (Number(database.pragma("user_version", { simple: true })) === 5) {
-      requireVersionFiveShape(database);
-      activeStep = { fromVersion: 5, toVersion: 6 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 5, 6, "started");
-      migrateFiveToSix(database);
-      requireVersionSixShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 5, 6, "succeeded");
-      activeStep = undefined;
-    }
-    if (Number(database.pragma("user_version", { simple: true })) === 6) {
-      requireVersionSixShape(database);
-      activeStep = { fromVersion: 6, toVersion: 7 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "started");
-      migrateSixToSeven(database);
-      requireVersionSevenShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 6, 7, "succeeded");
-      activeStep = undefined;
-    }
-    if (Number(database.pragma("user_version", { simple: true })) === 7) {
-      requireVersionSevenShape(database);
-      activeStep = { fromVersion: 7, toVersion: 8 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 7, 8, "started");
-      migrateSevenToEight(database);
-      requireVersionEightShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 7, 8, "succeeded");
-      activeStep = undefined;
-    }
-    if (Number(database.pragma("user_version", { simple: true })) === 8) {
-      requireVersionEightShape(database);
-      activeStep = { fromVersion: 8, toVersion: 9 };
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 8, 9, "started");
-      migrateEightToNine(database);
-      requireVersionNineShape(database);
-      appendMigrationStepAudit(options.auditPath, correlationId, options.profileId, 8, 9, "succeeded");
-      activeStep = undefined;
+      version = step.toVersion;
     }
     requireVersionNineShape(database);
     const quickCheck = String(database.pragma("quick_check", { simple: true }));
@@ -342,6 +317,13 @@ export async function applyProfileStoreMigration(
     planDigest: plan.planDigest,
     auditCorrelationId: correlationId
   };
+}
+
+function unsupportedSchema(version: number): ProfileMigrationError {
+  return new ProfileMigrationError(
+    "unsupported_schema",
+    `Profile schema ${version} cannot be migrated by this binary`
+  );
 }
 
 function appendMigrationStepAudit(

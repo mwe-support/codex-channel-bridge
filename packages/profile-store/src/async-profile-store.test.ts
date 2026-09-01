@@ -53,13 +53,14 @@ async function temporaryDatabase(context: test.TestContext): Promise<string> {
 test("executes archive operations through the asynchronous Profile Store interface", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = await ProfileStore.open({ profileId: "alpha", databasePath });
-  assert.equal(await store.journalMode(), "wal");
-  const first = await store.commitMessage(message());
-  const duplicate = await store.commitMessage(message({ text: "replayed" }));
+  const first = await store.commitObservation({ message: message(), attachments: [] });
+  const duplicate = await store.commitObservation({
+    message: message({ text: "replayed" }),
+    attachments: []
+  });
   assert.equal(first.inserted, true);
-  assert.deepEqual(duplicate, { recordId: first.recordId, inserted: false });
+  assert.deepEqual(duplicate, { recordId: first.recordId, inserted: false, attachments: [] });
   assert.equal((await store.recentMessages("qq:private:conversation-1"))[0]?.text, "worker-thread archive");
-  assert.equal((await store.searchText({ text: "worker archive" })).length, 1);
   const hybrid = await store.searchHybrid({ text: "worker-thread archive" });
   assert.equal(hybrid.length, 1);
   assert.ok(hybrid[0]?.matchedSignals.includes("exact"));
@@ -75,14 +76,13 @@ test("executes archive operations through the asynchronous Profile Store interfa
     failureReason: "media_source_lost",
     settledAtMs: 2_000
   }), 1);
-  assert.equal((await store.archiveAttachments(pending.recordId))[0]?.bytesState, "unavailable");
   await store.close();
 });
 
 test("executes Logical Result and Outbox transitions through the storage Worker", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = await ProfileStore.open({ profileId: "alpha", databasePath });
-  const archive = await store.commitMessage(message());
+  const archive = await store.commitObservation({ message: message(), attachments: [] });
   const binding = (await store.createThreadBinding({
     profileId: "alpha",
     conversationKey: "qq:private:conversation-1",
@@ -176,7 +176,7 @@ test("preserves typed store failures across the Worker-thread seam", async (cont
   const databasePath = await temporaryDatabase(context);
   const store = await ProfileStore.open({ profileId: "alpha", databasePath });
   await assert.rejects(
-    store.commitMessage(message({ profileId: "beta" })),
+    store.commitObservation({ message: message({ profileId: "beta" }), attachments: [] }),
     (error: unknown) => error instanceof ProfileStoreError && error.reason === "invalid_channel_message"
   );
   await store.close();

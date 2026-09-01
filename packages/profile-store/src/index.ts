@@ -41,8 +41,6 @@ export type {
   ArchiveHybridSearchHit,
   ArchiveRetrievalSignal,
   ArchivedChannelMessage,
-  ArchiveTextSearch,
-  ArchiveTextSearchHit,
   ClaimOutboxOptions,
   ApplyArchivePurgeInput,
   ChannelTransportCheckpoint,

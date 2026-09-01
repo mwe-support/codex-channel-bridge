@@ -2,7 +2,6 @@ import type {
   ChannelReplyTarget,
   InboundChannelEvent,
   InboundChannelAttachment,
-  NormalizedChannelMessage,
   ProviderInboundEvent,
   TrustedChannelContext
 } from "@codex-channel-bridge/core";
@@ -14,14 +13,8 @@ import type {
 
 import { type MediaArchive, toInboundAttachment } from "./media-archive.js";
 
-interface ArchiveCommitResult {
-  readonly recordId: string;
-  readonly inserted: boolean;
-}
-
 export interface InboundArchive {
-  commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
-  commitObservation?(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
+  commitObservation(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
 }
 
 export type InboundDisposition =
@@ -82,12 +75,7 @@ export class InboundPipeline {
         bytesState: attachment.contentSource === undefined ? "metadata_only" : "pending"
       }))
     } satisfies CommitArchiveObservationInput;
-    const commit = this.#archive.commitObservation
-      ? await this.#archive.commitObservation(observation)
-      : {
-          ...(await this.#archive.commitMessage(event.message)),
-          attachments: []
-        };
+    const commit = await this.#archive.commitObservation(observation);
     const attachments = await this.#mirrorAttachments(commit.attachments, providerEvent);
     if (!commit.inserted) {
       return { kind: "duplicate", archiveRecordId: commit.recordId };

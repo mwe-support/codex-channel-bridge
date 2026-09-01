@@ -17,9 +17,9 @@ class FakeArchive implements InboundArchive {
   readonly messages: NormalizedChannelMessage[] = [];
   inserted = true;
 
-  async commitMessage(message: NormalizedChannelMessage) {
-    this.messages.push(message);
-    return { recordId: "archive-1", inserted: this.inserted };
+  async commitObservation(input: import("@codex-channel-bridge/profile-store").CommitArchiveObservationInput) {
+    this.messages.push(input.message);
+    return { recordId: "archive-1", inserted: this.inserted, attachments: [] };
   }
 }
 

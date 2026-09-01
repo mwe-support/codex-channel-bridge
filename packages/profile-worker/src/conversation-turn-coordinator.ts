@@ -4,7 +4,6 @@ import type {
   CodexInputAcceptance,
   CodexInputCorrelation,
   InboundChannelEvent,
-  LogicalResultInput,
   ThreadBinding,
   ThreadBindingKey,
   ThreadBindingScope
@@ -17,7 +16,6 @@ import type {
   CommitCodexTurnResultInput,
   CodexInputTransition,
   CreateThreadBindingInput,
-  LogicalResultCommitResult,
   ThreadBindingCommitResult
 } from "@codex-channel-bridge/profile-store";
 
@@ -34,7 +32,6 @@ export interface ConversationTurnStore {
     input: CommitCodexInputUncertaintyInput
   ): Promise<CodexInputUncertaintyCommitResult>;
   commitCodexTurnResult(input: CommitCodexTurnResultInput): Promise<CodexTurnResultCommitResult>;
-  commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult>;
 }
 
 export interface NativeTurnDriver {

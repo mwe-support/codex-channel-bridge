@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ChannelDeliveryError,
   type ChannelAdapter,
+  type ChannelAdapterReadiness,
   type ChannelDeliveryReceipt,
   type ChannelTextDelivery,
   type ProviderInboundEvent
@@ -50,6 +51,14 @@ class FakeAdapter implements ChannelAdapter {
   };
 
   async start(_onEvent: (event: ProviderInboundEvent) => Promise<void>): Promise<void> {}
+
+  readiness(): ChannelAdapterReadiness {
+    return "ready";
+  }
+
+  subscribeReadiness(): () => void {
+    return () => undefined;
+  }
 
   async sendText(delivery: ChannelTextDelivery): Promise<ChannelDeliveryReceipt> {
     this.deliveries.push(delivery);

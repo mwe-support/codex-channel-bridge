@@ -139,17 +139,6 @@ export interface ArchivedChannelMessage extends NormalizedChannelMessage {
   readonly recordId: string;
 }
 
-export interface ArchiveTextSearch {
-  readonly text: string;
-  readonly conversationKey?: string;
-  readonly limit?: number;
-}
-
-export interface ArchiveTextSearchHit extends ArchivedChannelMessage {
-  /** Lower values rank first, following SQLite FTS5 bm25(). */
-  readonly rank: number;
-}
-
 export type ArchiveRetrievalSignal =
   | "exact"
   | "lexical"
@@ -457,10 +446,6 @@ interface ArchiveRow {
   readonly provider_identity: string;
   readonly observed_at_ms: number;
   readonly text_body: string | null;
-}
-
-interface ArchiveSearchRow extends ArchiveRow {
-  readonly rank: number;
 }
 
 interface LogicalResultRow {
@@ -934,54 +919,6 @@ export class SqliteProfileStore {
       )
       .all({ profileId: this.#profileId, conversationKey, limit: boundedLimit });
     return rows.map(toArchivedMessage);
-  }
-
-  public searchText(query: ArchiveTextSearch): readonly ArchiveTextSearchHit[] {
-    this.#requireOpen();
-    const expression = literalFtsExpression(query.text);
-    const limit = validateLimit(query.limit ?? DEFAULT_LIMIT);
-    if (query.conversationKey !== undefined) {
-      validateExternalId(query.conversationKey, "conversationKey");
-    }
-    const rows = this.#database
-      .prepare<
-        {
-          expression: string;
-          profileId: string;
-          conversationKey: string | null;
-          limit: number;
-        },
-        ArchiveSearchRow
-      >(
-        `SELECT message_archive.record_id,
-                message_archive.profile_id,
-                message_archive.provider,
-                message_archive.channel_account_id,
-                message_archive.channel_account_epoch_id,
-                message_archive.provider_event_id,
-                message_archive.conversation_key,
-                message_archive.conversation_kind,
-                message_archive.provider_conversation_id,
-                message_archive.provider_identity,
-                message_archive.observed_at_ms,
-                message_archive.text_body,
-                bm25(message_archive_fts) AS rank
-          FROM message_archive_fts
-           JOIN message_archive
-             ON message_archive.row_id = message_archive_fts.rowid
-          WHERE message_archive_fts MATCH @expression
-            AND message_archive.profile_id = @profileId
-            AND (@conversationKey IS NULL OR message_archive.conversation_key = @conversationKey)
-          ORDER BY rank ASC, message_archive.observed_at_ms DESC
-          LIMIT @limit`
-      )
-      .all({
-        expression,
-        profileId: this.#profileId,
-        conversationKey: query.conversationKey ?? null,
-        limit
-      });
-    return rows.map((row) => ({ ...toArchivedMessage(row), rank: row.rank }));
   }
 
   public searchHybrid(query: ArchiveHybridSearch): readonly ArchiveHybridSearchHit[] {
@@ -3421,14 +3358,6 @@ function validateLimit(limit: number): number {
     throw new ProfileStoreError("invalid_channel_message", "Archive query limit is invalid");
   }
   return limit;
-}
-
-function literalFtsExpression(text: string): string {
-  const tokens = text.trim().split(/\s+/u).filter(Boolean);
-  if (tokens.length === 0 || Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES) {
-    throw new ProfileStoreError("invalid_channel_message", "Archive search text is invalid");
-  }
-  return tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(" AND ");
 }
 
 function toArchivedMessage(row: ArchiveRow): ArchivedChannelMessage {

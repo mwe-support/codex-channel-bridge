@@ -43,76 +43,66 @@ try {
 
 function execute(store: SqliteProfileStore, operation: StorageOperation): unknown {
   switch (operation.name) {
-    case "commitMessage":
-      return store.commitMessage(operation.value);
     case "commitObservation":
-      return store.commitObservation(operation.value);
-    case "archiveAttachments":
-      return store.archiveAttachments(operation.messageRecordId);
+      return store.commitObservation(operation.args[0]);
     case "settleArchiveAttachment":
-      return store.settleArchiveAttachment(operation.value);
+      return store.settleArchiveAttachment(operation.args[0]);
     case "mirroredMediaBytes":
       return store.mirroredMediaBytes();
     case "abandonPendingArchiveAttachments":
-      return store.abandonPendingArchiveAttachments(operation.value);
+      return store.abandonPendingArchiveAttachments(operation.args[0]);
     case "getChannelTransportCheckpoint":
-      return store.getChannelTransportCheckpoint(operation.channelAccountId);
+      return store.getChannelTransportCheckpoint(operation.args[0]);
     case "putChannelTransportCheckpoint":
-      return store.putChannelTransportCheckpoint(operation.value);
+      return store.putChannelTransportCheckpoint(operation.args[0]);
     case "clearChannelTransportCheckpoint":
-      return store.clearChannelTransportCheckpoint(operation.channelAccountId);
+      return store.clearChannelTransportCheckpoint(operation.args[0]);
     case "recentMessages":
-      return store.recentMessages(operation.conversationKey, operation.limit);
-    case "searchText":
-      return store.searchText(operation.query);
+      return store.recentMessages(operation.args[0], operation.args[1]);
     case "searchHybrid":
-      return store.searchHybrid(operation.query);
+      return store.searchHybrid(operation.args[0]);
     case "previewArchivePurge":
-      return store.previewArchivePurge(operation.scope);
+      return store.previewArchivePurge(operation.args[0]);
     case "applyArchivePurge":
-      return store.applyArchivePurge(operation.value);
+      return store.applyArchivePurge(operation.args[0]);
     case "profilePurgeState":
       return store.profilePurgeState();
     case "getThreadBinding":
-      return store.getThreadBinding(operation.key);
+      return store.getThreadBinding(operation.args[0]);
     case "createThreadBinding":
-      return store.createThreadBinding(operation.value);
+      return store.createThreadBinding(operation.args[0]);
     case "replaceThreadBinding":
-      return store.replaceThreadBinding(operation.value);
+      return store.replaceThreadBinding(operation.args[0]);
     case "detachThreadBinding":
-      return store.detachThreadBinding(operation.key);
+      return store.detachThreadBinding(operation.args[0]);
     case "acceptCodexInput":
-      return store.acceptCodexInput(operation.value);
+      return store.acceptCodexInput(operation.args[0]);
     case "transitionCodexInput":
-      return store.transitionCodexInput(operation.transition);
+      return store.transitionCodexInput(operation.args[0]);
     case "nonterminalCodexInputs":
       return store.nonterminalCodexInputs();
     case "commitCodexInputUncertainty":
-      return store.commitCodexInputUncertainty(operation.value);
+      return store.commitCodexInputUncertainty(operation.args[0]);
     case "commitCodexTurnResult":
-      return store.commitCodexTurnResult(operation.value);
-    case "commitLogicalResult":
-      return store.commitLogicalResult(operation.value);
+      return store.commitCodexTurnResult(operation.args[0]);
     case "commitApprovalRequest":
-      return store.commitApprovalRequest(operation.value);
+      return store.commitApprovalRequest(operation.args[0]);
     case "settleApprovalRequest":
-      return store.settleApprovalRequest(operation.value);
+      return store.settleApprovalRequest(operation.args[0]);
     case "abandonPendingApprovalRequests":
-      return store.abandonPendingApprovalRequests(operation.value);
+      return store.abandonPendingApprovalRequests(operation.args[0]);
     case "auditRecords":
-      return store.auditRecords(operation.limit);
+      return store.auditRecords(operation.args[0]);
     case "appendAuditRecord":
-      return store.appendAuditRecord(operation.value);
+      return store.appendAuditRecord(operation.args[0]);
     case "claimOutbox":
-      return store.claimOutbox(operation.options);
+      return store.claimOutbox(operation.args[0]);
     case "settleOutbox":
-      return store.settleOutbox(operation.settlement);
+      return store.settleOutbox(operation.args[0]);
     case "outboxCounts":
       return store.outboxCounts();
     case "outboxCountsForChannelAccount":
-      return store.outboxCountsForChannelAccount(operation.channelAccountId);
-    case "journalMode":
-      return store.journalMode();
+      return store.outboxCountsForChannelAccount(operation.args[0]);
     case "close":
       store.close();
       return null;
@@ -125,44 +115,24 @@ function isStorageRequest(value: unknown): value is StorageRequest {
     value.type === "request" &&
     Number.isSafeInteger(value.id) &&
     isRecord(value.operation) &&
-    (value.operation.name === "commitMessage" ||
-      value.operation.name === "commitObservation" ||
-      value.operation.name === "archiveAttachments" ||
-      value.operation.name === "settleArchiveAttachment" ||
-      value.operation.name === "mirroredMediaBytes" ||
-      value.operation.name === "abandonPendingArchiveAttachments" ||
-      value.operation.name === "getChannelTransportCheckpoint" ||
-      value.operation.name === "putChannelTransportCheckpoint" ||
-      value.operation.name === "clearChannelTransportCheckpoint" ||
-      value.operation.name === "recentMessages" ||
-      value.operation.name === "searchText" ||
-      value.operation.name === "searchHybrid" ||
-      value.operation.name === "previewArchivePurge" ||
-      value.operation.name === "applyArchivePurge" ||
-      value.operation.name === "profilePurgeState" ||
-      value.operation.name === "getThreadBinding" ||
-      value.operation.name === "createThreadBinding" ||
-      value.operation.name === "replaceThreadBinding" ||
-      value.operation.name === "detachThreadBinding" ||
-      value.operation.name === "acceptCodexInput" ||
-      value.operation.name === "transitionCodexInput" ||
-      value.operation.name === "nonterminalCodexInputs" ||
-      value.operation.name === "commitCodexInputUncertainty" ||
-      value.operation.name === "commitCodexTurnResult" ||
-      value.operation.name === "commitLogicalResult" ||
-      value.operation.name === "commitApprovalRequest" ||
-      value.operation.name === "settleApprovalRequest" ||
-      value.operation.name === "abandonPendingApprovalRequests" ||
-      value.operation.name === "auditRecords" ||
-      value.operation.name === "appendAuditRecord" ||
-      value.operation.name === "claimOutbox" ||
-      value.operation.name === "settleOutbox" ||
-      value.operation.name === "outboxCounts" ||
-      value.operation.name === "outboxCountsForChannelAccount" ||
-      value.operation.name === "journalMode" ||
-      value.operation.name === "close")
+    typeof value.operation.name === "string" &&
+    STORAGE_OPERATIONS.has(value.operation.name) &&
+    Array.isArray(value.operation.args)
   );
 }
+
+const STORAGE_OPERATIONS = new Set([
+  "commitObservation", "settleArchiveAttachment", "mirroredMediaBytes",
+  "abandonPendingArchiveAttachments", "getChannelTransportCheckpoint",
+  "putChannelTransportCheckpoint", "clearChannelTransportCheckpoint", "recentMessages",
+  "searchHybrid", "previewArchivePurge", "applyArchivePurge", "profilePurgeState",
+  "getThreadBinding", "createThreadBinding", "replaceThreadBinding", "detachThreadBinding",
+  "acceptCodexInput", "transitionCodexInput", "nonterminalCodexInputs",
+  "commitCodexInputUncertainty", "commitCodexTurnResult", "commitApprovalRequest",
+  "settleApprovalRequest", "abandonPendingApprovalRequests", "auditRecords",
+  "appendAuditRecord", "claimOutbox", "settleOutbox", "outboxCounts",
+  "outboxCountsForChannelAccount", "close"
+]);
 
 function serializeError(error: unknown): { reason: ProfileStoreReason; message: string } {
   if (error instanceof ProfileStoreError) {

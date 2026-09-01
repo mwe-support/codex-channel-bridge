@@ -3,59 +3,13 @@ import { lstat, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
 
 import { parseDocument } from "yaml";
+import { z } from "zod";
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 const CHANNEL_ACCOUNT_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 const CHANNEL_ACCOUNT_EPOCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const TOP_LEVEL_KEYS = new Set(["schemaVersion", "supervisor", "profiles"]);
-const SUPERVISOR_KEYS = new Set([
-  "drainTimeoutMs",
-  "childExitTimeoutMs",
-  "codexRestartCooldownMs",
-  "diskSafetyFloorBytes"
-]);
-const PROFILE_KEYS = new Set([
-  "enabled",
-  "workspace",
-  "codexHome",
-  "stateDirectory",
-  "secretsFile",
-  "channelAccounts",
-  "codexExecutable",
-  "admission",
-  "approval",
-  "media"
-]);
-const QQ_CHANNEL_ACCOUNT_KEYS = new Set([
-  "provider",
-  "enabled",
-  "epochId",
-  "appId",
-  "appSecret",
-  "accessPolicy",
-  "groupThreadScope"
-]);
-const WHATSAPP_CHANNEL_ACCOUNT_KEYS = new Set([
-  "provider",
-  "enabled",
-  "epochId",
-  "accessPolicy",
-  "groupThreadScope"
-]);
-const ADMISSION_KEYS = new Set([
-  "mode",
-  "maximumActiveTurns",
-  "queueCapacity",
-  "maximumQueueAgeMs",
-  "accountRateLimit",
-  "accountRateWindowMs"
-]);
-const APPROVAL_KEYS = new Set(["timeoutMs", "detail"]);
-const MEDIA_KEYS = new Set(["perAttachmentLimitBytes", "profileQuotaBytes"]);
-const ACCESS_POLICY_KEYS = new Set(["privateChats", "groupChats", "groupParticipants"]);
-const ACCESS_RULE_KEYS = new Set(["mode", "allow"]);
 
 export interface AccessRuleConfiguration {
   readonly mode: "deny" | "allowlist" | "open";
@@ -259,417 +213,169 @@ async function validateProfileDirectories(configuration: BridgeConfiguration): P
   if (issues.length > 0) throw new ConfigurationValidationError(issues.sort());
 }
 
+function integer(minimum: number, maximum: number, fallback: number) {
+  return z.number({ error: `must be an integer from ${minimum} through ${maximum}` })
+    .int({ error: `must be an integer from ${minimum} through ${maximum}` })
+    .min(minimum, { error: `must be an integer from ${minimum} through ${maximum}` })
+    .max(maximum, { error: `must be an integer from ${minimum} through ${maximum}` })
+    .default(fallback);
+}
+
+const absolutePathSchema = z.string({ error: "must be an absolute path" })
+  .min(1, { error: "must be an absolute path" })
+  .refine(isAbsolute, { error: "must be an absolute path" })
+  .transform(normalize);
+const secretReferenceSchema = z.string({ error: "must be a Secret Reference" }).refine(
+  (value) =>
+    (value.startsWith("env:") && ENVIRONMENT_NAME.test(value.slice(4))) ||
+    (value.startsWith("file:") && isAbsolute(value.slice(5))),
+  { error: "must be an env:NAME or file:/absolute/path Secret Reference" }
+);
+const defaultObject = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => value === undefined ? {} : value, schema);
+const accessRuleSchema = defaultObject(z.strictObject({
+  mode: z.enum(["deny", "allowlist", "open"], {
+    error: "must equal deny, allowlist, or open"
+  }).default("deny"),
+  allow: z.array(
+    z.string({ error: "must be a non-empty provider identifier" })
+      .min(1, { error: "must be a non-empty provider identifier" })
+      .refine((value) => Buffer.byteLength(value, "utf8") <= 8192, {
+        error: "must be a non-empty provider identifier"
+      })
+  ).default([])
+}).superRefine((value, context) => {
+  const seen = new Set<string>();
+  value.allow.forEach((entry, index) => {
+    if (seen.has(entry)) context.addIssue({ code: "custom", path: ["allow", index], message: "is duplicated" });
+    seen.add(entry);
+  });
+  if (value.mode === "allowlist" && value.allow.length === 0) {
+    context.addIssue({ code: "custom", path: ["allow"], message: "must not be empty in allowlist mode" });
+  }
+  if (value.mode !== "allowlist" && value.allow.length > 0) {
+    context.addIssue({ code: "custom", path: ["allow"], message: "is only valid in allowlist mode" });
+  }
+}));
+const accessPolicySchema = defaultObject(z.strictObject({
+  privateChats: accessRuleSchema,
+  groupChats: accessRuleSchema,
+  groupParticipants: accessRuleSchema
+}));
+const accountCommon = {
+  enabled: z.boolean().default(true),
+  epochId: z.string().regex(CHANNEL_ACCOUNT_EPOCH_PATTERN, { error: "is invalid" }),
+  groupThreadScope: z.enum(["conversation", "participant"], {
+    error: "must equal conversation or participant"
+  }).default("conversation"),
+  accessPolicy: accessPolicySchema
+};
+const channelAccountSchema = z.discriminatedUnion("provider", [
+  z.strictObject({
+    provider: z.literal("qq"),
+    ...accountCommon,
+    appId: secretReferenceSchema,
+    appSecret: secretReferenceSchema
+  }),
+  z.strictObject({ provider: z.literal("whatsapp"), ...accountCommon })
+], { error: "provider must equal qq or whatsapp" });
+const channelAccountsSchema = z.record(
+  z.string().regex(CHANNEL_ACCOUNT_ID_PATTERN, { error: "is not a valid Channel Account ID" }),
+  channelAccountSchema
+).default({}).transform((accounts) => Object.fromEntries(
+  Object.entries(accounts)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, account]) => [id, { id, ...account }])
+));
+const admissionSchema = defaultObject(z.strictObject({
+  mode: z.enum(["steer", "queue"], { error: "must equal steer or queue" }).default("steer"),
+  maximumActiveTurns: integer(1, 64, 1),
+  queueCapacity: integer(0, 10_000, 16),
+  maximumQueueAgeMs: integer(1_000, 86_400_000, 300_000),
+  accountRateLimit: integer(1, 100_000, 30),
+  accountRateWindowMs: integer(1_000, 3_600_000, 60_000)
+}));
+const approvalSchema = defaultObject(z.strictObject({
+  timeoutMs: integer(10_000, 3_600_000, 300_000),
+  detail: z.enum(["minimal", "summary", "detailed"], {
+    error: "must equal minimal, summary, or detailed"
+  }).default("minimal")
+}));
+const mediaSchema = defaultObject(z.strictObject({
+  perAttachmentLimitBytes: integer(1, 1024 * 1024 * 1024 * 1024, 64 * 1024 * 1024),
+  profileQuotaBytes: integer(1, Number.MAX_SAFE_INTEGER, 10 * 1024 * 1024 * 1024)
+}).superRefine((value, context) => {
+  if (value.profileQuotaBytes < value.perAttachmentLimitBytes) {
+    context.addIssue({
+      code: "custom",
+      path: ["profileQuotaBytes"],
+      message: "must be at least perAttachmentLimitBytes"
+    });
+  }
+}));
+const profileSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  workspace: absolutePathSchema,
+  codexHome: absolutePathSchema,
+  stateDirectory: absolutePathSchema,
+  secretsFile: absolutePathSchema.optional(),
+  channelAccounts: channelAccountsSchema,
+  codexExecutable: absolutePathSchema.optional(),
+  admission: admissionSchema,
+  approval: approvalSchema,
+  media: mediaSchema
+}).transform((profile) => ({
+  ...profile,
+  secretsFile: profile.secretsFile ?? join(profile.stateDirectory, "secrets.env")
+}));
+const configurationSchema = z.strictObject({
+  schemaVersion: z.literal(1, { error: "must equal 1" }),
+  supervisor: defaultObject(z.strictObject({
+    drainTimeoutMs: integer(1_000, 3_600_000, 300_000),
+    childExitTimeoutMs: integer(1_000, 60_000, 10_000),
+    codexRestartCooldownMs: integer(1_000, 3_600_000, 30_000),
+    diskSafetyFloorBytes: integer(
+      16 * 1024 * 1024,
+      1024 * 1024 * 1024 * 1024,
+      512 * 1024 * 1024
+    )
+  })),
+  profiles: z.record(
+    z.string().regex(PROFILE_ID_PATTERN, { error: "is not a valid Profile ID" }),
+    profileSchema
+  )
+}).transform((configuration) => ({
+  ...configuration,
+  profiles: Object.fromEntries(
+    Object.entries(configuration.profiles)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, profile]) => [id, { id, ...profile }])
+  )
+}));
+
 function validateShape(raw: unknown): BridgeConfiguration {
   const issues: string[] = [];
-  if (!isRecord(raw)) throw new ConfigurationValidationError(["config root must be a mapping"]);
-  rejectUnknownKeys(raw, TOP_LEVEL_KEYS, "config", issues);
-  if (raw.schemaVersion !== 1) issues.push("schemaVersion must equal 1");
-
-  const supervisorRaw = raw.supervisor === undefined ? {} : raw.supervisor;
-  if (!isRecord(supervisorRaw)) {
-    issues.push("supervisor must be a mapping");
-  } else {
-    rejectUnknownKeys(supervisorRaw, SUPERVISOR_KEYS, "supervisor", issues);
-  }
-  const drainTimeoutMs = integerWithin(
-    isRecord(supervisorRaw) ? supervisorRaw.drainTimeoutMs : undefined,
-    300_000,
-    1_000,
-    3_600_000,
-    "supervisor.drainTimeoutMs",
-    issues
-  );
-  const childExitTimeoutMs = integerWithin(
-    isRecord(supervisorRaw) ? supervisorRaw.childExitTimeoutMs : undefined,
-    10_000,
-    1_000,
-    60_000,
-    "supervisor.childExitTimeoutMs",
-    issues
-  );
-  const codexRestartCooldownMs = integerWithin(
-    isRecord(supervisorRaw) ? supervisorRaw.codexRestartCooldownMs : undefined,
-    30_000,
-    1_000,
-    3_600_000,
-    "supervisor.codexRestartCooldownMs",
-    issues
-  );
-  const diskSafetyFloorBytes = integerWithin(
-    isRecord(supervisorRaw) ? supervisorRaw.diskSafetyFloorBytes : undefined,
-    512 * 1024 * 1024,
-    16 * 1024 * 1024,
-    1024 * 1024 * 1024 * 1024,
-    "supervisor.diskSafetyFloorBytes",
-    issues
-  );
-
-  const profiles: Record<string, ProfileConfiguration> = {};
-  if (!isRecord(raw.profiles)) {
-    issues.push("profiles must be a mapping keyed by Profile ID");
-  } else {
+  if (isRecord(raw) && isRecord(raw.profiles)) {
     rejectDuplicateDeclaredChannelAccountIds(raw.profiles, issues);
-    for (const [id, value] of Object.entries(raw.profiles)) {
-      if (!PROFILE_ID_PATTERN.test(id)) {
-        issues.push(`profiles.${id} is not a valid Profile ID`);
-        continue;
-      }
-      if (!isRecord(value)) {
-        issues.push(`profiles.${id} must be a mapping`);
-        continue;
-      }
-      rejectUnknownKeys(value, PROFILE_KEYS, `profiles.${id}`, issues);
-      const enabled = value.enabled === undefined ? true : value.enabled;
-      if (typeof enabled !== "boolean") issues.push(`profiles.${id}.enabled must be boolean`);
-      const workspace = absolutePath(value.workspace, `profiles.${id}.workspace`, issues);
-      const codexHome = absolutePath(value.codexHome, `profiles.${id}.codexHome`, issues);
-      const stateDirectory = absolutePath(
-        value.stateDirectory,
-        `profiles.${id}.stateDirectory`,
-        issues
-      );
-      const secretsFile =
-        value.secretsFile === undefined
-          ? stateDirectory
-            ? join(stateDirectory, "secrets.env")
-            : null
-          : absolutePath(value.secretsFile, `profiles.${id}.secretsFile`, issues);
-      const channelAccounts = validateChannelAccounts(
-        value.channelAccounts,
-        `profiles.${id}.channelAccounts`,
-        issues
-      );
-      const codexExecutable = optionalExecutablePath(
-        value.codexExecutable,
-        `profiles.${id}.codexExecutable`,
-        issues
-      );
-      const admission = validateAdmission(value.admission, `profiles.${id}.admission`, issues);
-      const approval = validateApproval(value.approval, `profiles.${id}.approval`, issues);
-      const media = validateMedia(value.media, `profiles.${id}.media`, issues);
-      if (
-        workspace &&
-        codexHome &&
-        stateDirectory &&
-        secretsFile &&
-        channelAccounts &&
-        typeof enabled === "boolean"
-      ) {
-        profiles[id] = {
-          id,
-          enabled,
-          workspace,
-          codexHome,
-          stateDirectory,
-          secretsFile,
-          channelAccounts,
-          admission,
-          approval,
-          media,
-          ...(codexExecutable ? { codexExecutable } : {})
-        };
-      }
-    }
   }
-
-  rejectOverlappingOwnedPaths(profiles, issues);
-  rejectOverlappingSecretFiles(profiles, issues);
+  const parsed = configurationSchema.safeParse(raw);
+  if (!parsed.success) issues.push(...formatZodIssues(parsed.error.issues));
+  if (!parsed.success) throw new ConfigurationValidationError(issues.sort());
+  const configuration: BridgeConfiguration = parsed.data;
+  rejectOverlappingOwnedPaths(configuration.profiles, issues);
+  rejectOverlappingSecretFiles(configuration.profiles, issues);
   if (issues.length > 0) throw new ConfigurationValidationError(issues.sort());
-
-  return {
-    schemaVersion: 1,
-    supervisor: {
-      drainTimeoutMs,
-      childExitTimeoutMs,
-      codexRestartCooldownMs,
-      diskSafetyFloorBytes
-    },
-    profiles: Object.fromEntries(Object.entries(profiles).sort(([left], [right]) => left.localeCompare(right)))
-  };
+  return configuration;
 }
 
-function validateMedia(
-  value: unknown,
-  path: string,
-  issues: string[]
-): MediaConfiguration {
-  const raw = value === undefined ? {} : value;
-  if (!isRecord(raw)) {
-    issues.push(`${path} must be a mapping`);
-    return defaultMedia();
-  }
-  rejectUnknownKeys(raw, MEDIA_KEYS, path, issues);
-  const perAttachmentLimitBytes = integerWithin(
-    raw.perAttachmentLimitBytes,
-    64 * 1024 * 1024,
-    1,
-    1024 * 1024 * 1024 * 1024,
-    `${path}.perAttachmentLimitBytes`,
-    issues
-  );
-  const profileQuotaBytes = integerWithin(
-    raw.profileQuotaBytes,
-    10 * 1024 * 1024 * 1024,
-    1,
-    Number.MAX_SAFE_INTEGER,
-    `${path}.profileQuotaBytes`,
-    issues
-  );
-  if (profileQuotaBytes < perAttachmentLimitBytes) {
-    issues.push(`${path}.profileQuotaBytes must be at least perAttachmentLimitBytes`);
-  }
-  return { perAttachmentLimitBytes, profileQuotaBytes };
-}
-
-function defaultMedia(): MediaConfiguration {
-  return {
-    perAttachmentLimitBytes: 64 * 1024 * 1024,
-    profileQuotaBytes: 10 * 1024 * 1024 * 1024
-  };
-}
-
-function validateApproval(
-  value: unknown,
-  path: string,
-  issues: string[]
-): ApprovalConfiguration {
-  const raw = value === undefined ? {} : value;
-  if (!isRecord(raw)) {
-    issues.push(`${path} must be a mapping`);
-    return defaultApproval();
-  }
-  rejectUnknownKeys(raw, APPROVAL_KEYS, path, issues);
-  const detail = raw.detail === undefined ? "minimal" : raw.detail;
-  if (detail !== "minimal" && detail !== "summary" && detail !== "detailed") {
-    issues.push(`${path}.detail must equal minimal, summary, or detailed`);
-  }
-  return {
-    timeoutMs: integerWithin(raw.timeoutMs, 300_000, 10_000, 3_600_000, `${path}.timeoutMs`, issues),
-    detail: detail === "summary" || detail === "detailed" ? detail : "minimal"
-  };
-}
-
-function defaultApproval(): ApprovalConfiguration {
-  return { timeoutMs: 300_000, detail: "minimal" };
-}
-
-function validateChannelAccounts(
-  value: unknown,
-  path: string,
-  issues: string[]
-): Record<string, ChannelAccountConfiguration> | null {
-  if (value === undefined) return {};
-  if (!isRecord(value)) {
-    issues.push(`${path} must be a mapping keyed by Channel Account ID`);
-    return null;
-  }
-  const accounts: Record<string, ChannelAccountConfiguration> = {};
-  for (const [id, account] of Object.entries(value)) {
-    const accountPath = `${path}.${id}`;
-    if (!CHANNEL_ACCOUNT_ID_PATTERN.test(id)) {
-      issues.push(`${accountPath} is not a valid Channel Account ID`);
-      continue;
+function formatZodIssues(issues: readonly z.core.$ZodIssue[]): readonly string[] {
+  return issues.flatMap((issue) => {
+    const path = issue.path.length === 0 ? "config" : issue.path.join(".");
+    if (issue.code === "unrecognized_keys") {
+      return issue.keys.map((key) => `${path}.${key} is not supported`);
     }
-    if (!isRecord(account)) {
-      issues.push(`${accountPath} must be a mapping`);
-      continue;
-    }
-    if (account.provider !== "qq" && account.provider !== "whatsapp") {
-      issues.push(`${accountPath}.provider must equal qq or whatsapp`);
-      continue;
-    }
-    rejectUnknownKeys(
-      account,
-      account.provider === "qq" ? QQ_CHANNEL_ACCOUNT_KEYS : WHATSAPP_CHANNEL_ACCOUNT_KEYS,
-      accountPath,
-      issues
-    );
-    const enabled = account.enabled === undefined ? true : account.enabled;
-    if (typeof enabled !== "boolean") issues.push(`${accountPath}.enabled must be boolean`);
-    const epochId =
-      typeof account.epochId === "string" && CHANNEL_ACCOUNT_EPOCH_PATTERN.test(account.epochId)
-        ? account.epochId
-        : null;
-    if (!epochId) issues.push(`${accountPath}.epochId is invalid`);
-    const appId = account.provider === "qq"
-      ? secretReference(account.appId, `${accountPath}.appId`, issues)
-      : null;
-    const appSecret = account.provider === "qq"
-      ? secretReference(account.appSecret, `${accountPath}.appSecret`, issues)
-      : null;
-    const groupThreadScope =
-      account.groupThreadScope === undefined ? "conversation" : account.groupThreadScope;
-    if (groupThreadScope !== "conversation" && groupThreadScope !== "participant") {
-      issues.push(`${accountPath}.groupThreadScope must equal conversation or participant`);
-    }
-    const accessPolicy = validateAccessPolicy(
-      account.accessPolicy,
-      `${accountPath}.accessPolicy`,
-      issues
-    );
-    if (typeof enabled === "boolean" && epochId) {
-      const common = {
-        id,
-        enabled,
-        epochId,
-        groupThreadScope:
-          groupThreadScope === "participant" ? "participant" as const : "conversation" as const,
-        accessPolicy
-      };
-      if (account.provider === "whatsapp") {
-        accounts[id] = { ...common, provider: "whatsapp" };
-      } else if (appId && appSecret) {
-        accounts[id] = { ...common, provider: "qq", appId, appSecret };
-      }
-    }
-  }
-  return Object.fromEntries(Object.entries(accounts).sort(([left], [right]) => left.localeCompare(right)));
-}
-
-function validateAdmission(
-  value: unknown,
-  path: string,
-  issues: string[]
-): AdmissionConfiguration {
-  const raw = value === undefined ? {} : value;
-  if (!isRecord(raw)) {
-    issues.push(`${path} must be a mapping`);
-    return defaultAdmission();
-  }
-  rejectUnknownKeys(raw, ADMISSION_KEYS, path, issues);
-  const mode = raw.mode === undefined ? "steer" : raw.mode;
-  if (mode !== "steer" && mode !== "queue") {
-    issues.push(`${path}.mode must equal steer or queue`);
-  }
-  return {
-    mode: mode === "queue" ? "queue" : "steer",
-    maximumActiveTurns: integerWithin(
-      raw.maximumActiveTurns,
-      1,
-      1,
-      64,
-      `${path}.maximumActiveTurns`,
-      issues
-    ),
-    queueCapacity: integerWithin(raw.queueCapacity, 16, 0, 10_000, `${path}.queueCapacity`, issues),
-    maximumQueueAgeMs: integerWithin(
-      raw.maximumQueueAgeMs,
-      300_000,
-      1_000,
-      86_400_000,
-      `${path}.maximumQueueAgeMs`,
-      issues
-    ),
-    accountRateLimit: integerWithin(
-      raw.accountRateLimit,
-      30,
-      1,
-      100_000,
-      `${path}.accountRateLimit`,
-      issues
-    ),
-    accountRateWindowMs: integerWithin(
-      raw.accountRateWindowMs,
-      60_000,
-      1_000,
-      3_600_000,
-      `${path}.accountRateWindowMs`,
-      issues
-    )
-  };
-}
-
-function defaultAdmission(): AdmissionConfiguration {
-  return {
-    mode: "steer",
-    maximumActiveTurns: 1,
-    queueCapacity: 16,
-    maximumQueueAgeMs: 300_000,
-    accountRateLimit: 30,
-    accountRateWindowMs: 60_000
-  };
-}
-
-function validateAccessPolicy(
-  value: unknown,
-  path: string,
-  issues: string[]
-): ChannelAccessPolicyConfiguration {
-  const raw = value === undefined ? {} : value;
-  if (!isRecord(raw)) {
-    issues.push(`${path} must be a mapping`);
-    return denyAccessPolicy();
-  }
-  rejectUnknownKeys(raw, ACCESS_POLICY_KEYS, path, issues);
-  return {
-    privateChats: validateAccessRule(raw.privateChats, `${path}.privateChats`, issues),
-    groupChats: validateAccessRule(raw.groupChats, `${path}.groupChats`, issues),
-    groupParticipants: validateAccessRule(
-      raw.groupParticipants,
-      `${path}.groupParticipants`,
-      issues
-    )
-  };
-}
-
-function validateAccessRule(
-  value: unknown,
-  path: string,
-  issues: string[]
-): AccessRuleConfiguration {
-  const raw = value === undefined ? {} : value;
-  if (!isRecord(raw)) {
-    issues.push(`${path} must be a mapping`);
-    return { mode: "deny", allow: [] };
-  }
-  rejectUnknownKeys(raw, ACCESS_RULE_KEYS, path, issues);
-  const mode = raw.mode === undefined ? "deny" : raw.mode;
-  if (mode !== "deny" && mode !== "allowlist" && mode !== "open") {
-    issues.push(`${path}.mode must equal deny, allowlist, or open`);
-  }
-  const allow = Array.isArray(raw.allow) ? raw.allow : [];
-  if (raw.allow !== undefined && !Array.isArray(raw.allow)) {
-    issues.push(`${path}.allow must be an array`);
-  }
-  const normalized: string[] = [];
-  for (const [index, entry] of allow.entries()) {
-    if (typeof entry !== "string" || entry.length === 0 || Buffer.byteLength(entry, "utf8") > 8192) {
-      issues.push(`${path}.allow.${index} must be a non-empty provider identifier`);
-    } else if (normalized.includes(entry)) {
-      issues.push(`${path}.allow.${index} is duplicated`);
-    } else {
-      normalized.push(entry);
-    }
-  }
-  if (mode === "allowlist" && normalized.length === 0) {
-    issues.push(`${path}.allow must not be empty in allowlist mode`);
-  }
-  if ((mode === "deny" || mode === "open") && normalized.length > 0) {
-    issues.push(`${path}.allow is only valid in allowlist mode`);
-  }
-  return {
-    mode: mode === "allowlist" || mode === "open" ? mode : "deny",
-    allow: normalized
-  };
-}
-
-function denyAccessPolicy(): ChannelAccessPolicyConfiguration {
-  return {
-    privateChats: { mode: "deny", allow: [] },
-    groupChats: { mode: "deny", allow: [] },
-    groupParticipants: { mode: "deny", allow: [] }
-  };
-}
-
-function secretReference(value: unknown, path: string, issues: string[]): string | null {
-  if (typeof value !== "string") {
-    issues.push(`${path} must be a Secret Reference`);
-    return null;
-  }
-  if (value.startsWith("env:") && ENVIRONMENT_NAME.test(value.slice(4))) return value;
-  if (value.startsWith("file:") && isAbsolute(value.slice(5))) return value;
-  issues.push(`${path} must be an env:NAME or file:/absolute/path Secret Reference`);
-  return null;
+    return [`${path} ${issue.message}`];
+  });
 }
 
 function rejectDuplicateDeclaredChannelAccountIds(
@@ -692,52 +398,8 @@ function rejectDuplicateDeclaredChannelAccountIds(
   }
 }
 
-function rejectUnknownKeys(
-  value: Record<string, unknown>,
-  allowed: ReadonlySet<string>,
-  path: string,
-  issues: string[]
-): void {
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) issues.push(`${path}.${key} is not supported`);
-  }
-}
-
-function absolutePath(value: unknown, path: string, issues: string[]): string | null {
-  if (typeof value !== "string" || value.length === 0 || !isAbsolute(value)) {
-    issues.push(`${path} must be an absolute path`);
-    return null;
-  }
-  return normalize(value);
-}
-
-function optionalExecutablePath(value: unknown, path: string, issues: string[]): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.trim().length === 0 || !isAbsolute(value)) {
-    issues.push(`${path} must be an absolute path`);
-    return undefined;
-  }
-  return normalize(value);
-}
-
-function integerWithin(
-  value: unknown,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-  path: string,
-  issues: string[]
-): number {
-  if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
-    issues.push(`${path} must be an integer from ${minimum} through ${maximum}`);
-    return fallback;
-  }
-  return value;
-}
-
 function rejectOverlappingOwnedPaths(
-  profiles: Record<string, ProfileConfiguration>,
+  profiles: Readonly<Record<string, ProfileConfiguration>>,
   issues: string[]
 ): void {
   const fields = ["workspace", "codexHome", "stateDirectory"] as const;
@@ -758,7 +420,7 @@ function rejectOverlappingOwnedPaths(
 }
 
 function rejectOverlappingSecretFiles(
-  profiles: Record<string, ProfileConfiguration>,
+  profiles: Readonly<Record<string, ProfileConfiguration>>,
   issues: string[]
 ): void {
   const values = Object.values(profiles);

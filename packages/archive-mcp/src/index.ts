@@ -39,35 +39,17 @@ export interface ArchiveToolRecord {
   readonly matchedSignals?: readonly string[];
 }
 
-/**
- * Profile-local Archive tool module. It deliberately omits provider event and
- * participant identifiers from returned records while retaining structured
- * filters at the caller's explicit request.
- */
-export class ArchiveTools {
-  readonly #reader: ArchiveReader;
+export async function searchArchive(reader: ArchiveReader, input: ArchiveSearchToolInput) {
+  return { results: (await reader.searchHybrid(input)).map(projectRecord) };
+}
 
-  public constructor(reader: ArchiveReader) {
-    this.#reader = reader;
-  }
-
-  public async search(input: ArchiveSearchToolInput): Promise<{
-    readonly results: readonly ArchiveToolRecord[];
-  }> {
-    const results = await this.#reader.searchHybrid(input);
-    return { results: results.map(projectRecord) };
-  }
-
-  public async recent(input: ArchiveRecentToolInput): Promise<{
-    readonly results: readonly ArchiveToolRecord[];
-  }> {
-    const results = await this.#reader.recentMessages(input.conversationKey, input.limit);
-    return { results: results.map(projectRecord) };
-  }
+export async function recentArchive(reader: ArchiveReader, input: ArchiveRecentToolInput) {
+  return {
+    results: (await reader.recentMessages(input.conversationKey, input.limit)).map(projectRecord)
+  };
 }
 
 export function createArchiveMcpServer(reader: ArchiveReader): McpServer {
-  const tools = new ArchiveTools(reader);
   const server = new McpServer({ name: "codex-channel-bridge-archive", version: "0.1.0-dev" });
 
   server.registerTool(
@@ -87,7 +69,7 @@ export function createArchiveMcpServer(reader: ArchiveReader): McpServer {
         limit: z.number().int().min(1).max(100).optional()
       }
     },
-    async (input) => toolResult(await tools.search(input))
+    async (input) => toolResult(await searchArchive(reader, input))
   );
 
   server.registerTool(
@@ -99,7 +81,7 @@ export function createArchiveMcpServer(reader: ArchiveReader): McpServer {
         limit: z.number().int().min(1).max(500).optional()
       }
     },
-    async (input) => toolResult(await tools.recent(input))
+    async (input) => toolResult(await recentArchive(reader, input))
   );
   return server;
 }

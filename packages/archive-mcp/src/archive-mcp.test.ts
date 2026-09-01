@@ -7,7 +7,7 @@ import type {
   ArchivedChannelMessage
 } from "@codex-channel-bridge/profile-store";
 
-import { ArchiveTools, type ArchiveReader } from "./index.js";
+import { recentArchive, searchArchive, type ArchiveReader } from "./index.js";
 
 const record: ArchiveHybridSearchHit = {
   recordId: "record-1",
@@ -36,15 +36,14 @@ test("projects Profile-local Archive tools without returning raw provider identi
     recentMessages: async () => [record satisfies ArchivedChannelMessage],
     close: async () => undefined
   };
-  const tools = new ArchiveTools(reader);
-  const searched = await tools.search({ text: "archived", provider: "qq", limit: 5 });
+  const searched = await searchArchive(reader, { text: "archived", provider: "qq", limit: 5 });
   assert.deepEqual(query, { text: "archived", provider: "qq", limit: 5 });
   assert.equal(searched.results[0]?.text, "archived Channel text");
   assert.equal("providerIdentity" in searched.results[0]!, false);
   assert.equal("providerEventId" in searched.results[0]!, false);
   assert.deepEqual(searched.results[0]?.matchedSignals, ["exact", "recency"]);
 
-  const recent = await tools.recent({
+  const recent = await recentArchive(reader, {
     conversationKey: "qq:qq-primary:private:conversation",
     limit: 1
   });

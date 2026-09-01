@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "clean": "node scripts/clean.mjs",
+    "clean": "tsc -b --clean",
     "test": "npm run build && npm run test:unit && npm run test:platform-contract",
     "test:unit": "node --test packages/*/dist/*.test.js",
     "test:contract": "npm run build && node packages/codex-app-server/dist/protocol-contract.contract.js",

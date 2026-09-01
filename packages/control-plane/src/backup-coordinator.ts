@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, link, open, readFile, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 
 import {
@@ -10,6 +10,7 @@ import {
   type ProfileStoreCheckpoint
 } from "@codex-channel-bridge/profile-store";
 import type { Supervisor } from "@codex-channel-bridge/supervisor";
+import { writeOwnerOnlyExclusiveFile } from "./owner-only-output.js";
 
 const MAX_MANIFEST_BYTES = 128 * 1024;
 
@@ -119,7 +120,7 @@ export class BackupCoordinator {
         ...manifestBase,
         manifestDigest: digest(manifestBase)
       };
-      await writeOwnerOnlyExclusive(input.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      await writeOwnerOnlyExclusiveFile(input.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
       return {
         profileId: profile.id,
         holdToken: hold.token,
@@ -233,37 +234,6 @@ export async function readBackupManifest(path: string): Promise<ProfileBackupMan
     manifestDigest !== digest(base)
   ) throw new Error("Backup manifest is invalid or changed");
   return parsed;
-}
-
-async function writeOwnerOnlyExclusive(path: string, contents: string): Promise<void> {
-  const directory = dirname(path);
-  const parent = await lstat(directory);
-  if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("Backup manifest directory is invalid");
-  if (
-    process.platform !== "win32" &&
-    (parent.uid !== process.getuid?.() || (parent.mode & 0o077) !== 0)
-  ) throw new Error("Backup manifest directory must be owner-only");
-  const temporary = join(directory, `.${randomUUID()}.backup.tmp`);
-  const handle = await open(temporary, "wx", 0o600);
-  try {
-    await handle.writeFile(contents, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await link(temporary, path);
-    await unlink(temporary);
-    const directoryHandle = await open(directory, "r");
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
-  } catch (error) {
-    await unlink(temporary).catch(() => undefined);
-    throw error;
-  }
 }
 
 function digest(value: unknown): string {

@@ -114,9 +114,8 @@ export interface ChannelAdapter {
   start(onEvent: (event: ProviderInboundEvent) => Promise<void>): Promise<void>;
   sendText(delivery: ChannelTextDelivery): Promise<ChannelDeliveryReceipt>;
   stop(): Promise<void>;
-  /** In-tree adapters expose lifecycle changes through this channel-neutral edge. */
-  readiness?(): ChannelAdapterReadiness;
-  subscribeReadiness?(
+  readiness(): ChannelAdapterReadiness;
+  subscribeReadiness(
     listener: (readiness: ChannelAdapterReadiness) => void
   ): () => void;
 }

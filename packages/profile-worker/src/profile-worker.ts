@@ -133,12 +133,10 @@ export interface ProfileWorkerDependencies {
 }
 
 export interface ProfileStoreRuntime {
-  commitMessage(message: NormalizedChannelMessage): Promise<ArchiveCommitResult>;
-  commitObservation?(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
-  archiveAttachments?(messageRecordId: string): Promise<readonly ArchiveAttachmentRecord[]>;
-  settleArchiveAttachment?(input: SettleArchiveAttachmentInput): Promise<ArchiveAttachmentRecord>;
-  mirroredMediaBytes?(): Promise<number>;
-  abandonPendingArchiveAttachments?(input: AbandonArchiveAttachmentsInput): Promise<number>;
+  commitObservation(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
+  settleArchiveAttachment(input: SettleArchiveAttachmentInput): Promise<ArchiveAttachmentRecord>;
+  mirroredMediaBytes(): Promise<number>;
+  abandonPendingArchiveAttachments(input: AbandonArchiveAttachmentsInput): Promise<number>;
   getChannelTransportCheckpoint(
     channelAccountId: string
   ): Promise<ChannelTransportCheckpoint | undefined>;
@@ -157,7 +155,6 @@ export interface ProfileStoreRuntime {
     input: CommitCodexInputUncertaintyInput
   ): Promise<CodexInputUncertaintyCommitResult>;
   commitCodexTurnResult(input: CommitCodexTurnResultInput): Promise<CodexTurnResultCommitResult>;
-  commitLogicalResult(input: LogicalResultInput): Promise<LogicalResultCommitResult>;
   commitApprovalRequest(input: CommitApprovalRequestInput): Promise<ApprovalRequestCommitResult>;
   settleApprovalRequest(input: SettleApprovalRequestInput): Promise<ApprovalRequestRecord>;
   abandonPendingApprovalRequests(
@@ -277,33 +274,25 @@ export class ProfileWorker extends EventEmitter {
           profileId: this.#config.profileId,
           databasePath: join(this.#config.stateDirectory, "bridge.sqlite")
         });
-        await this.#store.abandonPendingArchiveAttachments?.({
+        await this.#store.abandonPendingArchiveAttachments({
           failureReason: "media_source_lost",
           settledAtMs: Date.now()
         });
-        const media = this.#store.mirroredMediaBytes && this.#store.settleArchiveAttachment
-          ? new MediaArchive(
-              {
-                mirroredMediaBytes: () => this.#store!.mirroredMediaBytes!(),
-                settleArchiveAttachment: (input) => this.#store!.settleArchiveAttachment!(input)
-              },
-              {
-                rootDirectory: join(this.#config.stateDirectory, "media"),
-                ...(this.#config.media
-                  ? {
-                      perAttachmentLimitBytes: this.#config.media.perAttachmentLimitBytes,
-                      profileQuotaBytes: this.#config.media.profileQuotaBytes
-                    }
-                  : {}),
-                ...(this.#config.diskSafetyFloorBytes === undefined
-                  ? {}
-                  : {
-                      storageSafetyFloorBytes: this.#config.diskSafetyFloorBytes,
-                      availableStorageBytes: () => this.#availableStorageBytes()
-                    })
+        const media = new MediaArchive(this.#store, {
+          rootDirectory: join(this.#config.stateDirectory, "media"),
+          ...(this.#config.media
+            ? {
+                perAttachmentLimitBytes: this.#config.media.perAttachmentLimitBytes,
+                profileQuotaBytes: this.#config.media.profileQuotaBytes
               }
-            )
-          : undefined;
+            : {}),
+          ...(this.#config.diskSafetyFloorBytes === undefined
+            ? {}
+            : {
+                storageSafetyFloorBytes: this.#config.diskSafetyFloorBytes,
+                availableStorageBytes: () => this.#availableStorageBytes()
+              })
+        });
         this.#inboundPipeline = new InboundPipeline(this.#store, media);
       } catch (error) {
         return this.#transition(
@@ -585,7 +574,7 @@ export class ProfileWorker extends EventEmitter {
         targetReference: channelAccountId,
         atMs: Date.now()
       });
-      this.#channelAdapterReadiness.set(channelAccountId, account.readiness?.() ?? "degraded");
+      this.#channelAdapterReadiness.set(channelAccountId, account.readiness());
       this.#refreshChannelAdapterHealth();
       return result;
     } catch (error) {
@@ -800,17 +789,15 @@ export class ProfileWorker extends EventEmitter {
       accounts.map(async (account) => {
         const adapter = await this.#createChannelAdapter(account, resolver);
         this.#channelAdapters.set(account.id, adapter);
-        this.#channelAdapterReadiness.set(account.id, adapter.readiness?.() ?? "starting");
-        if (adapter.subscribeReadiness) {
-          this.#channelAdapterUnsubscribe.set(
-            account.id,
-            adapter.subscribeReadiness((readiness) => {
-              if (this.#channelAdapters.get(account.id) !== adapter) return;
-              this.#channelAdapterReadiness.set(account.id, readiness);
-              this.#refreshChannelAdapterHealth();
-            })
-          );
-        }
+        this.#channelAdapterReadiness.set(account.id, adapter.readiness());
+        this.#channelAdapterUnsubscribe.set(
+          account.id,
+          adapter.subscribeReadiness((readiness) => {
+            if (this.#channelAdapters.get(account.id) !== adapter) return;
+            this.#channelAdapterReadiness.set(account.id, readiness);
+            this.#refreshChannelAdapterHealth();
+          })
+        );
         try {
           await withRejectingTimeout(
             adapter.start((event) =>
@@ -827,7 +814,7 @@ export class ProfileWorker extends EventEmitter {
             CHANNEL_ADAPTER_START_TIMEOUT_MS,
             "Channel Adapter startup timed out"
           );
-          this.#channelAdapterReadiness.set(account.id, adapter.readiness?.() ?? "ready");
+          this.#channelAdapterReadiness.set(account.id, adapter.readiness());
         } catch (error) {
           this.#detachChannelAdapter(account.id);
           await adapter.stop().catch(() => undefined);

@@ -1,9 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
-  mkdir,
-  open,
-  rename,
   rm,
   stat,
   unlink
@@ -12,6 +9,12 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import type { ProfileConfiguration } from "@codex-channel-bridge/config";
 import { ProfileStore, type ProfilePurgeState } from "@codex-channel-bridge/profile-store";
+import {
+  appendOwnerOnlyFile,
+  requireOwnerDirectory,
+  requireOwnerFile,
+  writeOwnerOnlyAtomicFile
+} from "./owner-only-output.js";
 
 export interface ProfilePurgePreview {
   readonly profileId: string;
@@ -40,7 +43,7 @@ export async function planProfilePurge(
   if (profile.enabled) throw new Error("Profile must be disabled before purge");
   const tombstonePath = profileTombstonePath(profile);
   if (await pathExists(tombstonePath)) throw new Error("Profile ID has already been purged");
-  await requireOwnerDirectory(profile.stateDirectory);
+  await requireOwnerDirectory(profile.stateDirectory, 0o700);
   const databasePath = join(profile.stateDirectory, "bridge.sqlite");
   const store = await ProfileStore.open({ profileId: profile.id, databasePath });
   let state: ProfilePurgeState;
@@ -99,11 +102,11 @@ export async function applyProfilePurge(input: ApplyProfilePurgeInput): Promise<
     workspacePreserved: true,
     codexHomePreserved: true
   };
-  await writeOwnerOnlyAtomic(
+  await writeOwnerOnlyAtomicFile(
     preview.tombstonePath,
     `${JSON.stringify({ ...tombstoneBase, result: "started", auditRecordId: startedAuditRecordId })}\n`
   );
-  await appendOwnerOnly(
+  await appendOwnerOnlyFile(
     join(dirname(preview.tombstonePath), "audit.jsonl"),
     `${JSON.stringify({
       auditRecordId: startedAuditRecordId,
@@ -119,11 +122,11 @@ export async function applyProfilePurge(input: ApplyProfilePurgeInput): Promise<
     if (externalSecret) await unlink(externalSecret);
     await rm(input.profile.stateDirectory, { recursive: true, force: false });
     const auditRecordId = randomUUID();
-    await writeOwnerOnlyAtomic(
+    await writeOwnerOnlyAtomicFile(
       preview.tombstonePath,
       `${JSON.stringify({ ...tombstoneBase, result: "succeeded", auditRecordId })}\n`
     );
-    await appendOwnerOnly(
+    await appendOwnerOnlyFile(
       join(dirname(preview.tombstonePath), "audit.jsonl"),
       `${JSON.stringify({
         auditRecordId,
@@ -137,11 +140,11 @@ export async function applyProfilePurge(input: ApplyProfilePurgeInput): Promise<
     return { ...preview, purgedAtMs: input.nowMs, auditRecordId };
   } catch (error) {
     const auditRecordId = randomUUID();
-    await writeOwnerOnlyAtomic(
+    await writeOwnerOnlyAtomicFile(
       preview.tombstonePath,
       `${JSON.stringify({ ...tombstoneBase, result: "failed", auditRecordId })}\n`
     );
-    await appendOwnerOnly(
+    await appendOwnerOnlyFile(
       join(dirname(preview.tombstonePath), "audit.jsonl"),
       `${JSON.stringify({
         auditRecordId,
@@ -158,66 +161,6 @@ export async function applyProfilePurge(input: ApplyProfilePurgeInput): Promise<
 
 function profileTombstonePath(profile: Readonly<ProfileConfiguration>): string {
   return join(dirname(profile.stateDirectory), ".bridge-profile-tombstones", `${profile.id}.json`);
-}
-
-async function writeOwnerOnlyAtomic(path: string, contents: string): Promise<void> {
-  const directory = dirname(path);
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  await requireOwnerDirectory(directory);
-  const temporary = join(directory, `.${randomUUID()}.tmp`);
-  const handle = await open(temporary, "wx", 0o600);
-  try {
-    await handle.writeFile(contents, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(temporary, path);
-  const directoryHandle = await open(directory, "r");
-  try {
-    await directoryHandle.sync();
-  } finally {
-    await directoryHandle.close();
-  }
-}
-
-async function appendOwnerOnly(path: string, contents: string): Promise<void> {
-  let handle;
-  try {
-    handle = await open(path, "ax", 0o600);
-  } catch (error) {
-    if (!isAlreadyExists(error)) throw error;
-    await requireOwnerFile(path);
-    handle = await open(path, "a");
-  }
-  try {
-    await handle.writeFile(contents, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
-function isAlreadyExists(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
-}
-
-async function requireOwnerDirectory(path: string): Promise<void> {
-  const value = await lstat(path);
-  if (!value.isDirectory() || value.isSymbolicLink()) throw new Error("Profile purge directory is insecure");
-  if (
-    process.platform !== "win32" &&
-    (value.uid !== process.getuid?.() || (value.mode & 0o777) !== 0o700)
-  ) throw new Error("Profile purge directory is not owner-only");
-}
-
-async function requireOwnerFile(path: string): Promise<void> {
-  const value = await lstat(path);
-  if (!value.isFile() || value.isSymbolicLink()) throw new Error("Profile purge secret file is insecure");
-  if (
-    process.platform !== "win32" &&
-    (value.uid !== process.getuid?.() || (value.mode & 0o777) !== 0o600)
-  ) throw new Error("Profile purge secret file is not owner-only");
 }
 
 function isWithin(parent: string, child: string): boolean {

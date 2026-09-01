@@ -308,7 +308,7 @@ test("returns the bounded recent window in chronological order", async (context)
   store.close();
 });
 
-test("indexes text with FTS5 and can constrain search to one conversation", async (context) => {
+test("hybrid search can constrain FTS results to one conversation", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   store.commitMessage(message({ providerEventId: "event-1", text: "launch native tests" }));
@@ -322,14 +322,18 @@ test("indexes text with FTS5 and can constrain search to one conversation", asyn
   );
   store.commitMessage(message({ providerEventId: "event-3", text: "unrelated message" }));
 
-  assert.equal(store.searchText({ text: "launch" }).length, 2);
-  const constrained = store.searchText({
+  assert.equal(
+    store.searchHybrid({ text: "launch" })
+      .filter((hit) => hit.matchedSignals.includes("lexical")).length,
+    2
+  );
+  const constrained = store.searchHybrid({
     text: "launch tests",
     conversationKey: "qq:group:conversation-2"
   });
   assert.equal(constrained.length, 1);
   assert.equal(constrained[0]?.text, "launch docker tests");
-  assert.equal(typeof constrained[0]?.rank, "number");
+  assert.ok(constrained[0]?.matchedSignals.includes("lexical"));
   store.close();
 });
 
