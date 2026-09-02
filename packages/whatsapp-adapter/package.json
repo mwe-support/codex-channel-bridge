@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/whatsapp-adapter",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0-dev",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/core": "0.1.0-rc.3",
+    "@codex-channel-bridge/core": "0.1.0-dev",
     "baileys": "7.0.0-rc14"
   },
   "devDependencies": {
