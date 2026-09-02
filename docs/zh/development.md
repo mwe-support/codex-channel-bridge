@@ -104,7 +104,7 @@ plan/confirm；Channel message 不能成为隐藏管理 API。
 ### 文档与发布完成条件
 
 同一改动必须同步更新中英文文档。准备 release 前，变更保留在
-[`CHANGELOG.md`](CHANGELOG.md) 的 `Unreleased` 下。不得手工分别修改 workspace
+仓库 `CHANGELOG.md` 的 `Unreleased` 下。不得手工分别修改 workspace
 版本；应执行 `npm run release:prepare` 并遵循 [`release.md`](release.md)。
 `npm run release:check` 是防止代码、lockfile 与文档版本漂移的快速门禁。
 

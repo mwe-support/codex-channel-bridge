@@ -1,0 +1,38 @@
+{
+  "version.label": {
+    "message": "下一版本",
+    "description": "The label for version current"
+  },
+  "sidebar.docs.category.Get started": {
+    "message": "入门",
+    "description": "The label for category 'Get started' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Use the Bridge": {
+    "message": "使用 Bridge",
+    "description": "The label for category 'Use the Bridge' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Channels": {
+    "message": "Channel 指南",
+    "description": "The label for category 'Channels' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Operations": {
+    "message": "运维",
+    "description": "The label for category 'Operations' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Developers and reference": {
+    "message": "开发与参考",
+    "description": "The label for category 'Developers and reference' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Architecture decisions": {
+    "message": "架构决策",
+    "description": "The label for category 'Architecture decisions' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Release and CI": {
+    "message": "发布与 CI",
+    "description": "The label for category 'Release and CI' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Acceptance evidence": {
+    "message": "验收证据",
+    "description": "The label for category 'Acceptance evidence' in sidebar 'docs'"
+  }
+}

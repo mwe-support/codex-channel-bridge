@@ -156,8 +156,8 @@ administration API.
 
 ### Documentation and release completion
 
-Update English and Chinese documents in the same change. Keep
-[`CHANGELOG.md`](../CHANGELOG.md) under `Unreleased` until a release is prepared.
+Update English and Chinese documents in the same change. Keep the repository
+`CHANGELOG.md` under `Unreleased` until a release is prepared.
 Do not edit workspace versions by hand; use `npm run release:prepare` and follow
 [`release.md`](release.md). `npm run release:check` is the fast guard against
 code, lockfile, and documentation version drift.

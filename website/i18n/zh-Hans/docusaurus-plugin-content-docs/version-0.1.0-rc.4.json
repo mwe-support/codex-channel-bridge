@@ -1,0 +1,26 @@
+{
+  "version.label": {
+    "message": "0.1.0-rc.4（候选发布）",
+    "description": "The label for version 0.1.0-rc.4"
+  },
+  "sidebar.docs.category.Get started": {
+    "message": "入门",
+    "description": "The label for category 'Get started' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Concepts": {
+    "message": "核心概念",
+    "description": "The label for category 'Concepts' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Channels": {
+    "message": "Channel 指南",
+    "description": "The label for category 'Channels' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Operations": {
+    "message": "运维",
+    "description": "The label for category 'Operations' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Developers and release": {
+    "message": "开发与发布",
+    "description": "The label for category 'Developers and release' in sidebar 'docs'"
+  }
+}

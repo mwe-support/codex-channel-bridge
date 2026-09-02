@@ -31,3 +31,12 @@ profiles/
 # Tool caches
 .cache/
 .pnpm-store/
+website/.docusaurus/
+website/build/
+website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/
+website/i18n/zh-Hans/docusaurus-plugin-content-docs/version-*/
+website/i18n/zh-Hans/docusaurus-theme-classic/footer.json
+website/static/version-manifest.json
+website/versioned_docs/
+website/versioned_sidebars/
+website/versions.json

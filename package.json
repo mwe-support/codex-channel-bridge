@@ -8,7 +8,8 @@
     "node": ">=22.0.0"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "website"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -22,6 +23,10 @@
     "test:platform-contract": "node --test packages/platform/platform.test.mjs",
     "test:qq-live": "npm run build && node scripts/qq-live-contract.mjs",
     "test:smoke": "npm run build && node scripts/smoke-turn.mjs",
+    "docs:start": "npm --workspace website run start",
+    "docs:build": "npm --workspace website run build",
+    "docs:test": "npm --workspace website test",
+    "docs:serve": "npm --workspace website run serve",
     "release:prepare": "node scripts/release.mjs prepare",
     "release:check": "node scripts/release.mjs check",
     "release:notes": "node scripts/release.mjs notes",

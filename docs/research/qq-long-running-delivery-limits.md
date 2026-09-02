@@ -336,7 +336,7 @@ Before implementing long-task UI:
 
 Relevant files:
 
-- [QQ adapter](../../packages/qq-adapter/src/qq-adapter.ts)
+- [QQ adapter](https://github.com/mwe-support/codex-channel-bridge/blob/main/packages/qq-adapter/src/qq-adapter.ts)
 - [QQ adapter baseline](../qq-adapter.md)
 - [delivery baseline](../delivery.md)
 

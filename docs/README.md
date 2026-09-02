@@ -1,49 +1,42 @@
-# Documentation
+---
+sidebar_position: 1
+slug: /
+title: Codex Channel Bridge
+---
 
-The documentation version is recorded in [`VERSION`](VERSION). Documentation
-on `main` describes the next release and may change. For an installed release, always use
-the documents stored in the matching `vMAJOR.MINOR.PATCH` Git tag or attached
-to that GitHub Release. Do not use `main` documentation to operate an older
-deployment.
+# Codex Channel Bridge
 
-## Operators
+Codex Channel Bridge is a self-hosted adapter between QQ or WhatsApp and Codex
+App Server. It lets an admitted Channel Conversation create, resume, steer, and
+receive results from a native Codex Thread inside one isolated Profile.
 
-Read these documents in order for a new deployment:
+The Bridge is **not an agent gateway**. Codex owns Threads, Turns, history,
+compaction, approval schemas, sandbox and permission policy, models, tools,
+skills, MCP, and authentication. The Bridge owns Channel access, provider-event
+normalization, conversation-to-Thread bindings, delivery correlation, durable
+outbox retries, and the Channel-only Message Archive.
 
-1. [`deployment.md`](deployment.md) selects a tagged release and installs the
-   foreground Supervisor on macOS, Linux, or Linux Docker.
-2. [`configuration.md`](configuration.md) defines Profiles, Workspaces,
-   Channel Accounts, Access Policies, Secret References, and validation.
-3. [`qq-adapter.md`](qq-adapter.md) or
-   [`whatsapp-adapter.md`](whatsapp-adapter.md) provisions the selected Channel.
-4. [`operations.md`](operations.md) covers health, doctor, backup holds, Audit
-   Records, Support Bundles, and circuit recovery.
-5. [`migrations.md`](migrations.md) is required before changing a Bridge version
-   that introduces a Profile database schema change.
+## Start here
 
-Delivery, admission, approval, and archive behavior are specified in
-[`delivery.md`](delivery.md), [`admission.md`](admission.md),
-[`approval-routing.md`](approval-routing.md), and
-[`message-archive.md`](message-archive.md).
+- [Quickstart](getting-started.md) — build and run the current prerelease.
+- [Architecture and ownership](architecture.md) — understand the process and
+  state boundaries before operating it.
+- [Configuration](configuration.md) — define Profiles, Workspaces, Channel
+  Accounts, Access Policies, and Secret References.
+- [Channel commands](commands.md) — use Thread, Turn, model, reasoning, and
+  approval projections from QQ or WhatsApp.
+- [Release status](release-status.md) — distinguish accepted behavior, exact-tag
+  revalidation gaps, and future work.
+- [Limits and roadmap](limits-and-roadmap.md) — see the intentionally deferred
+  features and platform boundaries.
 
-## Channel users and Profile administrators
+## Documentation versions
 
-- [`thread-binding.md`](thread-binding.md) explains conversation-to-Thread
-  binding and the `/new`, `/attach`, `/detach`, `/model`, and `/reasoning`
-  projections.
-- [`approval-routing.md`](approval-routing.md) explains who can answer a Codex
-  Approval Request and how stale requests fail closed.
-- The QQ and WhatsApp adapter guides state the exact private-chat, group-chat,
-  reply, mention, media, and authentication boundaries of each provider.
+`Next` describes the moving `main` branch and is not a release. The version
+selector also exposes immutable prerelease documentation generated from the
+matching Git tag. There is no `latest` route until a stable release exists.
+The build manifest at `/version-manifest.json` records the source commit, tag,
+product version, documentation version, release date, and archive checksum.
 
-## Contributors and downstream developers
-
-Start with [`../CONTEXT.md`](../CONTEXT.md), then read
-[`development.md`](development.md) for package ownership, local setup, contract
-tests, extension paths, and completion gates. Architecture decisions are in
-[`adr/`](adr/); research snapshots are evidence, not runtime contracts.
-
-Use [`release.md`](release.md) for version changes, changelog rules, release
-candidates, tags, immutable artifacts, and documentation versioning. Every
-English document under `docs/` has a semantically equivalent Chinese document
-at the same path below [`zh/`](zh/).
+Every public English page has a semantically equivalent page at the same path
+under `docs/zh`. Use the language selector to switch between them.

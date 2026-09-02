@@ -291,7 +291,7 @@ Raw-send Path，但 Response 丢失后的 Provider Reconciliation 仍不可用�
 
 当前相关文件：
 
-- [QQ Adapter](../../../packages/qq-adapter/src/qq-adapter.ts)
+- [QQ Adapter](https://github.com/mwe-support/codex-channel-bridge/blob/main/packages/qq-adapter/src/qq-adapter.ts)
 - [QQ Adapter 基线](../qq-adapter.md)
 - [投递基线](../delivery.md)
 

@@ -1,0 +1,31 @@
+{
+  "docs": [
+    "README",
+    {
+      "type": "category",
+      "label": "Get started",
+      "items": ["deployment", "configuration"]
+    },
+    {
+      "type": "category",
+      "label": "Concepts",
+      "items": ["thread-binding", "admission", "delivery", "approval-routing", "message-archive"]
+    },
+    {
+      "type": "category",
+      "label": "Channels",
+      "items": ["qq-adapter", "whatsapp-adapter"]
+    },
+    {
+      "type": "category",
+      "label": "Operations",
+      "items": ["operations", "migrations"]
+    },
+    {
+      "type": "category",
+      "label": "Developers and release",
+      "collapsed": true,
+      "items": ["development", "release"]
+    }
+  ]
+}

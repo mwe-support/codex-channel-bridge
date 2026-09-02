@@ -1,0 +1,21 @@
+{
+  "name": "codex-channel-bridge-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "sync:docs": "node scripts/sync-docs.mjs",
+    "test": "node --test scripts/sync-docs.test.mjs",
+    "start": "npm run sync:docs && docusaurus start",
+    "build": "npm test && npm run sync:docs && docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "devDependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@mdx-js/react": "3.1.1",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}

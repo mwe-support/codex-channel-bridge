@@ -1,0 +1,11 @@
+[
+  {
+    "version": "0.1.0-rc.4",
+    "tag": "v0.1.0-rc.4",
+    "commit": "bf3b583f1c877cf80ff3fb77c104653eb4df5d70",
+    "date": "2026-09-02",
+    "status": "prerelease",
+    "releaseUrl": "https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.1.0-rc.4",
+    "archiveSha256": "c99afaed120148b5ca06da13e62de672911d7033049cd6e5d4352154c145cf70"
+  }
+]
