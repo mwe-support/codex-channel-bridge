@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/qq-adapter",
-  "version": "0.1.0-rc.4",
+  "version": "0.1.0-dev",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/core": "0.1.0-rc.4",
+    "@codex-channel-bridge/core": "0.1.0-dev",
     "@tencent-connect/qqbot-nodejs": "1.0.4"
   }
 }
