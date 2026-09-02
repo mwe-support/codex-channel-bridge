@@ -1,8 +1,10 @@
 # Stage 8 release-candidate acceptance
 
 - Date: 2026-09-01
-- Candidate: Stage 8 working tree based on `1bc2e0e` plus the WhatsApp
-  acceptance fixes
+- Candidate baseline: `8686040` (`fix: complete WhatsApp live acceptance`)
+- Release candidate: `v0.1.0-rc.1`; subsequent runtime refactor `d604739` was
+  reaccepted through real macOS QQ before the release-only workflow and
+  documentation changes
 - Tested Codex CLI: `0.149.1`
 
 ## Native macOS and real QQ
@@ -26,6 +28,10 @@
   repeated real message created a new native Thread and displayed the exact
   `STAGE8-NEW-THREAD-READY` marker.
 - launchd stop completed the common bounded drain and exited successfully.
+- After the architecture simplification, a real QQ-to-Codex round trip returned
+  the exact `PONYTAIL-QQ-READY` marker on 2026-09-01. This reaccepted the
+  runnable macOS QQ path at `d604739` without retaining message content or raw
+  provider identifiers in the repository.
 
 ## Native macOS and real WhatsApp
 
@@ -60,12 +66,28 @@
   reached Supervisor `live` with its Profile `ready`.
 - Docker SIGTERM completed with exit code 0 and without an OOM condition.
 
+## v0.1.0-rc.1 deterministic release gates
+
+- On 2026-09-02, `release:check --tag=v0.1.0-rc.1` passed with all workspace,
+  lockfile, documentation, changelog, and runtime version mirrors aligned.
+- The local suite passed 219 unit tests, 2 release-tool tests, and 2 platform
+  contract tests.
+- The host macOS Codex protocol contract passed against Codex CLI `0.149.1`
+  and schema SHA-256
+  `9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9`.
+- All 4 owner-only Unix control-plane contracts and the Supervisor worker
+  process contract passed on the host macOS environment. Their sandbox-only
+  `EPERM`/closed-stdout failures were not treated as host acceptance results.
+
 ## Remaining release boundaries
 
 - No native Windows host is designated; Windows service and named-pipe ACL
   acceptance remain unverified.
 - `/attach` is covered by native-runtime and binding tests but was not exercised
   through the real QQ client in this run.
+- Real WhatsApp, native Linux, and Linux Docker acceptance above used the Stage
+  8 baseline. Their exact `v0.1.0-rc.1` post-refactor revalidation is a release
+  candidate follow-up and is not claimed by this record.
 
 No credential, Secret Reference, raw provider identity, provider message ID,
 Channel body, Codex output, reasoning, or sensitive local path is retained in

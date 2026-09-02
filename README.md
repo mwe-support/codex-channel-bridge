@@ -39,11 +39,11 @@ mirroring, and explicit Archive/Profile purge are now implemented.
 Host-local operations now include read-only diagnostics, durable backup holds,
 restore validation, body-free Audit query/export/retention, Support Bundles,
 disk-pressure fail-closed behavior, and manual Codex circuit recovery. Native
-macOS launchd, native Linux systemd, and Linux Docker packaging have passed
-their Stage 8 release-candidate acceptance, including real QQ command and
-Thread-binding interaction on macOS. Native Windows verification and real
-WhatsApp account acceptance remain incomplete, so the Bridge is not ready for
-a stable release.
+macOS launchd, native Linux systemd, and Linux Docker packaging passed their
+Stage 8 release-candidate acceptance. That baseline includes real QQ and
+WhatsApp private/group interaction on macOS. Native Windows verification,
+real-client `/attach` acceptance, and exact-tag post-refactor revalidation are
+still incomplete, so the Bridge is available only as a prerelease candidate.
 
 ## First-release direction
 

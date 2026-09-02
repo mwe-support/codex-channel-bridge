@@ -1,7 +1,9 @@
 # 阶段 8 候选发布版验收
 
 - 日期：2026-09-01
-- 候选版本：基于 `1bc2e0e` 并加入 WhatsApp 验收修复的阶段 8 工作树
+- 候选基线：`8686040`（`fix: complete WhatsApp live acceptance`）
+- 候选发布版：`v0.1.0-rc.1`；后续 Runtime 重构 `d604739` 已通过真实 macOS
+  QQ 复验，之后只有 Release Workflow 与文档变更
 - 受测 Codex CLI：`0.149.1`
 
 ## 原生 macOS 与真实 QQ
@@ -22,6 +24,9 @@
   Correlation Foreign Key。重复真实消息创建新的原生 Thread，并显示准确的
   `STAGE8-NEW-THREAD-READY` 标记。
 - launchd Stop 完成统一的有界 Drain，并成功退出。
+- 架构精简后，真实 QQ-to-Codex 往返于 2026-09-01 返回准确的
+  `PONYTAIL-QQ-READY` 标记。这对 `d604739` 的可运行 macOS QQ 路径完成
+  复验，仓库中未保留消息正文或 Raw Provider Identifier。
 
 ## 原生 macOS 与真实 WhatsApp
 
@@ -55,12 +60,28 @@
   达到 `live`，Profile 达到 `ready`。
 - Docker SIGTERM 后退出码为 0，且未发生 OOM。
 
+## v0.1.0-rc.1 确定性发布门禁
+
+- 2026-09-02，`release:check --tag=v0.1.0-rc.1` 通过；全部 Workspace、
+  Lockfile、文档、Changelog 与 Runtime Version Mirror 保持一致。
+- 本地测试通过 219 项 Unit Test、2 项 Release-tool Test 与 2 项 Platform
+  Contract Test。
+- 宿主 macOS Codex Protocol Contract 使用 Codex CLI `0.149.1` 通过，Schema
+  SHA-256 为
+  `9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9`。
+- 4 项 Owner-only Unix Control-plane Contract 与 Supervisor Worker Process
+  Contract 均在宿主 macOS 环境通过。沙箱内的 `EPERM`/stdout closed 只作为
+  环境限制，不作为宿主验收结果。
+
 ## 剩余发布边界
 
 - 尚未指定原生 Windows Host；Windows Service 与 Named-pipe ACL 验收仍未
   完成。
 - `/attach` 已覆盖 Native-runtime 与 Binding Test，但本次未通过真实 QQ
   客户端执行。
+- 上述真实 WhatsApp、原生 Linux 与 Linux Docker 验收使用 Stage 8
+  Baseline；本记录不声称已经完成针对 `v0.1.0-rc.1` 准确代码树的重构后
+  复验，该工作属于候选发布版后续验收。
 
 本 Evidence 不保留 Credential、Secret Reference、Raw Provider Identity、
 Provider Message ID、Channel Body、Codex Output、Reasoning 或敏感本地路径。

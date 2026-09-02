@@ -6,7 +6,42 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 
 ## [Unreleased]
 
+## [0.1.0-rc.1] - 2026-09-02
+
 ### Added
 
+- A standalone multi-Profile Supervisor whose Profile workers own independent
+  Codex App Server children, WAL-mode SQLite state, QQ adapters, and WhatsApp
+  adapters.
+- Durable inbound deduplication, Access Policy and admission control, native
+  Thread start and steer, Thread Bindings, Logical Results, transactional
+  Outbox delivery, provider receipts, and restart reconciliation.
+- Host-local administration for configuration, migration, Profile lifecycle,
+  WhatsApp pairing and revocation, diagnostics, backup coordination, Audit
+  Records, Support Bundles, Archive retrieval and purge, and circuit recovery.
+- Native launchd and systemd service packaging plus a non-root Linux Docker
+  image, with Stage 8 acceptance on macOS, Linux, and Linux Docker.
+- Native model and reasoning selection, Channel Thread commands, correlated
+  Codex Approval Request transport, and real QQ and WhatsApp private/group
+  interaction acceptance on the Stage 8 runtime baseline.
 - A repository-wide release version gate, annotated Git tag workflow, immutable
   GitHub Release archive, checksum, and version-matched documentation policy.
+- Fixed-commit documentation-stack research comparing Hermes Agent and
+  OpenClaw, maintained in English and Chinese.
+
+### Changed
+
+- Simplified the Bridge implementation by removing speculative wrappers and
+  consolidating shared configuration, storage, control-plane, and worker paths.
+
+### Release-candidate boundaries
+
+- This is a prerelease for acceptance of the exact tagged tree, not a stable
+  production release.
+- Native Windows service and named-pipe ACL acceptance remain unverified.
+- `/attach` has contract coverage but has not been exercised through the real
+  QQ client.
+- Real WhatsApp, native Linux, and Linux Docker passed on the Stage 8 baseline;
+  their post-refactor revalidation against this exact tag remains pending.
+- The release contains version-matched Markdown documentation but does not yet
+  publish the planned versioned Docusaurus site.
