@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/codex-app-server",
-  "version": "0.1.0-dev",
+  "version": "0.1.0-rc.2",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,6 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/core": "0.1.0-dev"
+    "@codex-channel-bridge/core": "0.1.0-rc.2"
   }
 }

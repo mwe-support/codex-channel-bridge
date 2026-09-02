@@ -2,7 +2,7 @@
 
 - 日期：2026-09-01
 - 候选基线：`8686040`（`fix: complete WhatsApp live acceptance`）
-- 候选发布版：`v0.1.0-rc.1`；后续 Runtime 重构 `d604739` 已通过真实 macOS
+- 候选发布版：`v0.1.0-rc.2`；后续 Runtime 重构 `d604739` 已通过真实 macOS
   QQ 复验，之后只有 Release Workflow 与文档变更
 - 受测 Codex CLI：`0.149.1`
 
@@ -60,9 +60,9 @@
   达到 `live`，Profile 达到 `ready`。
 - Docker SIGTERM 后退出码为 0，且未发生 OOM。
 
-## v0.1.0-rc.1 确定性发布门禁
+## v0.1.0 候选版确定性发布门禁
 
-- 2026-09-02，`release:check --tag=v0.1.0-rc.1` 通过；全部 Workspace、
+- 2026-09-02，`release:check --tag=v0.1.0-rc.2` 在本机通过；全部 Workspace、
   Lockfile、文档、Changelog 与 Runtime Version Mirror 保持一致。
 - 本地测试通过 219 项 Unit Test、2 项 Release-tool Test 与 2 项 Platform
   Contract Test。
@@ -72,6 +72,10 @@
 - 4 项 Owner-only Unix Control-plane Contract 与 Supervisor Worker Process
   Contract 均在宿主 macOS 环境通过。沙箱内的 `EPERM`/stdout closed 只作为
   环境限制，不作为宿主验收结果。
+- 不可变 `v0.1.0-rc.1` Tag 因测试 Helper 只允许 20 个 Event-loop Turn，暴露
+  两项仅 CI 可见的 Supervisor Restart-test Timeout，且没有发布 GitHub
+  Release。`v0.1.0-rc.2` 只把该共用等待改成 2 秒实际时间上限；Targeted Suite
+  单次通过，并在本机 32 路进程并发下重复 128 次全部通过。
 
 ## 剩余发布边界
 
@@ -80,7 +84,7 @@
 - `/attach` 已覆盖 Native-runtime 与 Binding Test，但本次未通过真实 QQ
   客户端执行。
 - 上述真实 WhatsApp、原生 Linux 与 Linux Docker 验收使用 Stage 8
-  Baseline；本记录不声称已经完成针对 `v0.1.0-rc.1` 准确代码树的重构后
+  Baseline；本记录不声称已经完成针对 `v0.1.0-rc.2` 准确代码树的重构后
   复验，该工作属于候选发布版后续验收。
 
 本 Evidence 不保留 Credential、Secret Reference、Raw Provider Identity、

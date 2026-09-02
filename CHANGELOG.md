@@ -6,6 +6,21 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 
 ## [Unreleased]
 
+## [0.1.0-rc.2] - 2026-09-02
+
+### Fixed
+
+- Made the Supervisor restart tests wait against a bounded elapsed-time budget
+  instead of a fixed number of event-loop turns. This removes CI-only failures
+  when asynchronous filesystem work completes after a few milliseconds; it
+  does not change production restart behavior.
+
+### Included
+
+- Includes all Bridge capabilities and release-candidate boundaries documented
+  under `0.1.0-rc.1`. The immutable `v0.1.0-rc.1` tag is retained as the failed
+  CI candidate and did not produce a GitHub Release.
+
 ## [0.1.0-rc.1] - 2026-09-02
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "codex-channel-bridge",
-  "version": "0.1.0-dev",
+  "version": "0.1.0-rc.2",
   "private": true,
   "type": "module",
   "packageManager": "npm@10.9.8",

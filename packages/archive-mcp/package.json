@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/archive-mcp",
-  "version": "0.1.0-dev",
+  "version": "0.1.0-rc.2",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,8 +12,8 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/core": "0.1.0-dev",
-    "@codex-channel-bridge/profile-store": "0.1.0-dev",
+    "@codex-channel-bridge/core": "0.1.0-rc.2",
+    "@codex-channel-bridge/profile-store": "0.1.0-rc.2",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.5.4"
   }
