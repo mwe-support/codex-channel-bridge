@@ -156,6 +156,8 @@ npm run test:supervisor-contract
 ```
 
 该测试启动一个健康 Profile 和一个刻意设为 Unavailable 的 Profile。它验证 Supervisor 保持 Live、健康 Worker 达到 `ready`、不可用 Sibling 失败关闭，并且两个 Worker Process 都会停止且不创建 Turn。
+它需要 Administrator 提供 Codex CLI，属于宿主发布门禁而非通用 CI Runner
+测试；CI 不得为运行该测试而安装 Codex。
 
 运行真实 Unix Control-plane Contract Test：
 

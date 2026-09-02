@@ -6,6 +6,21 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 
 ## [Unreleased]
 
+## [0.1.0-rc.3] - 2026-09-02
+
+### Fixed
+
+- Kept the real Supervisor process contract in the host release gates while
+  removing it from generic GitHub runners, which do not have the required
+  administrator-supplied Codex CLI and must not install one.
+
+### Included
+
+- Includes all Bridge capabilities and release-candidate boundaries documented
+  under `0.1.0-rc.1` and the bounded test wait from `0.1.0-rc.2`. Both earlier
+  immutable tags are retained as failed CI candidates and did not produce
+  GitHub Releases.
+
 ## [0.1.0-rc.2] - 2026-09-02
 
 ### Fixed

@@ -225,7 +225,8 @@ npm run test:supervisor-contract
 This starts one healthy Profile and one deliberately unavailable Profile. It
 verifies that the Supervisor remains live, the healthy Worker reaches `ready`,
 the unavailable sibling fails closed, and both Worker processes stop without
-creating a Turn.
+creating a Turn. It requires an administrator-supplied Codex CLI and is a host
+release gate, not a generic CI-runner test; CI must not install Codex to run it.
 
 Run the real Unix control-plane contract test:
 

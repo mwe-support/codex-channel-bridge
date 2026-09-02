@@ -2,7 +2,7 @@
 
 - Date: 2026-09-01
 - Candidate baseline: `8686040` (`fix: complete WhatsApp live acceptance`)
-- Release candidate: `v0.1.0-rc.2`; subsequent runtime refactor `d604739` was
+- Release candidate: `v0.1.0-rc.3`; subsequent runtime refactor `d604739` was
   reaccepted through real macOS QQ before the release-only workflow and
   documentation changes
 - Tested Codex CLI: `0.149.1`
@@ -68,7 +68,7 @@
 
 ## v0.1.0 release-candidate deterministic gates
 
-- On 2026-09-02, `release:check --tag=v0.1.0-rc.2` passed locally with all workspace,
+- On 2026-09-02, `release:check --tag=v0.1.0-rc.3` passed locally with all workspace,
   lockfile, documentation, changelog, and runtime version mirrors aligned.
 - The local suite passed 219 unit tests, 2 release-tool tests, and 2 platform
   contract tests.
@@ -83,6 +83,11 @@
   publish a GitHub Release. `v0.1.0-rc.2` changes only that shared test wait to
   a two-second elapsed-time bound; the targeted suite passed once and then 128
   times under 32-way local process concurrency.
+- The immutable `v0.1.0-rc.2` tag passed the deterministic test suite on GitHub
+  but its generic runner correctly reported `codex_not_found` when the host-only
+  Supervisor process contract attempted to start a healthy Profile. It did not
+  publish a GitHub Release. `v0.1.0-rc.3` keeps that contract in the documented
+  host gates and removes only the invalid generic-runner invocation.
 
 ## Remaining release boundaries
 
@@ -91,7 +96,7 @@
 - `/attach` is covered by native-runtime and binding tests but was not exercised
   through the real QQ client in this run.
 - Real WhatsApp, native Linux, and Linux Docker acceptance above used the Stage
-  8 baseline. Their exact `v0.1.0-rc.2` post-refactor revalidation is a release
+  8 baseline. Their exact `v0.1.0-rc.3` post-refactor revalidation is a release
   candidate follow-up and is not claimed by this record.
 
 No credential, Secret Reference, raw provider identity, provider message ID,

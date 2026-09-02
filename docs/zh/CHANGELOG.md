@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.3] - 2026-09-02
+
+### 修复
+
+- 真实 Supervisor Process Contract 继续作为宿主发布门禁，但不再由缺少
+  Administrator-supplied Codex CLI、且不得自行安装 Codex 的通用 GitHub
+  Runner 执行。
+
+### 包含内容
+
+- 包含 `0.1.0-rc.1` 下记录的全部 Bridge 能力与候选发布版边界，以及
+  `0.1.0-rc.2` 的有界测试等待修复。前两个不可变 Tag 均作为 CI 失败候选
+  保留，且没有生成 GitHub Release。
+
 ## [0.1.0-rc.2] - 2026-09-02
 
 ### 修复

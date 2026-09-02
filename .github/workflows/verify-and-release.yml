@@ -27,7 +27,6 @@ jobs:
         run: npm run release:check
       - run: npm test
       - run: npm run test:control-contract
-      - run: npm run test:supervisor-contract
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
