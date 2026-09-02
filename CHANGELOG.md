@@ -6,6 +6,21 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 
 ## [Unreleased]
 
+## [0.1.0-rc.4] - 2026-09-02
+
+### Fixed
+
+- Checked out the explicit Git tag ref in the release job so
+  `actions/checkout` preserves the annotated tag object instead of replacing
+  the local ref with the event's peeled commit before verification.
+
+### Included
+
+- Includes all Bridge capabilities and release-candidate boundaries documented
+  under `0.1.0-rc.1` and the CI corrections from `0.1.0-rc.2` and
+  `0.1.0-rc.3`. All earlier immutable tags are retained as failed CI
+  candidates and did not produce GitHub Releases.
+
 ## [0.1.0-rc.3] - 2026-09-02
 
 ### Fixed

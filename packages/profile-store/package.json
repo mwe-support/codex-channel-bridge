@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/profile-store",
-  "version": "0.1.0-dev",
+  "version": "0.1.0-rc.4",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/core": "0.1.0-dev",
+    "@codex-channel-bridge/core": "0.1.0-rc.4",
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {

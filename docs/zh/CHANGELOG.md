@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.4] - 2026-09-02
+
+### 修复
+
+- Release Job 显式 Checkout Git Tag Ref，避免 `actions/checkout` 在验证前
+  使用事件的 Peeled Commit 替换本地 Ref，从而保留附注 Tag Object。
+
+### 包含内容
+
+- 包含 `0.1.0-rc.1` 下记录的全部 Bridge 能力与候选发布版边界，以及
+  `0.1.0-rc.2`、`0.1.0-rc.3` 的 CI 修复。此前所有不可变 Tag 均作为 CI
+  失败候选保留，且没有生成 GitHub Release。
+
 ## [0.1.0-rc.3] - 2026-09-02
 
 ### 修复
