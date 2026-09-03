@@ -23,6 +23,8 @@ Durable Outbox 重试，以及仅属于 Channel 的 Message Archive。
   Policy 和 Secret Reference。
 - [Channel 命令](commands.md)：从 QQ 或 WhatsApp 投射 Thread、Turn、模型、
   推理强度和审批操作。
+- [本地 Dashboard](dashboard.md)：查看运行版本、Health、Channel Connectivity，
+  并执行需确认的设置变更。
 - [发布状态](release-status.md)：区分已验收能力、精确 tag 复验缺口与未来工作。
 - [限制与路线图](limits-and-roadmap.md)：查看刻意延期的能力和平台边界。
 

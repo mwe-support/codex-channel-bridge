@@ -27,10 +27,17 @@ export type ProfileReasonCode =
 
 export type CodexVerification = "tested" | "unverified";
 
+export interface ChannelAccountHealth {
+  readonly channelAccountId: string;
+  readonly provider: "qq" | "whatsapp";
+  readonly readiness: "stopped" | "starting" | "ready" | "degraded";
+}
+
 export interface ProfileHealth {
   readonly profileId: string;
   readonly readiness: ProfileReadiness;
   readonly reason: ProfileReasonCode;
   readonly codexVersion?: string;
   readonly codexVerification?: CodexVerification;
+  readonly channelAccounts?: readonly ChannelAccountHealth[];
 }

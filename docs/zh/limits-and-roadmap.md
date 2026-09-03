@@ -8,7 +8,7 @@ title: 限制与路线图
 
 - 共享 OS User 的 Profile 只提供应用层隔离，不是恶意进程隔离。需要更强隔离时，
   应使用独立 OS User 或 Container。
-- 管理权威状态仍只通过 Host-local Structured IPC 提供。规划中的 Dashboard
+- 管理权威状态仍只通过 Host-local Structured IPC 提供。Dashboard
   只是它的本地适配器；远程 App Server Attach 和远程管理仍不受支持。
 - 投递目标是 Effectively-once。QQ 和 WhatsApp 没有通用 Idempotent Send 契约，
   因此 Provider 发送结果不明确时存在很小的重复窗口。
@@ -23,11 +23,12 @@ title: 限制与路线图
   Checksum，且绝不安装或升级 Codex。
 - 提供 `bridge setup quick` 与 `bridge setup full`；两者都生成现有校验与应用
   流程接受的 Canonical Configuration。
+- 提供仅绑定 Loopback 的 Dashboard，通过现有 Control Plane 查看运行中的 Bridge
+  版本、Health、Channel Connectivity、有界且不含内容的 Event，并执行需确认的
+  Configuration Plan/Apply 操作。
 
 ## 未来工作
 
-- 提供仅绑定 Loopback 的 Dashboard，通过现有 Control Plane 查看 Health、
-  Channel Connectivity、不含内容的 Operational Event，并在确认后修改设置。
 - 在新指定且已连接的真实 Windows Host 上完成原生 Windows Service、Installer、
   Setup 与 Named-pipe ACL 验收。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。

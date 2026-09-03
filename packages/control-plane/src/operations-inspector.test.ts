@@ -40,6 +40,7 @@ profiles:
       statusReads += 1;
       return {
         liveness: "live",
+        bridgeVersion: "0.1.0-dev",
         configurationRevision: candidate.revision,
         profiles: [{ profileId: "alpha", readiness: "stopped", reason: null }]
       };
@@ -84,6 +85,7 @@ profiles:
   const result = await new OperationsInspector({
     status: () => ({
       liveness: "live",
+      bridgeVersion: "0.1.0-dev",
       configurationRevision: candidate.revision,
       profiles: [{ profileId: "alpha", readiness: "unavailable", reason: "profile_store_unavailable" }]
     }),

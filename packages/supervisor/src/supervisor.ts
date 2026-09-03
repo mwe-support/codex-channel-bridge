@@ -7,7 +7,7 @@ import type {
   ConfigurationCandidate,
   ProfileConfiguration
 } from "@codex-channel-bridge/config";
-import type { ProfileHealth } from "@codex-channel-bridge/core";
+import { BRIDGE_VERSION, type ProfileHealth } from "@codex-channel-bridge/core";
 import type {
   CodexCircuitResetResult,
   WhatsAppChannelAccountAction,
@@ -38,6 +38,7 @@ export interface ConfigurationApplyResult {
 
 export interface SupervisorStatus {
   readonly liveness: SupervisorLiveness;
+  readonly bridgeVersion: string;
   readonly configurationRevision: string | null;
   readonly profiles: readonly ProfileHealth[];
 }
@@ -113,6 +114,7 @@ export class Supervisor extends EventEmitter {
   public status(): SupervisorStatus {
     return {
       liveness: this.#liveness,
+      bridgeVersion: BRIDGE_VERSION,
       configurationRevision: this.#candidate?.revision ?? null,
       profiles: [...this.#health.values()].sort((left, right) =>
         left.profileId.localeCompare(right.profileId)

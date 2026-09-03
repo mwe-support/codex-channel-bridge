@@ -1495,10 +1495,19 @@ export class ProfileWorker extends EventEmitter {
     reason: ProfileReasonCode,
     probe?: ProtocolProbeResult
   ): ProfileHealth {
+    const channelAccounts = Object.values(this.#config.channelAccounts ?? {})
+      .filter((account) => account.enabled)
+      .map((account) => ({
+        channelAccountId: account.id,
+        provider: account.provider,
+        readiness: this.#channelAdapterReadiness.get(account.id) ?? "stopped"
+      }))
+      .sort((left, right) => left.channelAccountId.localeCompare(right.channelAccountId));
     this.#health = {
       profileId: this.#config.profileId,
       readiness,
       reason,
+      ...(channelAccounts.length > 0 ? { channelAccounts } : {}),
       ...(probe
         ? { codexVersion: probe.cliVersion, codexVerification: probe.verification }
         : this.#health.codexVersion

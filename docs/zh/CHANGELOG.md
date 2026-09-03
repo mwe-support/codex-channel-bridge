@@ -12,6 +12,9 @@
   版本，保留旧版本并原子切换 `bridge` 启动器，同时绝不安装或升级 Codex。
 - 增加交互式 `bridge setup quick` 与 `bridge setup full`：预览并原子写入规范
   配置，同时不收集 Secret Value。
+- 增加仅绑定 Loopback 的本地 Dashboard，用于查看运行中的 Bridge 版本、Host 与
+  Profile Health、Channel Connectivity、有界且不含内容的 Event，并复用现有需
+  确认的 Configuration Plan/Apply 流程。
 
 ## [0.1.0-rc.4] - 2026-09-02
 

@@ -635,7 +635,10 @@ test("keeps adapters archiving while Codex is unavailable without creating an ou
   assert.deepEqual(await worker.start(), {
     profileId: "profile-a",
     readiness: "unavailable",
-    reason: "codex_start_failed"
+    reason: "codex_start_failed",
+    channelAccounts: [
+      { channelAccountId: "qq-primary", provider: "qq", readiness: "ready" }
+    ]
   });
   assert.equal(adapter.started, true);
   const ingress = once(worker, "channelIngress");
@@ -1260,6 +1263,10 @@ test("keeps Codex and sibling adapters available when one QQ adapter fails", asy
   const health = await worker.start();
   assert.equal(health.readiness, "degraded");
   assert.equal(health.reason, "channel_adapter_unavailable");
+  assert.deepEqual(health.channelAccounts, [
+    { channelAccountId: "qq-failed", provider: "qq", readiness: "stopped" },
+    { channelAccountId: "qq-healthy", provider: "qq", readiness: "ready" }
+  ]);
   assert.equal(healthy.started, true);
   assert.equal((await worker.runTurn("still available")).status, "completed");
   await worker.stop();

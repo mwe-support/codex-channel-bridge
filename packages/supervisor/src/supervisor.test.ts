@@ -9,7 +9,7 @@ import {
   type ProfileConfiguration,
   type SupervisorConfiguration
 } from "@codex-channel-bridge/config";
-import type { ProfileHealth } from "@codex-channel-bridge/core";
+import { BRIDGE_VERSION, type ProfileHealth } from "@codex-channel-bridge/core";
 
 import type { ProfileRuntime, ProfileRuntimeFactory } from "./profile-runtime.js";
 import {
@@ -113,6 +113,7 @@ test("keeps Supervisor live when one Profile is unavailable", async () => {
   const supervisor = new Supervisor(factory);
   const result = await supervisor.apply(candidate());
   assert.equal(supervisor.status().liveness, "live");
+  assert.equal(supervisor.status().bridgeVersion, BRIDGE_VERSION);
   assert.deepEqual(
     result.profiles.map((profile) => [profile.profileId, profile.readiness]),
     [

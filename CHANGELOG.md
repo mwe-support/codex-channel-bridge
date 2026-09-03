@@ -13,6 +13,9 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
   switch the `bridge` launcher without installing or upgrading Codex.
 - Interactive `bridge setup quick` and `bridge setup full` commands that preview
   and atomically write the canonical configuration without collecting secrets.
+- A loopback-only local Dashboard for the running Bridge version, host and
+  Profile health, Channel connectivity, bounded content-free events, and the
+  existing confirmed configuration plan/apply workflow.
 
 ## [0.1.0-rc.4] - 2026-09-02
 

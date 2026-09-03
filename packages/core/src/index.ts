@@ -1,4 +1,5 @@
 export type {
+  ChannelAccountHealth,
   CodexVerification,
   ProfileHealth,
   ProfileReadiness,

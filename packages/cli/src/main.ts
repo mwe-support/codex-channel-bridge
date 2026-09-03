@@ -16,6 +16,7 @@ import {
 } from "@codex-channel-bridge/control-plane";
 import { ProfileWorker } from "@codex-channel-bridge/profile-worker";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
+import { startDashboard } from "./dashboard.js";
 import { runInteractiveSetup } from "./setup.js";
 
 const argv = process.argv.slice(2);
@@ -26,6 +27,15 @@ try {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config"]);
     await runInteractiveSetup({ mode: action, configPath: options.config });
+  } else if (area === "dashboard") {
+    const options = parseOptions(argv.slice(1));
+    rejectUnknownOptions(options, ["endpoint", "port"]);
+    const dashboard = await startDashboard({
+      endpoint: options.endpoint,
+      port: options.port === undefined ? undefined : boundedInteger(options.port, "--port", 0, 65_535)
+    });
+    stdout.write(`Dashboard: ${dashboard.url}\n`);
+    try { await waitForStopSignal(); } finally { await dashboard.close(); }
   } else if (area === "status") {
     const options = parseOptions(argv.slice(1));
     rejectUnknownOptions(options, ["endpoint"]);
@@ -527,6 +537,7 @@ function usage(): never {
       "Usage:",
       "  bridge setup quick [--config /absolute/path/config.yaml]",
       "  bridge setup full [--config /absolute/path/config.yaml]",
+      "  bridge dashboard [--endpoint /absolute/path/control.sock] [--port 0]",
       "  bridge status [--endpoint /absolute/path/control.sock]",
       "  bridge doctor [--profile ID] [--endpoint /absolute/path/control.sock]",
       "  bridge backup prepare --profile ID --manifest /absolute/path/manifest.json [--include-workspace yes|no] [--endpoint PATH]",

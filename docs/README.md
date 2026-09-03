@@ -25,6 +25,8 @@ outbox retries, and the Channel-only Message Archive.
   Accounts, Access Policies, and Secret References.
 - [Channel commands](commands.md) — use Thread, Turn, model, reasoning, and
   approval projections from QQ or WhatsApp.
+- [Local dashboard](dashboard.md) — inspect the running version, health, Channel
+  connectivity, and confirmed settings changes.
 - [Release status](release-status.md) — distinguish accepted behavior, exact-tag
   revalidation gaps, and future work.
 - [Limits and roadmap](limits-and-roadmap.md) — see the intentionally deferred

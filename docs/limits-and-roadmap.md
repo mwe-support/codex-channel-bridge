@@ -9,7 +9,7 @@ title: Limits and roadmap
 - Shared-OS-user Profiles provide application-layer isolation, not hostile
   process isolation. Use separate OS users or containers for stronger isolation.
 - Administration is authoritative through host-local structured IPC. The
-  planned Dashboard is only a local adapter over it; remote App Server
+  Dashboard is only a loopback adapter over it; remote App Server
   attachment and remote administration remain unsupported.
 - Delivery is effectively-once. An ambiguous provider send can leave a small
   duplicate window because QQ and WhatsApp do not offer a universal idempotent
@@ -28,12 +28,12 @@ title: Limits and roadmap
   verify immutable release checksums and never install or upgrade Codex.
 - `bridge setup quick` and `bridge setup full`, both producing the canonical
   configuration accepted by the existing validation and apply flow.
+- A loopback-only Dashboard showing the running Bridge version, health, Channel
+  connectivity, bounded content-free events, and confirmed configuration
+  plan/apply operations through the existing control plane.
 
 ## Future work
 
-- A loopback-only Dashboard for health, Channel connectivity, content-free
-  operational events, and confirmed settings changes through the existing
-  control plane.
 - Real native Windows service, installer, setup, and named-pipe ACL acceptance
   on the newly designated connected Windows host.
 - Exact-tag revalidation for the provider and Linux boundaries listed in
