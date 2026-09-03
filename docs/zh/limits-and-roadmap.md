@@ -8,8 +8,8 @@ title: 限制与路线图
 
 - 共享 OS User 的 Profile 只提供应用层隔离，不是恶意进程隔离。需要更强隔离时，
   应使用独立 OS User 或 Container。
-- 管理只通过本地主机 Structured IPC 完成。没有 Web Console、远程 App Server
-  Attach 或管理 TCP 端口。
+- 管理权威状态仍只通过 Host-local Structured IPC 提供。规划中的 Dashboard
+  只是它的本地适配器；远程 App Server Attach 和远程管理仍不受支持。
 - 投递目标是 Effectively-once。QQ 和 WhatsApp 没有通用 Idempotent Send 契约，
   因此 Provider 发送结果不明确时存在很小的重复窗口。
 - Local Hybrid Retrieval 使用 SQLite FTS5、精确、子串、模糊、结构化和时效信号，
@@ -19,11 +19,15 @@ title: 限制与路线图
 
 ## 未来工作
 
-- 指定真实 Windows 验证主机后，完成原生 Windows Service 与 Named-pipe ACL
-  验收。
+- 提供官方维护的一条命令原生安装器与原子 Bridge 升级；校验不可变 Release
+  Checksum，且绝不安装或升级 Codex。
+- 提供 `bridge setup quick` 与 `bridge setup full`；两者都生成现有校验与应用
+  流程接受的 Canonical Configuration。
+- 提供仅绑定 Loopback 的 Dashboard，通过现有 Control Plane 查看 Health、
+  Channel Connectivity、不含内容的 Operational Event，并在确认后修改设置。
+- 在新指定且已连接的真实 Windows Host 上完成原生 Windows Service、Installer、
+  Setup 与 Named-pipe ACL 验收。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。
-- Web 管理 UI 只有在认证、授权、生命周期以及本地/远程信任边界通过独立设计验收
-  后才会实现。
 
 搜索分析、自动翻译、Dynamic Adapter Plugin Runtime、外部 Vector Backend 或
 Telemetry Backend 都不是首版的计划前置条件。

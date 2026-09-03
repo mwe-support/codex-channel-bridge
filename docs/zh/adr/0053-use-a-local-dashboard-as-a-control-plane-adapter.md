@@ -1,0 +1,3 @@
+# 将本地 Dashboard 作为控制平面适配器
+
+本决策只取代 ADR 0041 对 Web Console 的延期，Host-local IPC 仍是权威接口。首个可用性版本可以提供可选的 `bridge dashboard` 命令：它启动仅绑定 Loopback 的 HTTP Server，并只向发起命令的终端输出不可猜测、仅本次启动有效的浏览器 URL。Dashboard 是现有 Host-local Control Plane Interface 的适配器；它可以显示 Deployment 与 Profile Health、Channel Connectivity、有界且不含内容的 Operational Event，以及脱敏后的 Configuration Shape，但不能直接访问 Worker、Profile Database、Message Archive、Codex Home 或 Workspace。配置变更必须复用现有 Plan、Redacted Diff、Explicit Confirmation、Authorization、Restart 与 Audit Record 契约。关闭 Dashboard 后，其 Browser Capability 立即失效。LAN、Public、Unattended 或 Multi-user Access 不属于本决策，必须由后续 ADR 定义 TLS 与 Administrator Identity。

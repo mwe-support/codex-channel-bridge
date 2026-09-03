@@ -74,6 +74,12 @@ diagnostic without running package managers or download scripts. Linux Docker
 images may include an explicitly pinned, tested Codex CLI at image build time;
 the running container must not self-update it.
 
+Official native installers may install or upgrade only Codex Channel Bridge.
+They must select an immutable Bridge release, verify its published checksum,
+preserve configuration and Profile-owned data, and switch versions atomically.
+Treat a missing Node.js or Codex CLI as an actionable prerequisite failure;
+never turn the Bridge installer into a package-manager bootstrapper for Codex.
+
 Channel commands for model and reasoning selection must project into native
 App Server model discovery and Thread settings. Do not hard-code Codex model or
 reasoning-effort catalogs, modify Profile-wide Codex configuration as a Thread
@@ -194,6 +200,15 @@ must not roll back or stop healthy Profiles. Live-apply only settings with an
 explicit safe contract. Changes to Workspace, Codex home, Channel Account, or
 App Server environment require that Profile's bounded drain and restart; do not
 promise universal hot reload.
+
+Provide `bridge setup quick` and `bridge setup full` as interactive, host-local
+configuration entry points. Quick setup asks only for values that cannot be
+derived safely and uses the schema defaults; full setup exposes every supported
+field. Both must generate the same canonical `config.yaml` shape accepted by
+`bridge config check`, write secrets only through the existing no-echo secret
+path, preview exact filesystem and service changes, and require confirmation
+before applying them. They are presentation over the existing configuration
+and control-plane interfaces, not a second configuration system.
 
 ## Channel Contracts
 
@@ -487,13 +502,12 @@ Prioritize implementation and acceptance in the environments that can be
 verified now: native macOS first, then native Linux and Linux Docker. Validate
 native macOS on the local development machine. Validate both Linux targets on
 the remote host identified by the SSH alias `marvel-mini-pc`; local macOS
-emulation is not evidence for either Linux target. Windows remains a
-first-release target, but its platform implementation and acceptance follow
-these three targets once a real Windows verification host is designated. For
-every platform claim, run the relevant contract and lifecycle tests on the
-named target and retain the exact command result. A missing host dependency is
-an environment gap, not authorization for the Bridge or an agent to install or
-upgrade Codex.
+emulation is not evidence for either Linux target. A real connected Windows
+host is now designated for native Windows implementation and acceptance after
+the other three targets. For every platform claim, run the relevant contract
+and lifecycle tests on the named target and retain the exact command result. A
+missing host dependency is an environment gap, not authorization for the Bridge
+or an agent to install or upgrade Codex.
 
 At each development stage that changes the runnable QQ-to-Codex path, deploy
 the actual Bridge on the local native macOS machine and complete an end-to-end
@@ -536,16 +550,17 @@ the same drain-and-exit contract; the platform service manager alone decides
 whether to restart the Supervisor. Keep Supervisor restart policy separate from
 its internal worker and App Server supervision to prevent nested restart loops.
 
-Expose first-release administration only through a host-local structured IPC
-control plane: an owner-only Unix domain socket on macOS, Linux, and Docker, and
-a named pipe with a strict Windows ACL. Validate the local peer identity where
-the platform supports it, authorize every operation, and never treat loopback
-network location as authentication. The CLI uses this control plane for status,
-diagnostics, Profile administration, and backup coordination; Docker operators
-invoke it inside the container. Do not expose TCP, HTTP, or a Web Administration
-Console in the first release. A future Web Administration Console remains in
-scope only after a separate ADR defines authentication, authorization, TLS,
-browser security, audit, and network exposure.
+Keep the structured host-local IPC control plane authoritative: an owner-only
+Unix domain socket on macOS, Linux, and Docker, and a named pipe with a strict
+Windows ACL. Validate the local peer identity where the platform supports it,
+authorize every operation, and never treat loopback network location as
+authentication. The CLI and optional local Dashboard are adapters over this
+same interface; neither may access Worker or Profile storage directly. Before
+changing Dashboard behavior, read ADR 0053. The first Dashboard binds only to
+loopback, uses an unguessable launch-scoped browser capability, exposes only
+content-free operational data, and routes every mutation through the existing
+plan, confirmation, authorization, and audit contracts. Remote or LAN exposure
+requires a later ADR covering TLS and administrator identity.
 
 The first release uses TypeScript on a supported Node.js LTS runtime. Keep core,
 Profile worker, QQ adapter, WhatsApp adapter, Archive MCP Server, CLI, and

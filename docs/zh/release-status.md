@@ -24,7 +24,7 @@ title: 发布状态
 | 已实现且已验收 | 原生 macOS Supervisor 生命周期；真实 QQ 私聊往返；`/help`、`/status`、`/new`、`/model`、`/reasoning`；原生 Codex 协议；Owner-only Unix Control Plane；rc.4 确定性发布门禁。 |
 | 已实现，但 Runtime Refactor 后未按精确 rc.4 tag 复验 | 真实 WhatsApp 私聊、群聊与重启；原生 Linux systemd 生命周期；Linux Docker 非 root、Health、无公开端口与优雅停止。 |
 | 已实现且有低于真实 Channel 的测试覆盖 | `/attach` 原生 Binding 与 Workspace 校验；rc.4 验收未通过真实 QQ 客户端执行。 |
-| 未来或未验证 | 原生 Windows Service Packaging 与 Named-pipe ACL 验收；Web 管理 UI；稳定版本。 |
+| 已规划或未验证 | Bridge 一条命令安装/升级；快速/完整交互式设置；仅 Loopback Dashboard；原生 Windows Service、Installer 与 Named-pipe ACL 验收；稳定版本。 |
 
 该表刻意区分实现证据与精确 tag 验收。详细的无内容证据见
 [Stage 8 候选发布验收](acceptance/release-candidate-stage-8.md)。

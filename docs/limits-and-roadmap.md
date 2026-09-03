@@ -8,8 +8,9 @@ title: Limits and roadmap
 
 - Shared-OS-user Profiles provide application-layer isolation, not hostile
   process isolation. Use separate OS users or containers for stronger isolation.
-- Administration is host-local structured IPC only. There is no web console,
-  remote App Server attachment, or administration TCP port.
+- Administration is authoritative through host-local structured IPC. The
+  planned Dashboard is only a local adapter over it; remote App Server
+  attachment and remote administration remain unsupported.
 - Delivery is effectively-once. An ambiguous provider send can leave a small
   duplicate window because QQ and WhatsApp do not offer a universal idempotent
   send contract.
@@ -23,12 +24,17 @@ title: Limits and roadmap
 
 ## Future work
 
-- Real native Windows service and named-pipe ACL acceptance after a Windows
-  verification host is designated.
+- Maintained one-command native installers and atomic Bridge upgrades that
+  verify immutable release checksums and never install or upgrade Codex.
+- `bridge setup quick` and `bridge setup full`, both producing the canonical
+  configuration accepted by the existing validation and apply flow.
+- A loopback-only Dashboard for health, Channel connectivity, content-free
+  operational events, and confirmed settings changes through the existing
+  control plane.
+- Real native Windows service, installer, setup, and named-pipe ACL acceptance
+  on the newly designated connected Windows host.
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
-- A web administration UI only after its authentication, authorization,
-  lifecycle, and local/remote trust boundary has a separate accepted design.
 
 Search analytics, automatic translation, a dynamic adapter plugin runtime, and
 an external vector or telemetry backend are not planned prerequisites for the
