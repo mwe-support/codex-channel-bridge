@@ -36,8 +36,9 @@ title: Limits and roadmap
 
 ## Future work
 
-- Real native Windows Service lifecycle plus strict named-pipe, state, secret,
-  and Baileys ACL enforcement on the designated host.
+- Release-packaged native Windows Service installation plus strict named-pipe,
+  state, secret, and Baileys ACL enforcement on the designated host. A one-time
+  WinSW lifecycle acceptance has passed.
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
 

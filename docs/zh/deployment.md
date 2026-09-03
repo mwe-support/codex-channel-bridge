@@ -98,7 +98,8 @@ Named-pipe Request、Dashboard、版本显示与跨平台测试套件。每个 P
 `codexExecutable` 必须使用绝对 Path；该 Host 上依赖 PATH 会选中另一个已安装的
 Codex 版本。
 
-由于连接的验收任务不是提权 PowerShell，无法向 Service Control Manager 注册
-临时 Service，因此真实 Windows Service Lifecycle 仍未验收。Named Pipe、
-Profile State、Secret 与 Baileys Auth 的严格 ACL Check 也仍是首版 Blocker。
-这两个边界在该 Host 通过前，不得宣称原生 Windows Production Service Support。
+指定 Host 已通过一次性提权 WinSW `2.12.0` Service 的安装、启动、Named Pipe
+Status、有界停止、卸载清理与 Codex 完整性检查，证明了 SCM 下的前台 Supervisor
+Lifecycle，但这不是随 Release 提供的 Service Installer。Named Pipe、Profile
+State、Secret 与 Baileys Auth 的严格 ACL Check 仍是首版 Blocker。在该边界通过
+指定 Host 验收前，不得宣称原生 Windows Production Service Support。

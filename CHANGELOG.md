@@ -18,6 +18,9 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
   existing confirmed configuration plan/apply workflow.
 - `bridge --version` reports the exact running Bridge version without starting
   the Supervisor.
+- Recorded successful one-time native Windows Service install, foreground
+  Supervisor start, named-pipe status, bounded stop, uninstall, and cleanup
+  acceptance using checksum-verified WinSW `2.12.0`.
 
 ### Fixed
 

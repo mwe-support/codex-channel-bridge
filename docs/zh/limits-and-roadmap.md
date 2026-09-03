@@ -31,8 +31,9 @@ title: 限制与路线图
 
 ## 未来工作
 
-- 在指定 Windows Host 上完成真实 Windows Service Lifecycle，以及严格
-  Named-pipe、State、Secret 与 Baileys ACL Enforcement。
+- 在指定 Windows Host 上完成随 Release 提供的 Windows Service 安装，以及严格
+  Named-pipe、State、Secret 与 Baileys ACL Enforcement；一次性 WinSW
+  Lifecycle 验收已经通过。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。
 
 搜索分析、自动翻译、Dynamic Adapter Plugin Runtime、外部 Vector Backend 或

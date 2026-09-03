@@ -25,15 +25,23 @@
   tests now use Windows-native filesystem behavior and path separators.
 - Stopping the local control server now closes outstanding idle connections, so
   an attached client cannot indefinitely retain the process.
+- A one-time elevated acceptance script installed WinSW `2.12.0` x64 after
+  verifying SHA-256
+  `05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da`.
+  The temporary manual service ran the foreground Supervisor as
+  `NT AUTHORITY\LocalService`; SCM reported `Running`, a native named-pipe
+  `status/get` request succeeded, SCM reported `Stopped` after the bounded stop,
+  and uninstall removed the service and its isolated temporary files. The
+  administrator-supplied Codex executable path, version, and hash were unchanged.
 
 ## Unaccepted boundaries
 
-- The connected acceptance task was not elevated. It could not register a
-  temporary Windows Service with the Service Control Manager, so service start,
-  stop, recovery, and bounded drain remain unverified.
 - Strict ACL creation and verification for the named pipe, Profile state,
   secrets, and Baileys authentication are not implemented. POSIX mode checks
   are intentionally not treated as Windows ACL evidence.
+- The one-time acceptance service is not a release-packaged service installer.
+  Production Windows service support remains blocked on the strict ACL boundary
+  above; service failure recovery was not fault-injected in this run.
 - The host had multiple Codex installations: the explicit executable probed as
   `0.153.0-alpha.5`, while a Node child using bare `codex.exe` resolved another
   version. Windows Profiles and future service definitions must use a verified

@@ -23,10 +23,10 @@ not publish GitHub Releases. There is no stable release and no `latest` alias.
 | Status | Scope |
 | --- | --- |
 | Implemented and accepted | Native macOS Supervisor lifecycle; real QQ private-message round trip; `/help`, `/status`, `/new`, `/model`, `/reasoning`; native Codex protocol; owner-only Unix control plane; deterministic rc.4 release gates. |
-| Implemented on current `main`, not included in rc.4 | Checksum-verified native install/upgrade scripts; canonical quick/full interactive setup; loopback-only Dashboard showing the running Bridge version, health, Channel connectivity, content-free events, and confirmed settings changes; `bridge --version`; local POSIX/macOS and native Windows application-level acceptance. |
+| Implemented on current `main`, not included in rc.4 | Checksum-verified native install/upgrade scripts; canonical quick/full interactive setup; loopback-only Dashboard showing the running Bridge version, health, Channel connectivity, content-free events, and confirmed settings changes; `bridge --version`; local POSIX/macOS and native Windows application-level acceptance; one-time native Windows Service lifecycle acceptance. |
 | Implemented, but the exact rc.4 tag was not revalidated after the runtime refactor | Real WhatsApp private/group and restart flow; native Linux systemd lifecycle; Linux Docker non-root, health, no-published-port, and graceful-stop flow. |
 | Implemented and covered below real-Channel acceptance | `/attach` native binding and Workspace validation; it was not exercised through the real QQ client in the rc.4 run. |
-| Planned or unverified | Windows Service lifecycle and strict named-pipe/state/secret/Baileys ACL enforcement; stable release. |
+| Planned or unverified | Release-packaged Windows Service installation and strict named-pipe/state/secret/Baileys ACL enforcement; stable release. |
 
 This table deliberately separates implementation evidence from exact-tag
 acceptance. Details and content-free evidence are retained in

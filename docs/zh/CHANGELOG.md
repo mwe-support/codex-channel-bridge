@@ -17,6 +17,8 @@
   确认的 Configuration Plan/Apply 流程。
 - 增加 `bridge --version`，无需启动 Supervisor 即可报告实际运行的 Bridge
   版本。
+- 记录使用已核验 Checksum 的 WinSW `2.12.0` 完成一次性原生 Windows Service
+  安装、前台 Supervisor 启动、Named Pipe Status、有界停止、卸载与清理验收。
 
 ### 修复
 

@@ -23,14 +23,21 @@
   Windows 原生 Filesystem Behavior 与 Path Separator。
 - Local Control Server 停止时会关闭仍存在的 Idle Connection，已连接 Client 不再
   能无限期阻止 Process 退出。
+- 一次性提权验收脚本在核验 SHA-256
+  `05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da`
+  后安装 WinSW `2.12.0` x64。临时 Manual Service 以
+  `NT AUTHORITY\LocalService` 运行前台 Supervisor；SCM 报告 `Running`，原生
+  Named Pipe `status/get` 请求成功，有界停止后 SCM 报告 `Stopped`，卸载后
+  Service 与隔离的临时文件均已移除。管理员提供的 Codex Executable Path、
+  Version 与 Hash 均未改变。
 
 ## 未验收边界
 
-- 连接的验收任务不是提权进程，无法向 Service Control Manager 注册临时
-  Windows Service，因此 Service Start、Stop、Recovery 与 Bounded Drain 尚未
-  验收。
 - Named Pipe、Profile State、Secret 与 Baileys Authentication 的严格 ACL 创建
   与验证尚未实现；POSIX Mode Check 不会被当作 Windows ACL 证据。
+- 此一次性验收 Service 不是随 Release 提供的 Service Installer。Production
+  Windows Service Support 仍受上述严格 ACL 边界阻断；本轮也未故障注入验证
+  Service Failure Recovery。
 - Host 存在多个 Codex 安装：显式 Executable Probe 为 `0.153.0-alpha.5`，而 Node
   Child 使用裸 `codex.exe` 时会解析到另一个版本。Windows Profile 与未来 Service
   Definition 必须使用经过验证的 `codexExecutable` 绝对 Path。
