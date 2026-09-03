@@ -8,7 +8,36 @@ The only published build is currently the `v0.1.0-rc.4` prerelease. It is
 suitable for evaluation, not a stable-production claim. Read the
 [release status](release-status.md) before relying on a provider or platform.
 
-## 1. Get and verify the release
+## 1. Install or upgrade
+
+The maintained installer downloads the exact release archive and checksum,
+verifies both the checksum and embedded package version, builds it in a new
+version directory, and then switches the `bridge` launcher atomically. It never
+installs or upgrades Codex.
+
+macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+```
+
+Windows PowerShell:
+
+```powershell
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+```
+
+Run the same command with a newer exact version to upgrade. Existing
+configuration, Profile data, and older installed versions are preserved. Once
+a stable release exists, omit `CODEX_CHANNEL_BRIDGE_VERSION` to select the
+latest stable release.
+
+The POSIX defaults are `~/.local/share/codex-channel-bridge` and
+`~/.local/bin/bridge`. Windows defaults to
+`%LOCALAPPDATA%\CodexChannelBridge`. Override them with
+`CODEX_CHANNEL_BRIDGE_INSTALL_ROOT` and `CODEX_CHANNEL_BRIDGE_BIN_DIR`.
+
+### Manual verification
 
 Open the [v0.1.0-rc.4 release page](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.1.0-rc.4),
 download `codex-channel-bridge-0.1.0-rc.4.tar.gz` and its checksum, then verify:
@@ -30,23 +59,21 @@ The expected archive SHA-256 is
 
 The Bridge never installs or upgrades the host's Codex CLI.
 
-## 3. Build and validate
+## 3. Configure and validate
 
 ```sh
-npm ci
-npm run build
-node packages/cli/dist/main.js config check --config /absolute/path/config.yaml
-npm run test:contract
+bridge config check --config /absolute/path/config.yaml
 ```
 
 Start from `config.example.yaml`, then follow [Configuration](configuration.md)
 and the [QQ](qq-adapter.md) or [WhatsApp](whatsapp-adapter.md) guide. Keep every
-credential outside the repository.
+credential outside the repository. Interactive quick and full setup are planned
+but are not part of `v0.1.0-rc.4`.
 
 ## 4. Run the foreground Supervisor
 
 ```sh
-node packages/cli/dist/main.js supervisor run \
+bridge supervisor run \
   --config /absolute/path/config.yaml \
   --endpoint /absolute/path/control.sock
 ```
@@ -54,7 +81,7 @@ node packages/cli/dist/main.js supervisor run \
 In another terminal, query liveness and Profile readiness:
 
 ```sh
-node packages/cli/dist/main.js status \
+bridge status \
   --endpoint /absolute/path/control.sock
 ```
 

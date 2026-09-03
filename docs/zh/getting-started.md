@@ -7,7 +7,34 @@ title: 快速开始
 目前唯一已发布构建是候选版本 `v0.1.0-rc.4`，可用于评估，但不代表稳定生产
 承诺。在依赖某个 Provider 或平台前，请先阅读[发布状态](release-status.md)。
 
-## 1. 获取并校验发布包
+## 1. 安装或升级
+
+官方维护的安装器会下载准确版本的发布包和校验文件，验证 SHA-256 与包内版本，
+在新版本目录完成构建后再原子切换 `bridge` 启动器。安装器绝不会安装或升级
+Codex。
+
+macOS 或 Linux：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+```
+
+Windows PowerShell：
+
+```powershell
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+```
+
+把准确版本号换成新版本后再次执行同一条命令即可升级。已有配置、Profile 数据和
+旧版本目录都会保留。首个稳定版发布后，可以省略
+`CODEX_CHANNEL_BRIDGE_VERSION`，由安装器选择最新稳定版。
+
+POSIX 默认安装到 `~/.local/share/codex-channel-bridge`，命令位于
+`~/.local/bin/bridge`；Windows 默认安装到
+`%LOCALAPPDATA%\CodexChannelBridge`。可通过
+`CODEX_CHANNEL_BRIDGE_INSTALL_ROOT` 与 `CODEX_CHANNEL_BRIDGE_BIN_DIR` 覆盖。
+
+### 手动校验
 
 打开 [v0.1.0-rc.4 Release 页面](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.1.0-rc.4)，
 下载 `codex-channel-bridge-0.1.0-rc.4.tar.gz` 及其校验文件，然后执行：
@@ -29,22 +56,20 @@ sha256 -c codex-channel-bridge-0.1.0-rc.4.tar.gz.sha256
 
 Bridge 绝不会安装或升级主机上的 Codex CLI。
 
-## 3. 构建并校验
+## 3. 配置并校验
 
 ```sh
-npm ci
-npm run build
-node packages/cli/dist/main.js config check --config /absolute/path/config.yaml
-npm run test:contract
+bridge config check --config /absolute/path/config.yaml
 ```
 
 以 `config.example.yaml` 为起点，再阅读[配置](configuration.md)以及
 [QQ](qq-adapter.md) 或 [WhatsApp](whatsapp-adapter.md) 指南。任何凭据都不得进入仓库。
+交互式快速设置与完全设置已进入计划，但不属于 `v0.1.0-rc.4`。
 
 ## 4. 以前台方式运行 Supervisor
 
 ```sh
-node packages/cli/dist/main.js supervisor run \
+bridge supervisor run \
   --config /absolute/path/config.yaml \
   --endpoint /absolute/path/control.sock
 ```
@@ -52,7 +77,7 @@ node packages/cli/dist/main.js supervisor run \
 在另一个终端查询 Liveness 和 Profile Readiness：
 
 ```sh
-node packages/cli/dist/main.js status \
+bridge status \
   --endpoint /absolute/path/control.sock
 ```
 

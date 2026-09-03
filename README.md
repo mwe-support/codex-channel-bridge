@@ -8,6 +8,25 @@ documents the next release. Start at the
 [English documentation index](docs/README.md) or the
 [Chinese documentation index](docs/zh/README.md).
 
+## Install or upgrade
+
+After installing Node.js 22+ and an administrator-supplied Codex CLI, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+```
+
+The installer verifies the published checksum and version, then atomically
+switches the `bridge` launcher. Re-run it with a newer exact version to upgrade.
+It never installs or upgrades Codex. See the [Quickstart](docs/getting-started.md)
+for paths, overrides, and manual verification.
+
 ## Status
 
 This repository contains a typed stdio JSONL Codex client, a foreground

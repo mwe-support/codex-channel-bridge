@@ -16,7 +16,7 @@
     "clean": "tsc -b --clean",
     "test": "npm run build && npm run test:unit && npm run test:release-tool && npm run test:platform-contract",
     "test:unit": "node --test packages/*/dist/*.test.js",
-    "test:release-tool": "node --test scripts/release.test.mjs",
+    "test:release-tool": "node --test scripts/*.test.mjs",
     "test:contract": "npm run build && node packages/codex-app-server/dist/protocol-contract.contract.js",
     "test:control-contract": "npm run build && node --test packages/control-plane/dist/control-plane.contract.js",
     "test:supervisor-contract": "npm run build && node packages/supervisor/dist/worker-process.contract.js",
