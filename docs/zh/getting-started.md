@@ -64,7 +64,8 @@ bridge config check --config /absolute/path/config.yaml
 
 以 `config.example.yaml` 为起点，再阅读[配置](configuration.md)以及
 [QQ](qq-adapter.md) 或 [WhatsApp](whatsapp-adapter.md) 指南。任何凭据都不得进入仓库。
-交互式快速设置与完全设置已进入计划，但不属于 `v0.1.0-rc.4`。
+当前 `main` 构建也提供 `bridge setup quick` 与 `bridge setup full`；它们会进入
+下一个版本，不属于不可变的 `v0.1.0-rc.4`。
 
 ## 4. 以前台方式运行 Supervisor
 

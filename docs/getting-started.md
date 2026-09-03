@@ -67,8 +67,9 @@ bridge config check --config /absolute/path/config.yaml
 
 Start from `config.example.yaml`, then follow [Configuration](configuration.md)
 and the [QQ](qq-adapter.md) or [WhatsApp](whatsapp-adapter.md) guide. Keep every
-credential outside the repository. Interactive quick and full setup are planned
-but are not part of `v0.1.0-rc.4`.
+credential outside the repository. The current `main` build also provides
+`bridge setup quick` and `bridge setup full`; they will enter the next release
+and are not part of immutable `v0.1.0-rc.4`.
 
 ## 4. Run the foreground Supervisor
 

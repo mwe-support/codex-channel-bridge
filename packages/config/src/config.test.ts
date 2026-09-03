@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   ConfigurationValidationError,
+  formatConfiguration,
   loadConfiguration,
   parseConfiguration
 } from "./config.js";
@@ -23,6 +24,21 @@ profiles:
     codexHome: /srv/beta/codex
     stateDirectory: /srv/beta/state
 `;
+
+test("formats setup input as validated YAML", () => {
+  const text = formatConfiguration({
+    schemaVersion: 1,
+    profiles: {
+      alpha: {
+        workspace: "/srv/alpha/workspace",
+        codexHome: "/srv/alpha/codex",
+        stateDirectory: "/srv/alpha/state"
+      }
+    }
+  });
+  assert.match(text, /^schemaVersion: 1/m);
+  assert.equal(parseConfiguration(text).configuration.profiles.alpha?.workspace, "/srv/alpha/workspace");
+});
 
 test("parses a complete candidate and applies defaults", () => {
   const candidate = parseConfiguration(baseline);

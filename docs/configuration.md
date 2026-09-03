@@ -10,6 +10,32 @@ Use `config.example.yaml` as the non-secret shape reference. Configuration may
 contain only Bridge settings and Secret References. Credential values are never
 valid configuration fields, and unknown fields fail validation.
 
+## Interactive setup
+
+The current `main` branch provides two interactive entry points for the next
+release:
+
+```sh
+bridge setup quick
+bridge setup full --config /absolute/path/config.yaml
+```
+
+Quick setup asks only for one Profile's paths, selected Channels, account IDs,
+and private-chat access. It keeps the validated schema defaults for admission,
+approvals, media, Supervisor timing, group Thread scope, and denied group
+access. Full setup exposes those settings and all three access rules. Both
+modes produce the same canonical `config.yaml` consumed by `config check` and
+the Supervisor; neither creates a second settings store.
+
+The CLI shows the complete non-secret candidate before writing it, defaults to
+no at the confirmation prompt, refuses to replace an existing configuration,
+creates the Profile state directory with owner-only permissions, and writes the
+new configuration atomically. QQ uses `env:QQ_BOT_APP_ID` and
+`env:QQ_BOT_APP_SECRET` in quick mode; the wizard never asks for or writes a
+credential value. WhatsApp authentication is still created later through the
+host-local pairing command. These commands are not present in the immutable
+`v0.1.0-rc.4` tag.
+
 ## Schema
 
 ```yaml
@@ -161,10 +187,10 @@ Profile `secretsFile`, or an owner-only `file:` target.
 
 ## Read-only validation
 
-Build the repository, then run:
+Run:
 
 ```sh
-node packages/cli/dist/main.js config check \
+bridge config check \
   --config /absolute/path/config.yaml
 ```
 
@@ -178,7 +204,7 @@ Profile.
 Start the development Supervisor explicitly:
 
 ```sh
-node packages/cli/dist/main.js supervisor run \
+bridge supervisor run \
   --config /absolute/path/config.yaml \
   --endpoint /absolute/path/control.sock
 ```
@@ -206,7 +232,7 @@ Pass the same explicit endpoint to the Supervisor and CLI, or set
 `BRIDGE_CONTROL_ENDPOINT` in both process environments:
 
 ```sh
-node packages/cli/dist/main.js status \
+bridge status \
   --endpoint /absolute/path/control.sock
 ```
 

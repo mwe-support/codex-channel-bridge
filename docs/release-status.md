@@ -23,9 +23,10 @@ not publish GitHub Releases. There is no stable release and no `latest` alias.
 | Status | Scope |
 | --- | --- |
 | Implemented and accepted | Native macOS Supervisor lifecycle; real QQ private-message round trip; `/help`, `/status`, `/new`, `/model`, `/reasoning`; native Codex protocol; owner-only Unix control plane; deterministic rc.4 release gates. |
+| Implemented on current `main`, not included in rc.4 | Checksum-verified native install/upgrade scripts; canonical quick/full interactive setup; local POSIX installer and macOS setup acceptance. |
 | Implemented, but the exact rc.4 tag was not revalidated after the runtime refactor | Real WhatsApp private/group and restart flow; native Linux systemd lifecycle; Linux Docker non-root, health, no-published-port, and graceful-stop flow. |
 | Implemented and covered below real-Channel acceptance | `/attach` native binding and Workspace validation; it was not exercised through the real QQ client in the rc.4 run. |
-| Planned or unverified | One-command Bridge install/upgrade; quick/full interactive setup; loopback-only Dashboard; native Windows service, installer, and named-pipe ACL acceptance; stable release. |
+| Planned or unverified | Loopback-only Dashboard; real Windows execution of the installer, setup, service, and named-pipe ACL; stable release. |
 
 This table deliberately separates implementation evidence from exact-tag
 acceptance. Details and content-free evidence are retained in

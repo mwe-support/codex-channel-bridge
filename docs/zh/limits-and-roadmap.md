@@ -17,12 +17,15 @@ title: 限制与路线图
 - Restore 只支持兼容路径与相同 OS Family，不会改写 Codex 历史来伪造可移植性。
 - 发布机制提供源码归档与校验和，不发布 npm Package 或 Registry Container Image。
 
-## 未来工作
+## 当前 main 已实现并进入下个版本
 
 - 提供官方维护的一条命令原生安装器与原子 Bridge 升级；校验不可变 Release
   Checksum，且绝不安装或升级 Codex。
 - 提供 `bridge setup quick` 与 `bridge setup full`；两者都生成现有校验与应用
   流程接受的 Canonical Configuration。
+
+## 未来工作
+
 - 提供仅绑定 Loopback 的 Dashboard，通过现有 Control Plane 查看 Health、
   Channel Connectivity、不含内容的 Operational Event，并在确认后修改设置。
 - 在新指定且已连接的真实 Windows Host 上完成原生 Windows Service、Installer、

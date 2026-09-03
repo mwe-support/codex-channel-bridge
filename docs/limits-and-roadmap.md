@@ -22,12 +22,15 @@ title: Limits and roadmap
 - The release mechanism publishes a source archive and checksum, not npm
   packages or a registry-hosted container image.
 
-## Future work
+## Implemented on current main for the next release
 
 - Maintained one-command native installers and atomic Bridge upgrades that
   verify immutable release checksums and never install or upgrade Codex.
 - `bridge setup quick` and `bridge setup full`, both producing the canonical
   configuration accepted by the existing validation and apply flow.
+
+## Future work
+
 - A loopback-only Dashboard for health, Channel connectivity, content-free
   operational events, and confirmed settings changes through the existing
   control plane.

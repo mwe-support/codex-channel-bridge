@@ -11,6 +11,8 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 - Maintained one-command POSIX and Windows installers that verify the exact
   release checksum and package version, retain older versions, and atomically
   switch the `bridge` launcher without installing or upgrading Codex.
+- Interactive `bridge setup quick` and `bridge setup full` commands that preview
+  and atomically write the canonical configuration without collecting secrets.
 
 ## [0.1.0-rc.4] - 2026-09-02
 

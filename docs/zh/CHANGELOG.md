@@ -10,6 +10,8 @@
 
 - 增加官方维护的 POSIX 与 Windows 一键安装器：验证准确发布版本的校验和与包内
   版本，保留旧版本并原子切换 `bridge` 启动器，同时绝不安装或升级 Codex。
+- 增加交互式 `bridge setup quick` 与 `bridge setup full`：预览并原子写入规范
+  配置，同时不收集 Secret Value。
 
 ## [0.1.0-rc.4] - 2026-09-02
 

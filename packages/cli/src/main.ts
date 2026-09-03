@@ -16,12 +16,17 @@ import {
 } from "@codex-channel-bridge/control-plane";
 import { ProfileWorker } from "@codex-channel-bridge/profile-worker";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
+import { runInteractiveSetup } from "./setup.js";
 
 const argv = process.argv.slice(2);
 const [area, action, ...args] = argv;
 
 try {
-  if (area === "status") {
+  if (area === "setup" && (action === "quick" || action === "full")) {
+    const options = parseOptions(args);
+    rejectUnknownOptions(options, ["config"]);
+    await runInteractiveSetup({ mode: action, configPath: options.config });
+  } else if (area === "status") {
     const options = parseOptions(argv.slice(1));
     rejectUnknownOptions(options, ["endpoint"]);
     const client = new ControlPlaneClient(options.endpoint);
@@ -520,6 +525,8 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
+      "  bridge setup quick [--config /absolute/path/config.yaml]",
+      "  bridge setup full [--config /absolute/path/config.yaml]",
       "  bridge status [--endpoint /absolute/path/control.sock]",
       "  bridge doctor [--profile ID] [--endpoint /absolute/path/control.sock]",
       "  bridge backup prepare --profile ID --manifest /absolute/path/manifest.json [--include-workspace yes|no] [--endpoint PATH]",

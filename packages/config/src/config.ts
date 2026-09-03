@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
 
-import { parseDocument } from "yaml";
+import { parseDocument, stringify } from "yaml";
 import { z } from "zod";
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
@@ -187,6 +187,12 @@ export function parseConfiguration(
     configuration,
     environmentOverrideApplied: overrideApplied
   };
+}
+
+export function formatConfiguration(raw: unknown): string {
+  const text = stringify(raw, { lineWidth: 0 });
+  parseConfiguration(text);
+  return text;
 }
 
 async function validateProfileDirectories(configuration: BridgeConfiguration): Promise<void> {

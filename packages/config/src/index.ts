@@ -1,5 +1,6 @@
 export {
   ConfigurationValidationError,
+  formatConfiguration,
   loadConfiguration,
   parseConfiguration
 } from "./config.js";

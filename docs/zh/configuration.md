@@ -6,6 +6,27 @@
 
 使用 `config.example.yaml` 作为不含 Secret 的结构参考。配置只能包含 Bridge 设置和 Secret Reference。Credential Value 绝不是合法配置字段，未知字段会导致验证失败。
 
+## 交互式设置
+
+当前 `main` 分支为下一个版本提供两种交互式入口：
+
+```sh
+bridge setup quick
+bridge setup full --config /absolute/path/config.yaml
+```
+
+快速设置只询问一个 Profile 的路径、要启用的 Channel、Account ID 与私聊访问规则，
+Admission、Approval、Media、Supervisor 时序、群 Thread Scope 与默认拒绝的群访问均
+采用已校验的 Schema 默认值。完全设置会进一步开放这些设置和三类访问规则。两种
+模式生成的都是 `config check` 与 Supervisor 直接使用的同一份规范
+`config.yaml`，不会产生第二套设置存储。
+
+CLI 会先展示完整且不含 Credential Value 的候选配置，确认默认值为 `no`；它拒绝
+覆盖已有配置，以 Owner-only 权限创建 Profile State Directory，并原子写入新配置。
+QQ 快速设置使用 `env:QQ_BOT_APP_ID` 和 `env:QQ_BOT_APP_SECRET`，向导不会询问或
+写入真实 Credential Value。WhatsApp Authentication 仍由后续 Host-local Pairing
+命令创建。不可变的 `v0.1.0-rc.4` tag 不包含这些命令。
+
 ## Schema
 
 ```yaml
@@ -94,10 +115,10 @@ Object 按 Key 递归合并，因此 Profile ID 保持稳定，也不需要 Arra
 
 ## 只读验证
 
-构建仓库后运行：
+运行：
 
 ```sh
-node packages/cli/dist/main.js config check \
+bridge config check \
   --config /absolute/path/config.yaml
 ```
 
@@ -108,7 +129,7 @@ node packages/cli/dist/main.js config check \
 显式启动开发版 Supervisor：
 
 ```sh
-node packages/cli/dist/main.js supervisor run \
+bridge supervisor run \
   --config /absolute/path/config.yaml \
   --endpoint /absolute/path/control.sock
 ```
@@ -124,7 +145,7 @@ node packages/cli/dist/main.js supervisor run \
 向 Supervisor 与 CLI 传入相同的显式 Endpoint，或在两个进程环境中都设置 `BRIDGE_CONTROL_ENDPOINT`：
 
 ```sh
-node packages/cli/dist/main.js status \
+bridge status \
   --endpoint /absolute/path/control.sock
 ```
 
