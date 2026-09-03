@@ -28,4 +28,5 @@ title: 发布状态
 | 已规划或未验证 | Windows Service Lifecycle 与严格 Named-pipe/State/Secret/Baileys ACL Enforcement；稳定版本。 |
 
 该表刻意区分实现证据与精确 tag 验收。详细的无内容证据见
-[Stage 8 候选发布验收](acceptance/release-candidate-stage-8.md)。
+[Stage 8 候选发布验收](acceptance/release-candidate-stage-8.md)与
+[Stage 9 原生 Windows 应用层验收](acceptance/windows-stage-9.md)。

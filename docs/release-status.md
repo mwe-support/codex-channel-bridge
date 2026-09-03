@@ -30,4 +30,5 @@ not publish GitHub Releases. There is no stable release and no `latest` alias.
 
 This table deliberately separates implementation evidence from exact-tag
 acceptance. Details and content-free evidence are retained in
-[Stage 8 release-candidate acceptance](acceptance/release-candidate-stage-8.md).
+[Stage 8 release-candidate acceptance](acceptance/release-candidate-stage-8.md)
+and [Stage 9 native Windows application acceptance](acceptance/windows-stage-9.md).
