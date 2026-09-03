@@ -34,3 +34,17 @@ test("Docker image is non-root, pinned, signal-aware, and checks Supervisor live
   assert.match(dockerfile, /HEALTHCHECK[\s\S]*"status"[\s\S]*control\.sock/);
   assert.doesNotMatch(dockerfile, /latest|npm update|self-update/);
 });
+
+test("Windows control pipe is owned by the ACL helper and rejects broad principals", async () => {
+  const [helper, server] = await Promise.all([
+    read("windows/control-pipe-server.ps1"),
+    read("../control-plane/src/server.ts")
+  ]);
+  assert.match(server, /new WindowsPipeHost/);
+  assert.match(helper, /SetAccessRuleProtection\(true, false\)/);
+  assert.match(helper, /WindowsIdentity\.GetCurrent\(\)\.User/);
+  assert.match(helper, /LocalSystemSid/);
+  assert.match(helper, /BuiltinAdministratorsSid/);
+  assert.match(helper, /VerifyAcl/);
+  assert.doesNotMatch(helper, /WorldSid|AnonymousSid|Everyone/);
+});
