@@ -30,6 +30,9 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
   process and local control-plane lifecycle contracts run natively there.
 - Closed outstanding local control connections during Supervisor shutdown so
   an idle named-pipe client cannot hold the process open.
+- Replaced Node's default Windows named-pipe listener with a bundled helper that
+  creates and verifies a protected ACL for the service identity, LocalSystem,
+  and BUILTIN\Administrators before accepting control requests.
 
 ## [0.1.0-rc.4] - 2026-09-02
 

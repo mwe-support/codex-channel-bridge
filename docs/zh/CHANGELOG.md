@@ -28,6 +28,9 @@
   Local Control-plane Lifecycle Contract 可在 Windows 原生运行。
 - Supervisor 停止时关闭仍存在的 Local Control Connection，避免空闲 Named-pipe
   Client 阻止 Process 退出。
+- 使用随项目提供的 Helper 替换 Node 默认的 Windows Named-pipe Listener；Helper
+  在接受 Control Request 前，为 Service Identity、LocalSystem 与
+  BUILTIN\Administrators 创建并验证 Protected ACL。
 
 ## [0.1.0-rc.4] - 2026-09-02
 

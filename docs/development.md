@@ -315,9 +315,9 @@ printf 'Reply briefly.' | node packages/cli/dist/main.js codex turn \
   budget before one new Worker generation is attempted. An administrator can
   explicitly reset the circuit through the host-local control plane.
 - Unix access currently relies on verified service-user ownership and modes
-  because Node.js does not expose peer credentials. The Windows named-pipe path
-  is present, but strict ACL setup and verification remain untested platform
-  work. No Web Administration Console is implemented.
+  because Node.js does not expose peer credentials. The Windows named pipe is
+  created and verified by the bundled minimal PowerShell/C# ACL helper. No Web
+  Administration Console is implemented.
 - Profile drain rejects new Turn and steer admission, expires queued work, and
   waits for active Turns, process-scoped Approval Requests, and pending Outbox
   delivery. At its deadline it invokes native `turn/interrupt`, closes the

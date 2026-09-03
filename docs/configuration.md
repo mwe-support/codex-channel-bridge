@@ -240,9 +240,11 @@ The current Node.js runtime does not expose Unix peer credentials. This slice
 therefore treats successful access through the verified owner-only directory
 and socket as the local System Administrator identity, while still running the
 authorization hook for every request. Native peer-credential verification is
-a remaining platform edge before release. A Windows named-pipe endpoint shape
-exists, but strict ACL provisioning and verification have not yet been tested
-on Windows and are not claimed complete.
+a remaining platform edge before release. On Windows, a bundled PowerShell/C#
+helper creates the named pipe with a protected DACL limited to the service
+identity, LocalSystem, and BUILTIN\Administrators, verifies that ACL before
+reporting ready, and relays the same bounded JSONL protocol to Node over stdio.
+Failure to create or verify the pipe fails the control plane closed.
 
 ### WhatsApp account lifecycle
 

@@ -100,6 +100,8 @@ Codex 版本。
 
 指定 Host 已通过一次性提权 WinSW `2.12.0` Service 的安装、启动、Named Pipe
 Status、有界停止、卸载清理与 Codex 完整性检查，证明了 SCM 下的前台 Supervisor
-Lifecycle，但这不是随 Release 提供的 Service Installer。Named Pipe、Profile
-State、Secret 与 Baileys Auth 的严格 ACL Check 仍是首版 Blocker。在该边界通过
-指定 Host 验收前，不得宣称原生 Windows Production Service Support。
+Lifecycle，但这不是随 Release 提供的 Service Installer。随项目提供的
+PowerShell/C# Helper 现在持有 Control Pipe，并验证只允许 Service Identity、
+LocalSystem 与 BUILTIN\Administrators 的 Protected DACL。Profile State、Secret
+与 Baileys Auth 的严格 ACL Check 仍是首版 Blocker。在这些边界通过指定 Host
+验收前，不得宣称原生 Windows Production Service Support。

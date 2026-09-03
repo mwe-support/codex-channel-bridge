@@ -2,6 +2,7 @@
 
 - Date: 2026-09-03
 - Accepted commit: `68b2468` (`fix: support native Windows runtime`)
+- Named-pipe ACL accepted commit: `4e1dd19` (`fix: enforce Windows control pipe ACL`)
 - Host: Windows `10.0.26200`, Node.js `24.13.0`, npm `11.6.2`
 - Administrator-supplied Codex CLI: explicit executable `0.153.0-alpha.5`
 
@@ -33,15 +34,22 @@
   `status/get` request succeeded, SCM reported `Stopped` after the bounded stop,
   and uninstall removed the service and its isolated temporary files. The
   administrator-supplied Codex executable path, version, and hash were unchanged.
+- The Windows control endpoint is now created by the bundled PowerShell/C#
+  helper instead of Node's default named-pipe path. The helper applies and
+  verifies a protected DACL containing only the service identity, LocalSystem,
+  and BUILTIN\Administrators. On the designated host, all five control-plane
+  contracts and all three platform contracts passed; sequential requests,
+  pairing event plus final response, duplicate-server rejection, bounded stop,
+  and the actual pipe DACL were also verified directly.
 
 ## Unaccepted boundaries
 
-- Strict ACL creation and verification for the named pipe, Profile state,
-  secrets, and Baileys authentication are not implemented. POSIX mode checks
-  are intentionally not treated as Windows ACL evidence.
+- Strict ACL creation and verification for Profile state, secrets, and Baileys
+  authentication are not implemented. POSIX mode checks are intentionally not
+  treated as Windows ACL evidence.
 - The one-time acceptance service is not a release-packaged service installer.
-  Production Windows service support remains blocked on the strict ACL boundary
-  above; service failure recovery was not fault-injected in this run.
+  Production Windows service support remains blocked on the remaining data ACL
+  boundaries above; service failure recovery was not fault-injected in this run.
 - The host had multiple Codex installations: the explicit executable probed as
   `0.153.0-alpha.5`, while a Node child using bare `codex.exe` resolved another
   version. Windows Profiles and future service definitions must use a verified

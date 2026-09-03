@@ -149,7 +149,7 @@ bridge status \
   --endpoint /absolute/path/control.sock
 ```
 
-当前 Node.js Runtime 不暴露 Unix Peer Credential。因此，本阶段把通过经过验证的 Owner-only Directory 和 Socket 成功访问视为本地 System Administrator Identity，同时仍对每个 Request 执行 Authorization Hook。Native Peer-credential Verification 是发布前尚待完成的平台边缘。Windows Named-pipe Endpoint 的结构已经存在，但严格 ACL 的配置和验证尚未在 Windows 上测试，因此不宣称已经完成。
+当前 Node.js Runtime 不暴露 Unix Peer Credential。因此，本阶段把通过经过验证的 Owner-only Directory 和 Socket 成功访问视为本地 System Administrator Identity，同时仍对每个 Request 执行 Authorization Hook。Native Peer-credential Verification 是发布前尚待完成的平台边缘。在 Windows 上，随项目提供的 PowerShell/C# Helper 使用只允许 Service Identity、LocalSystem 与 BUILTIN\Administrators 的 Protected DACL 创建 Named Pipe，在报告 Ready 前验证该 ACL，并通过 Stdio 向 Node 转发同一套有界 JSONL Protocol。Pipe 创建或验证失败时，Control Plane 失败关闭。
 
 ### WhatsApp Account Lifecycle
 

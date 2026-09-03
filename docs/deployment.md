@@ -108,7 +108,9 @@ the acceptance host.
 A one-time elevated WinSW `2.12.0` acceptance service passed install, start,
 named-pipe status, bounded stop, uninstall, cleanup, and Codex-integrity checks
 on the designated host. This proves the foreground Supervisor lifecycle under
-SCM, but it is not a release-packaged service installer. Strict ACL checks for
-the named pipe, Profile state, secrets, and Baileys auth remain first-release
-blockers. Do not claim native Windows production service support until that
-boundary passes on the designated host.
+SCM, but it is not a release-packaged service installer. The bundled
+PowerShell/C# helper now owns the control pipe and verifies a protected DACL
+limited to the service identity, LocalSystem, and BUILTIN\Administrators.
+Strict ACL checks for Profile state, secrets, and Baileys auth remain
+first-release blockers. Do not claim native Windows production service support
+until those boundaries pass on the designated host.

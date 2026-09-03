@@ -2,6 +2,7 @@
 
 - 日期：2026-09-03
 - 已验收 Commit：`68b2468`（`fix: support native Windows runtime`）
+- Named-pipe ACL 已验收 Commit：`4e1dd19`（`fix: enforce Windows control pipe ACL`）
 - Host：Windows `10.0.26200`、Node.js `24.13.0`、npm `11.6.2`
 - 管理员提供的 Codex CLI：显式 Executable `0.153.0-alpha.5`
 
@@ -30,14 +31,20 @@
   Named Pipe `status/get` 请求成功，有界停止后 SCM 报告 `Stopped`，卸载后
   Service 与隔离的临时文件均已移除。管理员提供的 Codex Executable Path、
   Version 与 Hash 均未改变。
+- Windows Control Endpoint 现在由随项目提供的 PowerShell/C# Helper 创建，不再
+  使用 Node 默认的 Named-pipe 创建路径。Helper 应用并验证 Protected DACL，只
+  包含 Service Identity、LocalSystem 与 BUILTIN\Administrators。指定 Host 上的
+  5 项 Control-plane Contract 和 3 项 Platform Contract 全部通过；还直接验证了
+  顺序 Request、Pairing Event 加最终 Response、重复 Server 拒绝、有界 Stop 与
+  实际 Pipe DACL。
 
 ## 未验收边界
 
-- Named Pipe、Profile State、Secret 与 Baileys Authentication 的严格 ACL 创建
-  与验证尚未实现；POSIX Mode Check 不会被当作 Windows ACL 证据。
+- Profile State、Secret 与 Baileys Authentication 的严格 ACL 创建与验证尚未
+  实现；POSIX Mode Check 不会被当作 Windows ACL 证据。
 - 此一次性验收 Service 不是随 Release 提供的 Service Installer。Production
-  Windows Service Support 仍受上述严格 ACL 边界阻断；本轮也未故障注入验证
-  Service Failure Recovery。
+  Windows Service Support 仍受上述剩余数据 ACL 边界阻断；本轮也未故障注入
+  验证 Service Failure Recovery。
 - Host 存在多个 Codex 安装：显式 Executable Probe 为 `0.153.0-alpha.5`，而 Node
   Child 使用裸 `codex.exe` 时会解析到另一个版本。Windows Profile 与未来 Service
   Definition 必须使用经过验证的 `codexExecutable` 绝对 Path。

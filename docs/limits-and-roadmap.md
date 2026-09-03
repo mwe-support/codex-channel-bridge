@@ -33,12 +33,14 @@ title: Limits and roadmap
   plan/apply operations through the existing control plane.
 - Native Windows application-level acceptance for install, setup, build,
   named-pipe requests, Dashboard, and version reporting.
+- A helper-owned Windows control pipe with a verified protected DACL limited to
+  the service identity, LocalSystem, and BUILTIN\Administrators.
 
 ## Future work
 
-- Release-packaged native Windows Service installation plus strict named-pipe,
-  state, secret, and Baileys ACL enforcement on the designated host. A one-time
-  WinSW lifecycle acceptance has passed.
+- Release-packaged native Windows Service installation plus strict state,
+  secret, and Baileys ACL enforcement on the designated host. A one-time WinSW
+  lifecycle acceptance and strict control-pipe ACL acceptance have passed.
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
 

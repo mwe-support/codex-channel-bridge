@@ -28,12 +28,14 @@ title: 限制与路线图
   Configuration Plan/Apply 操作。
 - 原生 Windows 已完成 Installer、Setup、Build、Named-pipe Request、Dashboard
   与版本显示的应用层验收。
+- Windows Control Pipe 由 Helper 持有，并验证只允许 Service Identity、
+  LocalSystem 与 BUILTIN\Administrators 的 Protected DACL。
 
 ## 未来工作
 
 - 在指定 Windows Host 上完成随 Release 提供的 Windows Service 安装，以及严格
-  Named-pipe、State、Secret 与 Baileys ACL Enforcement；一次性 WinSW
-  Lifecycle 验收已经通过。
+  State、Secret 与 Baileys ACL Enforcement；一次性 WinSW Lifecycle 与严格
+  Control-pipe ACL 验收已经通过。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。
 
 搜索分析、自动翻译、Dynamic Adapter Plugin Runtime、外部 Vector Backend 或
