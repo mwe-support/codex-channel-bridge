@@ -57,7 +57,10 @@ profiles:
   assert.equal(result.inspectedAtMs, 12_345);
   assert.equal(result.profiles[0]?.store?.quickCheck, "ok");
   assert.equal(result.profiles[0]?.store?.schemaVersion, 9);
-  assert.equal(result.profiles[0]?.paths.stateDirectory.ownerOnly, true);
+  assert.equal(
+    result.profiles[0]?.paths.stateDirectory.ownerOnly,
+    process.platform === "win32" ? null : true
+  );
   assert.equal(result.profiles[0]?.disk?.availableBytes! > 0, true);
   assert.deepEqual(result.profiles[0]?.issues, []);
   assert.equal(statusReads, 1);
@@ -93,9 +96,10 @@ profiles:
   }).inspect();
 
   assert.equal(result.ok, false);
-  assert.deepEqual(result.profiles[0]?.issues, [
-    "codex_home_invalid",
-    "profile_store_unavailable",
-    "state_directory_insecure"
-  ]);
+  assert.deepEqual(
+    result.profiles[0]?.issues,
+    process.platform === "win32"
+      ? ["codex_home_invalid", "profile_store_unavailable"]
+      : ["codex_home_invalid", "profile_store_unavailable", "state_directory_insecure"]
+  );
 });

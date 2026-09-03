@@ -39,6 +39,7 @@ export class ControlPlaneServer {
   readonly #endpoint: string;
   readonly #handler: AdministrationHandler;
   readonly #authorizer: RequestAuthorizer;
+  readonly #sockets = new Set<Socket>();
   #server?: Server;
 
   public constructor(options: ControlPlaneServerOptions) {
@@ -78,13 +79,17 @@ export class ControlPlaneServer {
     const server = this.#server;
     if (!server) return;
     this.#server = undefined;
-    await new Promise<void>((resolve, reject) => {
+    const closed = new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
+    for (const socket of this.#sockets) socket.destroy();
+    await closed;
     if (process.platform !== "win32") await removeUnixControlSocket(this.#endpoint);
   }
 
   #accept(socket: Socket): void {
+    this.#sockets.add(socket);
+    socket.once("close", () => this.#sockets.delete(socket));
     socket.setEncoding("utf8");
     socket.setTimeout(330_000, () => socket.destroy());
     let input = "";

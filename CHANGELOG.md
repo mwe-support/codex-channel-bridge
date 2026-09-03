@@ -16,6 +16,17 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 - A loopback-only local Dashboard for the running Bridge version, host and
   Profile health, Channel connectivity, bounded content-free events, and the
   existing confirmed configuration plan/apply workflow.
+- `bridge --version` reports the exact running Bridge version without starting
+  the Supervisor.
+
+### Fixed
+
+- Made setup and durable Bridge-owned file writes compatible with Windows,
+  where directory handles cannot be flushed with `fsync`.
+- Normalized generated documentation paths on Windows and made the App Server
+  process and local control-plane lifecycle contracts run natively there.
+- Closed outstanding local control connections during Supervisor shutdown so
+  an idle named-pipe client cannot hold the process open.
 
 ## [0.1.0-rc.4] - 2026-09-02
 

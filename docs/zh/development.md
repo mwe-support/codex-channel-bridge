@@ -116,7 +116,7 @@ plan/confirm；Channel message 不能成为隐藏管理 API。
 2. 在 SSH 别名 `marvel-mini-pc` 指向的远程主机上验证原生 Linux。
 3. 使用 `marvel-mini-pc` 的 Docker Engine 验证 Linux Docker。
 
-每项平台专属的 Contract、Process Lifecycle、Filesystem Permission、Signal/Drain 和 Packaging Test 都必须在真实目标上运行。macOS 结果不能验证任何 Linux 目标，原生 Linux 结果也不能验证 Container Image。Windows 仍是首版目标，但要等前三个目标通过并指定真实 Windows 验证主机后再继续。
+每项平台专属的 Contract、Process Lifecycle、Filesystem Permission、Signal/Drain 和 Packaging Test 都必须在真实目标上运行。macOS 结果不能验证任何 Linux 目标，原生 Linux 结果也不能验证 Container Image。Windows 仍是首版目标，并且现在已有指定且已连接的真实 Windows 验证 Host。
 
 每次运行前检查目标当前的 Node.js、npm、相关场景下的 Docker，以及管理员提供的 Codex 版本。缺少前置依赖时，将其报告为环境缺口。Bridge 及其验证流程不得在任何主机上安装或升级 Codex。
 

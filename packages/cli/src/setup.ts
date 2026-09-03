@@ -230,8 +230,10 @@ async function writeNewFile(path: string, text: string): Promise<void> {
   try {
     await link(temporary, path);
     await unlink(temporary);
-    const directory = await open(dirname(path), "r");
-    try { await directory.sync(); } finally { await directory.close(); }
+    if (process.platform !== "win32") {
+      const directory = await open(dirname(path), "r");
+      try { await directory.sync(); } finally { await directory.close(); }
+    }
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
     throw error;

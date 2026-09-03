@@ -60,9 +60,11 @@ restore validation, body-free Audit query/export/retention, Support Bundles,
 disk-pressure fail-closed behavior, and manual Codex circuit recovery. Native
 macOS launchd, native Linux systemd, and Linux Docker packaging passed their
 Stage 8 release-candidate acceptance. That baseline includes real QQ and
-WhatsApp private/group interaction on macOS. Native Windows verification,
-real-client `/attach` acceptance, and exact-tag post-refactor revalidation are
-still incomplete, so the Bridge is available only as a prerelease candidate.
+WhatsApp private/group interaction on macOS. Native Windows install, setup,
+build, named-pipe, Dashboard, and version checks now pass, while Windows
+Service/ACL acceptance, real-client `/attach` acceptance, and exact-tag
+post-refactor revalidation remain incomplete. The Bridge is therefore still a
+prerelease candidate.
 
 ## First-release direction
 

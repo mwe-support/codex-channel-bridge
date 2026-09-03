@@ -14,6 +14,7 @@ import {
   ControlPlaneServer,
   SupervisorAdministration
 } from "@codex-channel-bridge/control-plane";
+import { BRIDGE_VERSION } from "@codex-channel-bridge/core";
 import { ProfileWorker } from "@codex-channel-bridge/profile-worker";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
 import { startDashboard } from "./dashboard.js";
@@ -23,7 +24,9 @@ const argv = process.argv.slice(2);
 const [area, action, ...args] = argv;
 
 try {
-  if (area === "setup" && (action === "quick" || action === "full")) {
+  if ((area === "--version" || area === "version") && action === undefined) {
+    stdout.write(`${BRIDGE_VERSION}\n`);
+  } else if (area === "setup" && (action === "quick" || action === "full")) {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config"]);
     await runInteractiveSetup({ mode: action, configPath: options.config });
@@ -535,6 +538,7 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
+      "  bridge --version",
       "  bridge setup quick [--config /absolute/path/config.yaml]",
       "  bridge setup full [--config /absolute/path/config.yaml]",
       "  bridge dashboard [--endpoint /absolute/path/control.sock] [--port 0]",

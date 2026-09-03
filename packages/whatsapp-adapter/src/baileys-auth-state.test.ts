@@ -24,8 +24,10 @@ test("creates owner-only Baileys state and persists credentials and Signal keys"
   try {
     const handle = await openBaileysAuthState({ directoryPath, createIfMissing: true });
     const state = handle.state as AuthenticationState;
-    assert.equal((await lstat(directoryPath)).mode & 0o777, 0o700);
-    assert.equal((await lstat(join(directoryPath, "creds.json"))).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal((await lstat(directoryPath)).mode & 0o777, 0o700);
+      assert.equal((await lstat(join(directoryPath, "creds.json"))).mode & 0o777, 0o600);
+    }
 
     state.creds.registered = true;
     await handle.saveCredentials();
@@ -70,7 +72,9 @@ test("activates a registered staged generation through an atomic marker", async 
   const rootDirectoryPath = join(parent, "channel-auth", "wa-primary");
   try {
     const first = await createStagedBaileysAuthState({ rootDirectoryPath });
-    assert.equal((await lstat(join(parent, "channel-auth"))).mode & 0o777, 0o700);
+    if (process.platform !== "win32") {
+      assert.equal((await lstat(join(parent, "channel-auth"))).mode & 0o777, 0o700);
+    }
     const firstState = first.state as AuthenticationState;
     Object.assign(firstState.creds, {
       me: { id: "15551112222:1@s.whatsapp.net" },
@@ -85,10 +89,12 @@ test("activates a registered staged generation through an atomic marker", async 
       { previousGenerationId: null }
     );
     assert.equal((await openActiveBaileysAuthState({ rootDirectoryPath })).generationId, first.generationId);
-    assert.equal(
-      (await lstat(join(rootDirectoryPath, "active-generation.json"))).mode & 0o777,
-      0o600
-    );
+    if (process.platform !== "win32") {
+      assert.equal(
+        (await lstat(join(rootDirectoryPath, "active-generation.json"))).mode & 0o777,
+        0o600
+      );
+    }
 
     const second = await createStagedBaileysAuthState({ rootDirectoryPath });
     const secondState = second.state as AuthenticationState;
@@ -156,10 +162,12 @@ test("persists an uncertain revocation lock without exposing the provider identi
     assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "clear");
     await markBaileysAuthRevocationUncertain({ rootDirectoryPath });
     assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "uncertain");
-    assert.equal(
-      (await lstat(join(rootDirectoryPath, "revocation-state.json"))).mode & 0o777,
-      0o600
-    );
+    if (process.platform !== "win32") {
+      assert.equal(
+        (await lstat(join(rootDirectoryPath, "revocation-state.json"))).mode & 0o777,
+        0o600
+      );
+    }
     await clearBaileysAuthRevocationState({ rootDirectoryPath });
     assert.equal(await readBaileysAuthRevocationState({ rootDirectoryPath }), "clear");
   } finally {

@@ -1,15 +1,24 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import test from "node:test";
 
 import {
   ConfigurationValidationError,
   formatConfiguration,
   loadConfiguration,
-  parseConfiguration
+  parseConfiguration as parseConfigurationSource
 } from "./config.js";
+
+const testPath = (path: string): string => normalize(process.platform === "win32" ? `C:${path}` : path);
+const parseConfiguration = (...args: Parameters<typeof parseConfigurationSource>) =>
+  parseConfigurationSource(
+    process.platform === "win32"
+      ? args[0].replaceAll("/srv", "C:/srv").replaceAll("/run", "C:/run")
+      : args[0],
+    args[1]
+  );
 
 const baseline = `
 schemaVersion: 1
@@ -30,21 +39,21 @@ test("formats setup input as validated YAML", () => {
     schemaVersion: 1,
     profiles: {
       alpha: {
-        workspace: "/srv/alpha/workspace",
-        codexHome: "/srv/alpha/codex",
-        stateDirectory: "/srv/alpha/state"
+        workspace: testPath("/srv/alpha/workspace"),
+        codexHome: testPath("/srv/alpha/codex"),
+        stateDirectory: testPath("/srv/alpha/state")
       }
     }
   });
   assert.match(text, /^schemaVersion: 1/m);
-  assert.equal(parseConfiguration(text).configuration.profiles.alpha?.workspace, "/srv/alpha/workspace");
+  assert.equal(parseConfiguration(text).configuration.profiles.alpha?.workspace, testPath("/srv/alpha/workspace"));
 });
 
 test("parses a complete candidate and applies defaults", () => {
   const candidate = parseConfiguration(baseline);
   assert.equal(candidate.configuration.profiles.alpha?.enabled, true);
   assert.equal(candidate.configuration.profiles.beta?.enabled, false);
-  assert.equal(candidate.configuration.profiles.alpha?.secretsFile, "/srv/alpha/state/secrets.env");
+  assert.equal(candidate.configuration.profiles.alpha?.secretsFile, testPath("/srv/alpha/state/secrets.env"));
   assert.deepEqual(candidate.configuration.profiles.alpha?.channelAccounts, {});
   assert.equal(candidate.configuration.supervisor.drainTimeoutMs, 300_000);
   assert.equal(candidate.configuration.supervisor.codexRestartCooldownMs, 30_000);
@@ -82,7 +91,7 @@ profiles:
     enabled: true,
     epochId: "epoch-1",
     appId: "env:TEST_APP_ID",
-    appSecret: "file:/run/secrets/test-app-secret",
+    appSecret: `file:${testPath("/run/secrets/test-app-secret")}`,
     groupThreadScope: "conversation",
     accessPolicy: {
       privateChats: { mode: "deny", allow: [] },

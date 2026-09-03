@@ -58,7 +58,7 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   assert.equal(store.journalMode(), "wal");
-  assert.equal((await stat(databasePath)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(databasePath)).mode & 0o777, 0o600);
 
   const inserted = store.commitMessage(message());
   const duplicate = store.commitMessage(message({ text: "a replayed body" }));

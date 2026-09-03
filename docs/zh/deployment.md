@@ -93,6 +93,12 @@ Port。单个 Unavailable Profile 不会使 Container Unhealthy。
 
 ## Windows 边界
 
-原生 Windows 仍是首版目标，但在指定真实 Windows Host 前，不验收 Service
-Package。Runtime Named-pipe Shape 不是严格 Windows ACL Behavior 的证据。不得用
-macOS、Linux、Wine 或 Container Test 宣称 Windows Service Support。
+指定的 Windows 验收 Host 已通过一键安装器、快速/完全设置、原生 Build、
+Named-pipe Request、Dashboard、版本显示与跨平台测试套件。每个 Profile 的
+`codexExecutable` 必须使用绝对 Path；该 Host 上依赖 PATH 会选中另一个已安装的
+Codex 版本。
+
+由于连接的验收任务不是提权 PowerShell，无法向 Service Control Manager 注册
+临时 Service，因此真实 Windows Service Lifecycle 仍未验收。Named Pipe、
+Profile State、Secret 与 Baileys Auth 的严格 ACL Check 也仍是首版 Blocker。
+这两个边界在该 Host 通过前，不得宣称原生 Windows Production Service Support。

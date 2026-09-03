@@ -174,8 +174,8 @@ Implement and accept platform behavior in this order:
 Run each platform-specific contract, process-lifecycle, filesystem-permission,
 signal/drain, and packaging test on its actual target. A macOS result does not
 validate either Linux target, and a native Linux result does not validate the
-container image. Windows remains a first-release target but is deferred until
-these three targets pass and a real Windows verification host is designated.
+container image. Windows remains a first-release target and now has a
+designated connected verification host.
 
 Before a run, inspect the target's current Node.js, npm, Docker where relevant,
 and administrator-supplied Codex versions. Report a missing prerequisite as an

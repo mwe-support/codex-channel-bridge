@@ -29,6 +29,12 @@ $env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubuserconten
 旧版本目录都会保留。首个稳定版发布后，可以省略
 `CODEX_CHANNEL_BRIDGE_VERSION`，由安装器选择最新稳定版。
 
+打开新 Terminal，验证当前选中的安装版本：
+
+```sh
+bridge --version
+```
+
 POSIX 默认安装到 `~/.local/share/codex-channel-bridge`，命令位于
 `~/.local/bin/bridge`；Windows 默认安装到
 `%LOCALAPPDATA%\CodexChannelBridge`。可通过

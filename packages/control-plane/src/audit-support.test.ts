@@ -63,7 +63,7 @@ test("queries, exports, and explicitly retains body-free Audit Records", async (
   const destination = join(root, "audit-export.json");
   const exported = await audits.export({ profileId: "alpha", destination, limit: 10 });
   assert.equal(exported.recordCount, 2);
-  assert.equal((await stat(destination)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(destination)).mode & 0o777, 0o600);
 
   const plan = audits.planRetention("alpha", 2_000);
   assert.equal(plan.recordCount, 1);
@@ -116,7 +116,9 @@ test("creates a content-free owner-only Support Bundle after plan confirmation",
     "metadata.json"
   ]);
   for (const name of await readdir(outputPath)) {
-    assert.equal((await stat(join(outputPath, name))).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(join(outputPath, name))).mode & 0o777, 0o600);
+    }
   }
   const all = (await Promise.all((await readdir(outputPath)).map((name) =>
     readFile(join(outputPath, name), "utf8")

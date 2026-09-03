@@ -8,7 +8,11 @@ import { pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
-test("the POSIX installer verifies and atomically switches exact releases", async () => {
+test("the POSIX installer verifies and atomically switches exact releases", async (context) => {
+  if (process.platform === "win32") {
+    context.skip("POSIX installer acceptance runs on macOS and Linux");
+    return;
+  }
   const root = await mkdtemp(join(tmpdir(), "bridge-installer-test-"));
   const assets = join(root, "assets");
   const fakeBin = join(root, "bin-tools");

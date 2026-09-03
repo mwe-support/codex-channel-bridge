@@ -99,7 +99,7 @@ profiles:
   });
 
   assert.equal(supervisor.status().profiles[0]?.reason, "maintenance_hold");
-  assert.equal((await stat(manifestPath)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(manifestPath)).mode & 0o777, 0o600);
   const manifest = await readBackupManifest(manifestPath);
   assert.equal(manifest.codexVersion, "0.149.1");
   assert.equal(manifest.snapshotPaths.workspace, workspace);

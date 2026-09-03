@@ -15,6 +15,17 @@
 - 增加仅绑定 Loopback 的本地 Dashboard，用于查看运行中的 Bridge 版本、Host 与
   Profile Health、Channel Connectivity、有界且不含内容的 Event，并复用现有需
   确认的 Configuration Plan/Apply 流程。
+- 增加 `bridge --version`，无需启动 Supervisor 即可报告实际运行的 Bridge
+  版本。
+
+### 修复
+
+- 修复 Setup 与 Bridge 自有持久文件写入在 Windows 上的兼容性；Windows 无法对
+  Directory Handle 执行 `fsync`。
+- 统一 Windows 下生成文档所用的 Path Separator，并让 App Server Process 与
+  Local Control-plane Lifecycle Contract 可在 Windows 原生运行。
+- Supervisor 停止时关闭仍存在的 Local Control Connection，避免空闲 Named-pipe
+  Client 阻止 Process 退出。
 
 ## [0.1.0-rc.4] - 2026-09-02
 

@@ -32,6 +32,12 @@ configuration, Profile data, and older installed versions are preserved. Once
 a stable release exists, omit `CODEX_CHANNEL_BRIDGE_VERSION` to select the
 latest stable release.
 
+Open a new terminal and verify the selected installation:
+
+```sh
+bridge --version
+```
+
 The POSIX defaults are `~/.local/share/codex-channel-bridge` and
 `~/.local/bin/bridge`. Windows defaults to
 `%LOCALAPPDATA%\CodexChannelBridge`. Override them with

@@ -26,11 +26,13 @@ title: 限制与路线图
 - 提供仅绑定 Loopback 的 Dashboard，通过现有 Control Plane 查看运行中的 Bridge
   版本、Health、Channel Connectivity、有界且不含内容的 Event，并执行需确认的
   Configuration Plan/Apply 操作。
+- 原生 Windows 已完成 Installer、Setup、Build、Named-pipe Request、Dashboard
+  与版本显示的应用层验收。
 
 ## 未来工作
 
-- 在新指定且已连接的真实 Windows Host 上完成原生 Windows Service、Installer、
-  Setup 与 Named-pipe ACL 验收。
+- 在指定 Windows Host 上完成真实 Windows Service Lifecycle，以及严格
+  Named-pipe、State、Secret 与 Baileys ACL Enforcement。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。
 
 搜索分析、自动翻译、Dynamic Adapter Plugin Runtime、外部 Vector Backend 或

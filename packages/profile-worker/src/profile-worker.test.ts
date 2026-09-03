@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
+import { join } from "node:path";
 import test from "node:test";
 
 import type {
@@ -800,7 +801,7 @@ test("opens a fixed Profile-local WhatsApp account and supervises it independent
   const health = await worker.start();
   assert.equal(health.readiness, "ready");
   assert.equal(secretResolverCalled, false);
-  assert.equal(authDirectory, "/tmp/bridge-state/channel-auth/wa-primary");
+  assert.equal(authDirectory, join("/tmp/bridge-state", "channel-auth", "wa-primary"));
 
   const degraded = once(worker, "health");
   adapter.setReadiness("degraded");

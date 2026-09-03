@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, posix, relative } from "node:path";
+import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const website = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -36,7 +36,7 @@ async function copyCurrentTranslations() {
   const target = join(website, "i18n", "zh-Hans", "docusaurus-plugin-content-docs", "current");
   await rm(target, { recursive: true, force: true });
   for (const source of await markdownFiles(docs)) {
-    const path = relative(docs, source);
+    const path = relative(docs, source).split(sep).join(posix.sep);
     const destination = join(target, path);
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(join(docs, "zh", path), destination);

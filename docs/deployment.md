@@ -99,7 +99,15 @@ unhealthy.
 
 ## Windows boundary
 
-Native Windows remains a first-release target, but no service package is
-accepted until a real Windows host is designated. The runtime named-pipe shape
-is not evidence for strict Windows ACL behavior. Do not claim Windows service
-support from macOS, Linux, Wine, or container tests.
+The designated Windows acceptance host has passed the one-command installer,
+quick/full setup, native build, named-pipe request flow, Dashboard, version
+reporting, and the cross-platform test suite. Keep every Profile's
+`codexExecutable` absolute; PATH lookup selected a different installed Codex on
+the acceptance host.
+
+A real Windows Service lifecycle is still unverified because the connected
+acceptance task is not elevated and therefore cannot register a temporary
+service with the Service Control Manager. Strict ACL checks for the named pipe,
+Profile state, secrets, and Baileys auth also remain first-release blockers.
+Do not claim native Windows production service support until both boundaries
+pass on that host.

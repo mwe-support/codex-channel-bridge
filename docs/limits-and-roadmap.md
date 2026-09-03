@@ -31,11 +31,13 @@ title: Limits and roadmap
 - A loopback-only Dashboard showing the running Bridge version, health, Channel
   connectivity, bounded content-free events, and confirmed configuration
   plan/apply operations through the existing control plane.
+- Native Windows application-level acceptance for install, setup, build,
+  named-pipe requests, Dashboard, and version reporting.
 
 ## Future work
 
-- Real native Windows service, installer, setup, and named-pipe ACL acceptance
-  on the newly designated connected Windows host.
+- Real native Windows Service lifecycle plus strict named-pipe, state, secret,
+  and Baileys ACL enforcement on the designated host.
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
 

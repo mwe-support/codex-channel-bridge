@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import test from "node:test";
 
 import {
@@ -324,7 +324,7 @@ test("runs Profile maintenance only behind a stopped migration boundary", async 
   const supervisor = new Supervisor(migrationFactory);
   await supervisor.apply(candidate("/srv/alpha/workspace", false));
   const result = await supervisor.maintainProfile("alpha", async (profile) => {
-    assert.equal(profile.stateDirectory, "/srv/alpha/state");
+    assert.equal(profile.stateDirectory, normalize("/srv/alpha/state"));
     assert.equal(supervisor.status().profiles[0]?.readiness, "stopped");
     return "migrated";
   });

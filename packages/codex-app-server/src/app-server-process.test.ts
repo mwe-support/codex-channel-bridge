@@ -12,11 +12,11 @@ import {
 import { ProtocolFaultError } from "./jsonl-rpc-client.js";
 
 test("emits one protocol fault when the App Server child exits unexpectedly", async (context) => {
-  const executable = await fakeAppServerExecutable(context, true);
+  const fixture = await fakeAppServerExecutable(context, true);
   const runtime = new CodexAppServerProcess({
-    executable,
+    executable: fixture.executable,
     codexHome: "/tmp/codex-home",
-    workspace: process.cwd(),
+    workspace: fixture.workspace,
     bridgeVersion: "test"
   });
   let faults = 0;
@@ -33,11 +33,11 @@ test("emits one protocol fault when the App Server child exits unexpectedly", as
 });
 
 test("does not report an intentional App Server stop as a protocol fault", async (context) => {
-  const executable = await fakeAppServerExecutable(context, false);
+  const fixture = await fakeAppServerExecutable(context, false);
   const runtime = new CodexAppServerProcess({
-    executable,
+    executable: fixture.executable,
     codexHome: "/tmp/codex-home",
-    workspace: process.cwd(),
+    workspace: fixture.workspace,
     bridgeVersion: "test"
   });
   let faults = 0;
@@ -88,10 +88,10 @@ test("isolates the App Server child from Channel secrets and enclosing Codex ses
 async function fakeAppServerExecutable(
   context: test.TestContext,
   exitAfterInitialize: boolean
-): Promise<string> {
+): Promise<{ readonly executable: string; readonly workspace: string }> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-fake-app-server-"));
   context.after(async () => rm(directory, { force: true, recursive: true }));
-  const executable = join(directory, "fake-app-server.mjs");
+  const executable = join(directory, process.platform === "win32" ? "app-server" : "fake-app-server.mjs");
   await writeFile(
     executable,
     `#!/usr/bin/env node
@@ -116,6 +116,9 @@ lines.on("line", (line) => {
 `,
     { mode: 0o700 }
   );
-  await chmod(executable, 0o700);
-  return executable;
+  if (process.platform !== "win32") await chmod(executable, 0o700);
+  return {
+    executable: process.platform === "win32" ? process.execPath : executable,
+    workspace: process.platform === "win32" ? directory : process.cwd()
+  };
 }

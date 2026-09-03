@@ -13,7 +13,7 @@ test("markdownFiles ignores the Chinese mirror and keeps nested Markdown", async
     await writeFile(join(root, "index.md"), "English");
     await writeFile(join(root, "nested", "page.mdx"), "Nested");
     await writeFile(join(root, "zh", "index.md"), "Chinese");
-    assert.deepEqual((await markdownFiles(root)).map((path) => path.slice(root.length + 1)).sort(), ["index.md", "nested/page.mdx"]);
+    assert.deepEqual((await markdownFiles(root)).map((path) => path.slice(root.length + 1)).sort(), ["index.md", join("nested", "page.mdx")]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -60,7 +60,7 @@ test("plans and applies the explicit schema 3 to 9 migration", async (context) =
     "succeeded",
     "succeeded"
   ]);
-  assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(target.auditPath)).mode & 0o777, 0o600);
 });
 
 test("plans and applies the explicit schema 4 to 9 migration", async (context) => {
