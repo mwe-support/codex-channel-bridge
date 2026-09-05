@@ -13,13 +13,13 @@ documents the next release. Start at the
 After installing Node.js 22+ and an administrator-supplied Codex CLI, run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.2.0-rc.1 sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.2.0-rc.1'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
 ```
 
 The installer verifies the published checksum and version, then atomically
@@ -52,7 +52,8 @@ bounded Profile drain. Recovery-discovered uncertainty is atomically committed
 with a durable Channel notification. WhatsApp lifecycle operations now cross
 the owner-only local control plane, stream expiring QR material only to the
 initiating interactive CLI, replace only the selected adapter, retain durable
-revocation uncertainty, and preserve quoted-reply facts introduced in schema version 8.
+revocation uncertainty, and preserve quoted-reply facts. Profile schema 11 adds
+native QQ answer-stream correlation and immutable output-file delivery metadata.
 Profile-local Archive retrieval, read-only MCP projection, bounded media
 mirroring, and explicit Archive/Profile purge are now implemented.
 Host-local operations now include read-only diagnostics, durable backup holds,
@@ -62,8 +63,8 @@ macOS launchd, native Linux systemd, and Linux Docker packaging passed their
 Stage 8 release-candidate acceptance. That baseline includes real QQ and
 WhatsApp private/group interaction on macOS. Native Windows install, setup,
 build, strict control-pipe ACL, Dashboard, and version checks now pass, while
-release-packaged Windows Service and data ACL acceptance, real-client `/attach`
-acceptance, and exact-tag post-refactor revalidation remain incomplete. The
+release-packaged data ACL acceptance and cross-platform output-file acceptance
+remain incomplete. The
 Bridge is therefore still a prerelease candidate.
 
 ## First-release direction
@@ -149,7 +150,7 @@ runtime state. See [Configuration and Supervisor operation](docs/configuration.m
 for endpoint and platform limits.
 
 An older Profile database is never migrated during startup. Inspect and apply
-the currently supported schema 3, 4, 5, 6, 7, or 8 to 9 migration through the same host-local
+the currently supported schema 3 through 10 to 11 migration through the same host-local
 control plane:
 
 ```sh

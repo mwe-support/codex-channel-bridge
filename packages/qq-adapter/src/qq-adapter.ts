@@ -1,12 +1,15 @@
 import { contentSanitizer, QQBot, type QQBotInboundMessage, type QQBotOptions } from "@tencent-connect/qqbot-nodejs";
-import { ApiError } from "@tencent-connect/qqbot-nodejs/protocol";
+import { ApiError, MediaFileType, StreamInputMode, StreamInputState, StreamContentType } from "@tencent-connect/qqbot-nodejs/protocol";
 
 import {
   ChannelDeliveryError,
   type ChannelAdapter,
+  type ChannelAnswerFrame,
+  type ChannelAnswerFrameReceipt,
   type ChannelAdapterReadiness,
   type ChannelDeliveryReceipt,
   type ChannelTextDelivery,
+  type ChannelFileDelivery,
   type ProviderInboundEvent
 } from "@codex-channel-bridge/core";
 import {
@@ -37,6 +40,8 @@ interface QQMessageContext {
 }
 
 interface QQBotClient {
+  readonly uploadMedia?: QQBot["uploadMedia"];
+  readonly api?: Pick<QQBot["api"], "post">;
   use(...middleware: Parameters<QQBot["use"]>): this;
   on(event: "ready", handler: (data: unknown) => void | Promise<void>): this;
   on(event: "resumed", handler: (data: unknown) => void | Promise<void>): this;
@@ -213,6 +218,68 @@ export class QQChannelAdapter implements ChannelAdapter {
     }
   }
 
+  public async sendFile(delivery: ChannelFileDelivery): Promise<ChannelDeliveryReceipt> {
+    if (this.#readiness !== "ready") throw new ChannelDeliveryError("deferred", "QQ adapter is not ready");
+    validateDelivery({ ...delivery, text: delivery.filename });
+    if (!this.#bot.uploadMedia || !delivery.filename || /[/\\\x00-\x1f]/.test(delivery.filename) ||
+        !(delivery.bytes instanceof Uint8Array) || !delivery.bytes.length || delivery.bytes.length > 64 * 1024 * 1024) {
+      throw new ChannelDeliveryError("rejected", "Invalid or unsupported file delivery");
+    }
+    const target = {
+      scope: delivery.target.conversationKind === "private" ? "c2c" as const : "group" as const,
+      targetId: delivery.target.providerConversationId
+    };
+    try {
+      const upload = await this.#bot.uploadMedia({ target, fileType: MediaFileType.FILE,
+        buffer: Buffer.from(delivery.bytes), fileName: delivery.filename, srvSendMsg: false });
+      if (!upload.file_info) throw new ChannelDeliveryError("deferred", "QQ upload returned no file reference");
+      const send = (passive: boolean) => this.#bot.send({
+        target: { ...target, ...(passive ? { msgId: delivery.target.providerReplyEventId! } : {}) },
+        msgType: 7, media: { file_info: upload.file_info },
+        ...(passive ? { extra: { msg_seq: delivery.providerReplySequence } } : {})
+      });
+      let response;
+      try { response = await send(!!delivery.target.providerReplyEventId); }
+      catch (error) {
+        if (!delivery.target.providerReplyEventId || !isExpiredReplyAnchor(error)) throw error;
+        response = await send(false);
+      }
+      if (!response.id) throw new ChannelDeliveryError("ambiguous", "QQ file send returned no message identifier");
+      return { logicalResultId: delivery.logicalResultId, segmentIndex: delivery.segmentIndex,
+        outcome: "accepted", providerMessageId: response.id, acceptedAtMs: parseProviderTime(response.timestamp) ?? Date.now() };
+    } catch (error) { throw mapDeliveryError(error); }
+  }
+
+  public async sendAnswerFrame(frame: ChannelAnswerFrame): Promise<ChannelAnswerFrameReceipt> {
+    if (this.#readiness !== "ready") throw new ChannelDeliveryError("deferred", "QQ adapter is not ready");
+    if (!this.#bot.api || frame.target.conversationKind !== "private" ||
+        !frame.target.providerReplyEventId || !frame.target.providerConversationId ||
+        !frame.text || frame.text.length > MAX_CHANNEL_TEXT_CHARACTERS ||
+        !Number.isSafeInteger(frame.index) || frame.index < 0 ||
+        !Number.isSafeInteger(frame.providerReplySequence) || frame.providerReplySequence < 1 ||
+        (frame.index === 0 ? frame.providerMessageId !== undefined : !frame.providerMessageId)) {
+      throw new ChannelDeliveryError("rejected", "QQ native stream frame is invalid or unsupported");
+    }
+    try {
+      // SDK 1.0.4's stream helper requires both anchors; the official contract
+      // requires one. Its authenticated API gateway preserves the correct body.
+      const response = await this.#bot.api.post<{ id: string; timestamp: string | number; remain_msg_len?: unknown }>(
+        `/v2/users/${encodeURIComponent(frame.target.providerConversationId)}/stream_messages`,
+        { input_mode: StreamInputMode.REPLACE,
+          input_state: frame.done ? StreamInputState.DONE : StreamInputState.GENERATING,
+          content_type: StreamContentType.MARKDOWN, content_raw: frame.text,
+          msg_id: frame.target.providerReplyEventId, msg_seq: frame.providerReplySequence,
+          index: frame.index, ...(frame.providerMessageId ? { stream_msg_id: frame.providerMessageId } : {}) }
+      );
+      if (!response.id) throw new ChannelDeliveryError("ambiguous", "QQ stream receipt has no identity");
+      const remaining = (response as { remain_msg_len?: unknown }).remain_msg_len;
+      return { providerMessageId: response.id,
+        acceptedAtMs: parseProviderTime(response.timestamp) ?? Date.now(),
+        ...(typeof remaining === "number" && Number.isSafeInteger(remaining) && remaining >= 0
+          ? { remainingCharacters: remaining } : {}) };
+    } catch (error) { throw mapDeliveryError(error); }
+  }
+
   public async stop(): Promise<void> {
     if (!this.#run) {
       this.#setReadiness("stopped");
@@ -244,6 +311,8 @@ function normalizeQQMessage(
     message.kind === "c2c" ? message.senderId : message.groupOpenid;
   if (!providerConversationId || !message.messageId || !message.senderId) return null;
   const observedAtMs = parseProviderTime(message.timestamp) ?? receivedAt;
+  const mentioned = message.rawEventType === "GROUP_AT_MESSAGE_CREATE" ||
+    message.mentions?.some((mention) => mention.is_you === true);
   return {
     message: {
       provider: "qq",
@@ -252,13 +321,16 @@ function normalizeQQMessage(
       providerConversationId,
       providerIdentity: message.senderId,
       observedAtMs,
-      text: message.content
+      // SDK 1.0.4's sanitizer matches AppID, but QQ group routing markers can
+      // contain opaque IDs. Remove only leading addressing markup, not commands.
+      text: message.kind === "group" && mentioned
+        ? message.content.replace(/^(?:<@!?[^>]+>\s*)+/u, "")
+        : message.content
     },
     attention:
       message.kind === "c2c"
         ? "direct"
-        : message.rawEventType === "GROUP_AT_MESSAGE_CREATE" ||
-            message.mentions?.some((mention) => mention.is_you === true)
+        : mentioned
           ? "mention"
           : "passive",
     replyTarget: {

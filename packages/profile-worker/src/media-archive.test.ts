@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -87,6 +87,30 @@ test("streams and hashes decrypted provider bytes into content-addressed storage
   assert.equal(result.bytesState, "mirrored");
   assert.equal(result.contentSha256, digest);
   assert.deepEqual(await readFile(join(root, "sha256", digest.slice(0, 2), digest)), Buffer.from([1, 2, 3]));
+});
+
+test("automatic file snapshots share the media quota and serialized admission with inbound media", async (context) => {
+  const root = await realpath(await temporaryRoot(context));
+  const workspace = join(root, "workspace");
+  await mkdir(workspace, { mode: 0o700 });
+  await writeFile(join(workspace, "report.txt"), "123456");
+  const store = new FakeStore();
+  const archive = new MediaArchive(store, { rootDirectory: join(root, "media"),
+    perAttachmentLimitBytes: 10, profileQuotaBytes: 10,
+    outputFiles: { workspace, directory: join(root, "outbound"), excludedPaths: [] } });
+  const results = await Promise.all([
+    archive.prepareOutputFiles("[Report](report.txt)"), archive.prepareOutputFiles("[Report](report.txt)")
+  ]);
+  assert.ok(results[0]![0]!.file);
+  assert.equal(results[1]![0]!.file, undefined);
+  const pendingFile = pending({ declaredSizeBytes: 5 });
+  store.records.set(pendingFile.attachmentRecordId, pendingFile);
+  let opened = false;
+  const inbound = await archive.mirror(pendingFile, { openStream: async () => {
+    opened = true; return (async function* () { yield Buffer.from("12345"); })();
+  } });
+  assert.equal(inbound.bytesState, "unavailable");
+  assert.equal(opened, false);
 });
 
 test("retains metadata while rejecting attachment and Profile quota overruns", async (context) => {

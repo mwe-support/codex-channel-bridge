@@ -5,6 +5,10 @@ import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { formatConfiguration, parseConfiguration } from "@codex-channel-bridge/config";
+import {
+  assertWindowsOwnerOnlyPath,
+  secureWindowsOwnerOnlyPath
+} from "@codex-channel-bridge/platform";
 
 type SetupMode = "quick" | "full";
 type AccessMode = "deny" | "allowlist" | "open";
@@ -86,7 +90,8 @@ export async function collectConfiguration(prompt: Prompt, mode: SetupMode): Pro
     if (codexExecutable) profile.codexExecutable = codexExecutable;
     profile.admission = {
       mode: await choice(prompt, "Busy-message behavior", ["steer", "queue"], "steer"),
-      maximumActiveTurns: await integer(prompt, "Maximum active Turns", 1),
+      maximumActiveTurns: await choice(prompt, "Concurrent Turns", ["unlimited", "limited"], "unlimited") === "unlimited"
+        ? null : await integer(prompt, "Maximum active Turns (1–64)", 4),
       queueCapacity: await integer(prompt, "Queue capacity", 16),
       maximumQueueAgeMs: await integer(prompt, "Maximum queue age in milliseconds", 300_000),
       accountRateLimit: await integer(prompt, "Per-account message limit", 30),
@@ -97,6 +102,7 @@ export async function collectConfiguration(prompt: Prompt, mode: SetupMode): Pro
       detail: await choice(prompt, "Approval detail", ["minimal", "summary", "detailed"], "minimal")
     };
     profile.media = {
+      sendOutputFiles: await choice(prompt, "Automatically attach final-answer Workspace file links", ["no", "yes"], "no") === "yes",
       perAttachmentLimitBytes: await integer(prompt, "Per-attachment byte limit", 64 * 1024 * 1024),
       profileQuotaBytes: await integer(prompt, "Profile media byte quota", 10 * 1024 * 1024 * 1024)
     };
@@ -210,23 +216,29 @@ async function createOwnerOnlyDirectory(path: string): Promise<void> {
   const before = await lstat(path).catch(() => null);
   await mkdir(path, { recursive: true, mode: 0o700 });
   if (!before && process.platform !== "win32") await chmod(path, 0o700);
+  if (!before) secureWindowsOwnerOnlyPath(path, "directory");
   const metadata = await lstat(path);
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error(`Unsafe directory: ${path}`);
   if (process.platform !== "win32" &&
       (metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o700)) {
     throw new Error(`Directory must be owned by the current user with mode 0700: ${path}`);
   }
+  assertWindowsOwnerOnlyPath(path, "directory");
 }
 
 async function writeNewFile(path: string, text: string): Promise<void> {
   const temporary = `${path}.tmp-${process.pid}`;
   const handle = await open(temporary, "wx", 0o600);
   try {
+    secureWindowsOwnerOnlyPath(temporary, "file");
     await handle.writeFile(text, "utf8");
     await handle.sync();
-  } finally {
+  } catch (error) {
     await handle.close();
+    await unlink(temporary).catch(() => undefined);
+    throw error;
   }
+  await handle.close();
   try {
     await link(temporary, path);
     await unlink(temporary);

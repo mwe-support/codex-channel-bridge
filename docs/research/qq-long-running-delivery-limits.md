@@ -2,6 +2,31 @@
 
 Research date: 2026-08-27
 
+## Contract clarification — 2026-09-04
+
+The user reaffirmed QQ private-chat native streaming as the required delivery
+behavior; QQ groups and WhatsApp retain complete-text replies. The earlier
+WhatsApp simulated-streaming rollback does not cancel this requirement. See
+[FR-006](../feature-requirements.md#fr-006--qq-private-chat-native-streaming).
+The historical recommendation below to keep C2C streaming optional describes
+the unverified implementation baseline, not the accepted target behavior.
+
+A read-only recheck on 2026-09-04 confirmed that the official
+[C2C endpoint](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_stream_messages.post.html)
+still supports native streaming and the
+[group endpoint](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html)
+still explicitly excludes streaming parameters. SDK 1.0.4 provides `openStream`,
+but the pre-fix Bridge QQ Adapter used only discrete sends. The Next working tree
+now implements native streaming ([implementation](../qq-adapter.md)). A real-account
+test subsequently verified 44 accepted frames including DONE and visible incremental
+rendering; full boundary acceptance remains pending. `remain_msg_len=0` was returned
+throughout accepted continuation, so it must not be used as a writable-capacity
+guard. This is an observed provider result, not a guarantee about undocumented
+field semantics. See [acceptance evidence](../acceptance/qq-native-streaming.md).
+Ordinary reply receipts must not be counted as streaming acceptance.
+
+## Original research
+
 This note evaluates whether QQ can present a long-running Codex task like a
 native Codex streaming client. It uses Tencent's official QQ Bot documentation
 and the exact first-party SDK pinned by this repository:

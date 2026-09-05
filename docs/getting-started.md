@@ -4,7 +4,7 @@ title: Quickstart
 
 # Quickstart
 
-The only published build is currently the `v0.1.0-rc.4` prerelease. It is
+The current build is the `v0.2.0-rc.1` prerelease. It is
 suitable for evaluation, not a stable-production claim. Read the
 [release status](release-status.md) before relying on a provider or platform.
 
@@ -18,13 +18,13 @@ installs or upgrades Codex.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.2.0-rc.1 sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.2.0-rc.1'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
 ```
 
 Run the same command with a newer exact version to upgrade. Existing
@@ -45,15 +45,14 @@ The POSIX defaults are `~/.local/share/codex-channel-bridge` and
 
 ### Manual verification
 
-Open the [v0.1.0-rc.4 release page](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.1.0-rc.4),
-download `codex-channel-bridge-0.1.0-rc.4.tar.gz` and its checksum, then verify:
+Open the [v0.2.0-rc.1 release page](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.2.0-rc.1),
+download `codex-channel-bridge-0.2.0-rc.1.tar.gz` and its checksum, then verify:
 
 ```sh
-sha256 -c codex-channel-bridge-0.1.0-rc.4.tar.gz.sha256
+sha256 -c codex-channel-bridge-0.2.0-rc.1.tar.gz.sha256
 ```
 
-The expected archive SHA-256 is
-`c99afaed120148b5ca06da13e62de672911d7033049cd6e5d4352154c145cf70`.
+Compare the result with the value in the downloaded `.sha256` file.
 
 ## 2. Supply prerequisites
 
@@ -73,9 +72,8 @@ bridge config check --config /absolute/path/config.yaml
 
 Start from `config.example.yaml`, then follow [Configuration](configuration.md)
 and the [QQ](qq-adapter.md) or [WhatsApp](whatsapp-adapter.md) guide. Keep every
-credential outside the repository. The current `main` build also provides
-`bridge setup quick` and `bridge setup full`; they will enter the next release
-and are not part of immutable `v0.1.0-rc.4`.
+credential outside the repository. `bridge setup quick` and `bridge setup full`
+provide interactive alternatives that generate the same canonical configuration.
 
 ## 4. Run the foreground Supervisor
 

@@ -1,8 +1,9 @@
 import { lstat } from "node:fs/promises";
 
 import Database from "better-sqlite3";
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 11;
 const COUNT_TABLES = [
   "message_archive",
   "archive_attachments",
@@ -37,6 +38,7 @@ export async function inspectProfileStore(options: {
     process.platform !== "win32" &&
     (metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600)
   ) throw new Error("Profile database is not owner-only");
+  assertWindowsOwnerOnlyPath(options.databasePath, "file");
   const database = new Database(options.databasePath, {
     readonly: true,
     fileMustExist: true,

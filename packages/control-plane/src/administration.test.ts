@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import Database from "better-sqlite3";
 
 import {
@@ -144,7 +146,7 @@ profiles:
   assert.deepEqual(result, {
     ...result,
     fromVersion: 3,
-    toVersion: 9
+    toVersion: 11
   });
   SqliteProfileStore.open({
     profileId: "alpha",
@@ -359,6 +361,7 @@ async function purgeState(context: test.TestContext): Promise<{
   readonly codexHome: string;
 }> {
   const root = await mkdtemp(join(tmpdir(), "bridge-control-purge-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   await chmod(root, 0o700);
   context.after(async () => rm(root, { recursive: true, force: true }));
   const stateDirectory = join(root, "state");
@@ -405,12 +408,13 @@ profiles:
 
 async function schemaThreeState(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-control-migration-"));
+  secureWindowsOwnerOnlyPath(directory, "directory");
   await chmod(directory, 0o700);
   context.after(async () => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "bridge.sqlite");
   SqliteProfileStore.open({ profileId: "alpha", databasePath }).close();
   const database = new Database(databasePath);
-  database.exec("DROP TABLE archive_attachments");
+  database.exec("ALTER TABLE delivery_outbox DROP COLUMN file_json; DROP TABLE answer_streams; DROP TABLE archive_attachments");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_text_body");
   database.exec("ALTER TABLE delivery_outbox DROP COLUMN provider_reply_participant_id");
   downgradeFiveToFour(database);

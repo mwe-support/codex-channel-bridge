@@ -43,6 +43,12 @@ try {
 
 function execute(store: SqliteProfileStore, operation: StorageOperation): unknown {
   switch (operation.name) {
+    case "beginAnswerStream":
+      return store.beginAnswerStream(operation.args[0]);
+    case "getAnswerStream":
+      return store.getAnswerStream(operation.args[0]);
+    case "putAnswerStream":
+      return store.putAnswerStream(operation.args[0]);
     case "commitObservation":
       return store.commitObservation(operation.args[0]);
     case "settleArchiveAttachment":
@@ -122,6 +128,7 @@ function isStorageRequest(value: unknown): value is StorageRequest {
 }
 
 const STORAGE_OPERATIONS = new Set([
+  "beginAnswerStream", "getAnswerStream", "putAnswerStream",
   "commitObservation", "settleArchiveAttachment", "mirroredMediaBytes",
   "abandonPendingArchiveAttachments", "getChannelTransportCheckpoint",
   "putChannelTransportCheckpoint", "clearChannelTransportCheckpoint", "recentMessages",

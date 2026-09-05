@@ -8,7 +8,7 @@
 
 ## 交互式设置
 
-当前 `main` 分支为下一个版本提供两种交互式入口：
+`0.2.0-rc.1` 提供两种交互式入口：
 
 ```sh
 bridge setup quick
@@ -25,7 +25,7 @@ CLI 会先展示完整且不含 Credential Value 的候选配置，确认默认�
 覆盖已有配置，以 Owner-only 权限创建 Profile State Directory，并原子写入新配置。
 QQ 快速设置使用 `env:QQ_BOT_APP_ID` 和 `env:QQ_BOT_APP_SECRET`，向导不会询问或
 写入真实 Credential Value。WhatsApp Authentication 仍由后续 Host-local Pairing
-命令创建。不可变的 `v0.1.0-rc.4` tag 不包含这些命令。
+命令创建。
 
 ## Schema
 
@@ -47,7 +47,7 @@ profiles:
     secretsFile: /absolute/path/to/bridge-state/secrets.env
     admission:
       mode: steer
-      maximumActiveTurns: 1
+      maximumActiveTurns: null
       queueCapacity: 16
       maximumQueueAgeMs: 300000
       accountRateLimit: 30
@@ -56,6 +56,7 @@ profiles:
       timeoutMs: 300000
       detail: minimal
     media:
+      sendOutputFiles: false
       perAttachmentLimitBytes: 67108864
       profileQuotaBytes: 10737418240
     channelAccounts:
@@ -91,11 +92,11 @@ Profile Mapping 的 Key 是 Profile ID。ID 使用小写 ASCII 字母、数字�
 
 `accessPolicy` 失败关闭。三个独立 Rule 默认均为 `deny`，可设置为 `deny`、`allowlist` 或 `open`。私聊 Rule 比较稳定 Provider Identity。群 Event 必须同时通过使用 Provider Conversation ID 的群会话 Rule，以及使用 Provider Identity 的群参与者 Rule。`allowlist` 至少包含一个精确 Identifier；`deny` 与 `open` 不得携带 `allow` List。`groupThreadScope` 默认为 `conversation`；设置为 `participant` 时，每个获准群成员具有独立 Codex Thread Binding。
 
-Profile-local `admission` 默认使用 Steer Mode、最多一个 Active Turn、16 条 Queue 容量、五分钟最大 Queue Age，以及每个 Channel Account 每 60 秒 30 条 Ordinary Input。只有 `mode: queue` 才会使用 Queue。所有限制都位于 Access Policy 与 Command Parsing 之后、原生 Codex Work 之前。Runtime 语义见 [`admission.md`](admission.md)。
+`0.2.0-rc.1` 中 Profile-local `admission` 默认使用 Steer Mode，不限制不同 Thread 的并发 Turn 数（`maximumActiveTurns: null`），保留 16 条 Queue 容量、五分钟最大 Queue Age，以及每个 Channel Account 每 60 秒 30 条 Ordinary Input。只有 `mode: queue` 才会使用 Queue。显式设置 1 至 64 的整数可启用管理员选择的 Profile 上限；既有显式上限仍生效，将原来的 1 改为 `null` 后不同私聊/群聊可同时执行。同 Thread steer/queue 行为不变；宿主资源和共享 Workspace 冲突仍由管理员负责。所有限制都位于 Access Policy 与 Command Parsing 之后、原生 Codex Work 之前。Runtime 语义见 [`admission.md`](admission.md)。
 
 Profile-local `approval` 默认使用五分钟 Response Window 与 `minimal` Presentation。`detail` 接受 `minimal`、`summary` 或 `detailed`。Minimal Mode 只暴露 Native Operation Class 与 Opaque Response Token；Summary 可以包含有界的 Reason 与 Command Summary；Detailed 可以在 Codex 提供时额外包含有界的 Native Command、Working Directory 或 Requested Write Root。Bridge 永不把 Process-scoped JSON-RPC Request ID 发送到 Channel。参见 [`approval-routing.md`](approval-routing.md)。
 
-Profile-local `media` 默认限制为单 Attachment 64 MiB、单 Profile 已镜像 Byte 10 GiB。`perAttachmentLimitBytes` 与 `profileQuotaBytes` 必须是正整数，且 Profile Quota 不能小于单 Attachment Limit。这两个值只限制已镜像 Byte；超过限制或无法获取 Byte 时，Attachment Metadata 仍保留在 Message Archive 中。
+Profile-local `media` 默认限制为单 Attachment 64 MiB、单 Profile 10 GiB。`perAttachmentLimitBytes` 与 `profileQuotaBytes` 必须是正整数，且 Profile Quota 不能小于单 Attachment Limit。额度同时覆盖入站镜像字节和保留的出站文件快照；超过限制或无法获取字节时，Attachment Metadata 仍保留在 Message Archive 中。`sendOutputFiles` 默认 false，变更需要显式 config apply 并重启该 Profile。识别、导出边界、schema 11 迁移与验收状态见[自动输出附件](output-files.md)。
 
 Dotenv Parser 接受普通 `KEY=VALUE` Record 和使用单引号或双引号包裹的 Literal Value。它不执行 Shell Syntax、不展开 Variable、不进行 Command Substitution，也不包含其他文件。不要提交真实 `secrets.env`；普通 Secret File Name 和 `test-channel.env*` 已被本仓库忽略。
 

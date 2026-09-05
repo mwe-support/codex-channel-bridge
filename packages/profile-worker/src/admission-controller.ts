@@ -40,7 +40,7 @@ export interface AdmissionRelease {
 
 export interface AdmissionControllerOptions {
   readonly mode: AdmissionMode;
-  readonly maximumActiveTurns: number;
+  readonly maximumActiveTurns: number | null;
   readonly queueCapacity: number;
   readonly maximumQueueAgeMs: number;
   readonly accountRateLimit: number;
@@ -110,7 +110,7 @@ export class AdmissionController {
         expired
       };
     }
-    if (this.#active.size < this.#options.maximumActiveTurns) {
+    if (this.#active.size < (this.#options.maximumActiveTurns ?? Infinity)) {
       this.#active.set(request.workId, {
         threadKey: request.threadKey,
         initiatorIdentity: request.providerIdentity
@@ -133,7 +133,7 @@ export class AdmissionController {
     const ready: AdmissionRequest[] = [];
     while (
       this.#queue.length > 0 &&
-      this.#active.size < this.#options.maximumActiveTurns
+      this.#active.size < (this.#options.maximumActiveTurns ?? Infinity)
     ) {
       const candidate = this.#queue[0]!;
       if (this.#activeForThread(candidate.threadKey)) break;
@@ -243,13 +243,14 @@ export class AdmissionController {
 
 function validateOptions(options: AdmissionControllerOptions): void {
   const positive = [
-    options.maximumActiveTurns,
     options.maximumQueueAgeMs,
     options.accountRateLimit,
     options.accountRateWindowMs
   ].every((value) => Number.isSafeInteger(value) && value > 0);
   if (
     !positive ||
+    (options.maximumActiveTurns !== null &&
+      (!Number.isSafeInteger(options.maximumActiveTurns) || options.maximumActiveTurns < 1)) ||
     !Number.isSafeInteger(options.queueCapacity) ||
     options.queueCapacity < 0 ||
     (options.mode !== "steer" && options.mode !== "queue")

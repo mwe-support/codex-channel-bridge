@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, normalize } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import {
   ConfigurationValidationError,
   formatConfiguration,
@@ -34,6 +36,19 @@ profiles:
     stateDirectory: /srv/beta/state
 `;
 
+test("defaults to unlimited independent Turns and accepts only null or an explicit bounded cap", () => {
+  const override = (maximumActiveTurns: unknown) => JSON.stringify({
+    profiles: { alpha: { admission: { maximumActiveTurns } } }
+  });
+  assert.equal(parseConfiguration(baseline).configuration.profiles.alpha!.admission.maximumActiveTurns, null);
+  for (const limit of [null, 1, 2, 64]) {
+    assert.equal(parseConfiguration(baseline, override(limit)).configuration.profiles.alpha!.admission.maximumActiveTurns, limit);
+  }
+  for (const limit of [0, -1, 1.5, 65, "unlimited", "null", false]) {
+    assert.throws(() => parseConfiguration(baseline, override(limit)), ConfigurationValidationError);
+  }
+});
+
 test("formats setup input as validated YAML", () => {
   const text = formatConfiguration({
     schemaVersion: 1,
@@ -63,6 +78,7 @@ test("parses a complete candidate and applies defaults", () => {
     detail: "minimal"
   });
   assert.deepEqual(candidate.configuration.profiles.alpha?.media, {
+    sendOutputFiles: false,
     perAttachmentLimitBytes: 64 * 1024 * 1024,
     profileQuotaBytes: 10 * 1024 * 1024 * 1024
   });
@@ -186,6 +202,7 @@ profiles:
   });
   assert.deepEqual(profile.approval, { timeoutMs: 120_000, detail: "detailed" });
   assert.deepEqual(profile.media, {
+    sendOutputFiles: false,
     perAttachmentLimitBytes: 1_024,
     profileQuotaBytes: 4_096
   });
@@ -404,6 +421,7 @@ test("loadConfiguration validates Profile directories without changing them", as
   const stateDirectory = join(root, "state");
   const path = join(root, "config.yaml");
   await Promise.all([mkdir(workspace), mkdir(codexHome), mkdir(stateDirectory, { mode: 0o700 })]);
+  secureWindowsOwnerOnlyPath(stateDirectory, "directory");
   await writeFile(
     path,
     `schemaVersion: 1\nprofiles:\n  alpha:\n    workspace: ${workspace}\n    codexHome: ${codexHome}\n    stateDirectory: ${stateDirectory}\n`,

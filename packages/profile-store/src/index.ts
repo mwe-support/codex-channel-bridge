@@ -23,6 +23,8 @@ export type {
 } from "./migration.js";
 export type {
   AbandonArchiveAttachmentsInput,
+  AnswerStreamRecord,
+  BeginAnswerStreamInput,
   AbandonApprovalRequestsInput,
   AppendAuditRecordInput,
   ApprovalOperationKind,

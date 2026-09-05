@@ -1,5 +1,8 @@
 # WhatsApp Adapter 基线
 
+`0.2.0-rc.1` 增加显式启用的[自动输出文件投递](output-files.md)，通过 Baileys document
+字节与原引用上下文支持私聊/群聊。收件客户端下载验收待完成，不代表已发布。
+
 ## 固定 Provider Library
 
 首个实现阶段固定 `baileys@7.0.0-rc14`。该 Package 由官方 `WhiskeySockets/Baileys` Repository 发布，使用 MIT License。Package 要求 Node.js 20 或更高版本；Bridge 已要求 Node.js 22 或更高版本。
@@ -20,6 +23,33 @@ Adapter 遵循固定 Source Contract：
 Private 与 Group Message 会转换为 QQ 同样使用的 `ProviderInboundEvent`。WhatsApp JID 保持为 Provider-owned Identity。Device Suffix 会规范化；Group Conversation JID 与 Participant JID 仍保持不同。只有 Baileys Context 指明提及当前已连接账号时，Group Message 才是 Active；其余 Group Message 只作为 Passive Observation 归档。
 
 Outbound Text 使用现有 `ChannelTextDelivery` Contract。当 Inbound Text Message 是 Delivery Anchor 时，Inbound Pipeline 会把 Provider Message ID、Participant Identity 与有界 Original Text 带入 Transactional Outbox。即使重启，Adapter 也能重建固定 Baileys Source 所需的 `quoted` Input，而不持久化 Baileys Runtime Object。没有 Provider Message ID 的 Response 和所有抛出的 Send Error 都被视为 Ambiguous，因为 Web Protocol 没有向 Bridge 提供 Idempotent Send Key 或确定 Reconciliation Lookup。Retry 因此保留已经披露的小重复窗口。
+
+## 等待提示
+
+已接受并执行的 WhatsApp 工作在准备 Codex Thread 之前自动发送 Baileys 原生
+`composing` 状态，然后每 5 秒刷新，覆盖思考、工具调用和生成回复的等待时间。
+它只表示等待，不声称 Codex 当前正在执行某个内部阶段。
+WhatsApp 决定显示气泡还是输入状态文字；Bridge 不创建自定义消息气泡。
+
+完成、中断或失败后停止刷新，并请求 `paused`。同一群中按参与者区分的并发 Turn
+共享一个提示，最后一个结束才收起。拒绝/旁听消息、尚在准入队列等待的输入不启动提示。
+断开时取消所有刷新；旧连接回调不能改变新连接的提示。
+连接已经断开时无法保证远端立即收起，过期状态由 WhatsApp 清除。
+
+此提示尽力而为：每个 Adapter 最多 64 个对话，每个对话最多一个在途状态请求，
+不积压刷新，拒绝后不重试。请求卡住不会阻塞 Codex 或最终投递；
+该条目有界保留到请求结束或 Adapter 断开。停止时如 composing 请求尚在途，
+只在同一连接上请求完成后补发 paused。Provider 接受不等于接收端实际显示。
+
+不需要配置。未发布的 `streamingPreview` 已移除，启动本版本前应从本地配置/
+环境覆盖中删除。现在不使用文本增量，不发送部分消息或编辑消息。
+完整结果仍走不变的 Durable Outbox，超长结果沿用既有分段。
+状态提示不创建 Logical Result 或最终回执，不记录内容，不改变全局在线状态或已读回执。
+
+已核对安装的 Baileys `7.0.0-rc14` 的
+`lib/Socket/chats.js:sendPresenceUpdate` 及
+[上游状态文档](https://github.com/WhiskeySockets/baileys.wiki-site/blob/main/docs/socket/presence-receipts.md)。
+真实客户端验收进度见 [FR-001](feature-requirements.md)。
 
 ## Authentication State
 

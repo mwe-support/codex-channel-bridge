@@ -14,6 +14,8 @@ import {
   type ChannelAdapterReadiness,
   type ChannelDeliveryReceipt,
   type ChannelTextDelivery,
+  type ChannelFileDelivery,
+  type ChannelReplyTarget,
   type ProviderInboundEvent
 } from "@codex-channel-bridge/core";
 
@@ -72,11 +74,12 @@ export interface AdapterSocket {
   };
   sendMessage(
     jid: string,
-    content: { readonly text: string },
+    content: { readonly text: string } | { readonly document: Buffer; readonly mimetype: string; readonly fileName: string },
     options?: { readonly quoted: WhatsAppQuotedMessage }
   ): Promise<{
     readonly key: { readonly id?: string | null };
   } | undefined>;
+  sendPresenceUpdate(type: "composing" | "paused", jid: string): Promise<void>;
   logout(message?: string): Promise<void>;
   end(error: Error | undefined): Promise<void>;
 }
@@ -115,6 +118,7 @@ const NON_RETRYABLE_DISCONNECT_REASONS = new Set<number>([
 ]);
 
 export class WhatsAppChannelAdapter implements ChannelAdapter {
+  readonly #typing = new Map<string, { users: number; timer?: ReturnType<typeof setInterval>; refresh: () => void }>();
   readonly #options: WhatsAppChannelAdapterOptions;
   readonly #socketFactory: BaileysSocketFactory;
   #socket?: AdapterSocket;
@@ -282,6 +286,20 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
   }
 
   public async sendText(delivery: ChannelTextDelivery): Promise<ChannelDeliveryReceipt> {
+    return this.#send(delivery, { text: delivery.text });
+  }
+
+  public async sendFile(delivery: ChannelFileDelivery): Promise<ChannelDeliveryReceipt> {
+    if (!delivery.filename || /[/\\\x00-\x1f]/.test(delivery.filename) ||
+        !(delivery.bytes instanceof Uint8Array) || !delivery.bytes.length || delivery.bytes.length > 64 * 1024 * 1024) {
+      throw new ChannelDeliveryError("rejected", "Invalid file delivery");
+    }
+    return this.#send({ ...delivery, text: delivery.filename }, {
+      document: Buffer.from(delivery.bytes), mimetype: "application/octet-stream", fileName: delivery.filename
+    });
+  }
+
+  async #send(delivery: ChannelTextDelivery, content: Parameters<AdapterSocket["sendMessage"]>[1]): Promise<ChannelDeliveryReceipt> {
     const socket = this.#socket;
     if (!socket || this.#readiness !== "ready") {
       throw new ChannelDeliveryError("deferred", "WhatsApp Channel Adapter is not ready");
@@ -290,7 +308,7 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
     try {
       const response = await socket.sendMessage(
         delivery.target.providerConversationId,
-        { text: delivery.text },
+        content,
         quotedMessage(delivery)
       );
       const providerMessageId = response?.key.id;
@@ -311,6 +329,54 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
       if (error instanceof ChannelDeliveryError) throw error;
       throw new ChannelDeliveryError("ambiguous", "WhatsApp delivery outcome is ambiguous");
     }
+  }
+
+  public startTyping(target: ChannelReplyTarget): (() => void) | undefined {
+    const socket = this.#socket;
+    if (!socket || this.#readiness !== "ready") return undefined;
+    validateDelivery({ target, logicalResultId: "typing", segmentIndex: 0, text: "typing" });
+    const jid = target.providerConversationId;
+    let entry = this.#typing.get(jid);
+    if (!entry) {
+      // At most one in-flight presence per chat; no queue even if the SDK stalls.
+      if (this.#typing.size >= 64) return undefined;
+      let pending = false;
+      const current = { users: 0, timer: undefined as ReturnType<typeof setInterval> | undefined, refresh: (): void => {
+        if (pending || this.#typing.get(jid) !== current || this.#socket !== socket) return;
+        pending = true;
+        const type = current.users > 0 ? "composing" : "paused";
+        void (async () => {
+          try {
+            await socket.sendPresenceUpdate(type, jid);
+          } catch {
+            clearInterval(current.timer);
+            if (this.#typing.get(jid) === current) this.#typing.delete(jid);
+          } finally {
+            pending = false;
+            if (this.#typing.get(jid) === current) {
+              if (type === "paused" && current.users === 0) this.#typing.delete(jid);
+              else if ((type === "composing") !== (current.users > 0)) current.refresh();
+            }
+          }
+        })();
+      } };
+      entry = current;
+      this.#typing.set(jid, entry);
+    }
+    entry.users += 1;
+    entry.timer ??= setInterval(entry.refresh, 5_000);
+    entry.timer.unref();
+    entry.refresh();
+    let stopped = false;
+    return () => {
+      if (stopped || this.#typing.get(jid) !== entry) return;
+      stopped = true;
+      if (--entry.users === 0) {
+        clearInterval(entry.timer);
+        entry.timer = undefined;
+        entry.refresh();
+      }
+    };
   }
 
   /**
@@ -361,6 +427,10 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
   }
 
   #setReadiness(readiness: ChannelAdapterReadiness): void {
+    if (readiness !== "ready") {
+      for (const entry of this.#typing.values()) clearInterval(entry.timer);
+      this.#typing.clear();
+    }
     if (this.#readiness === readiness) return;
     this.#readiness = readiness;
     for (const listener of this.#readinessListeners) listener(readiness);

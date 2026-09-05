@@ -122,6 +122,45 @@ test("delivers a claimed record and persists only a matching accepted receipt", 
   ]);
 });
 
+test("a native DONE receipt settles the Outbox without an ordinary duplicate", async () => {
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  store.claims = [lease({ answerStreamId: "archive-1" })];
+  const outbox = new DeliveryOutbox({ store, resolveAdapter: () => adapter,
+    finishAnswer: async (delivery, boundAdapter) => {
+      assert.equal(boundAdapter, adapter);
+      assert.equal(delivery.answerStreamId, "archive-1");
+      return { logicalResultId: delivery.logicalResultId, segmentIndex: delivery.segmentIndex,
+        outcome: "accepted", providerMessageId: "native-stream", acceptedAtMs: 1010 };
+    } });
+  assert.equal((await outbox.deliverReady()).accepted, 1);
+  assert.equal(adapter.deliveries.length, 0);
+  assert.equal(store.settlements[0]?.outcome, "accepted");
+});
+
+test("attachments bypass text streaming, keep their identity on retry, and fail closed without snapshots", async () => {
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const file = { sha256: "a".repeat(64), sizeBytes: 3, filename: "report.txt" };
+  store.claims = [lease({ file, answerStreamId: "stream" })];
+  let attempts = 0;
+  const fileAdapter: ChannelAdapter = Object.assign(adapter, { sendFile: async (delivery: import("@codex-channel-bridge/core").ChannelFileDelivery) => {
+    attempts++;
+    assert.equal(delivery.logicalResultId, "result-1");
+    assert.equal(delivery.providerReplySequence, 4);
+    assert.deepEqual(delivery.bytes, Buffer.from("abc"));
+    if (attempts === 1) throw new ChannelDeliveryError("ambiguous", "send outcome unknown");
+    return adapter.result as ChannelDeliveryReceipt;
+  } });
+  const options = { store, resolveAdapter: () => fileAdapter,
+    readOutputFile: async () => Buffer.from("abc"), finishAnswer: async () => { assert.fail("file is not a text stream"); } };
+  assert.equal((await new DeliveryOutbox(options).deliverReady()).ambiguous, 1);
+  assert.equal((await new DeliveryOutbox(options).deliverReady()).accepted, 1);
+  assert.equal(adapter.deliveries.length, 0);
+  assert.equal((await new DeliveryOutbox({ ...options, readOutputFile: async () => { throw new Error("missing"); } }).deliverReady()).rejected, 1);
+  assert.equal(attempts, 2);
+});
+
 test("defers without sending when the bound Adapter is unavailable", async () => {
   const store = new FakeStore();
   store.claims = [lease()];

@@ -4,6 +4,33 @@ import test from "node:test";
 import type { JsonRpcNotification } from "@codex-channel-bridge/codex-app-server";
 import { CodexEventRouter, CodexEventRouterError } from "./codex-event-router.js";
 
+test("streams only the claimed Turn's final-answer item before completion", async () => {
+  const router = new CodexEventRouter();
+  const updates: string[] = [];
+  const registration = router.beginTurn("thread-1", (text) => updates.push(text));
+  for (const [itemId, phase] of [["comment", "commentary"], ["answer", "final_answer"]]) {
+    router.route({ method: "item/started", params: {
+      threadId: "thread-1", turnId: "turn-1", item: { type: "agentMessage", id: itemId, phase, text: "" }
+    } });
+    router.route({ method: "item/agentMessage/delta", params: {
+      threadId: "thread-1", turnId: "turn-1", itemId, delta: "hello"
+    } });
+  }
+  assert.deepEqual(updates, []);
+  registration.claim("turn-1");
+  assert.deepEqual(updates, ["hello"]);
+  router.route({ method: "item/agentMessage/delta", params: {
+    threadId: "thread-1", turnId: "stale", itemId: "answer", delta: "wrong"
+  } });
+  router.route({ method: "item/agentMessage/delta", params: {
+    threadId: "thread-1", turnId: "turn-1", itemId: "answer", delta: " world"
+  } });
+  assert.deepEqual(updates, ["hello", "hello world"]);
+  router.route(agentMessage("thread-1", "turn-1", "hello world"));
+  router.route(completed("thread-1", "turn-1"));
+  assert.deepEqual((await registration.completion).agentMessages, ["hello world"]);
+});
+
 test("claims only matching early notifications after turn/start returns", async () => {
   const router = new CodexEventRouter();
   const registration = router.beginTurn("thread-1");

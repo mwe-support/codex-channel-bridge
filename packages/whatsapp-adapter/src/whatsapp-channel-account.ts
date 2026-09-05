@@ -4,6 +4,8 @@ import {
   type ChannelAdapterReadiness,
   type ChannelDeliveryReceipt,
   type ChannelTextDelivery,
+  type ChannelFileDelivery,
+  type ChannelReplyTarget,
   type ProviderInboundEvent
 } from "@codex-channel-bridge/core";
 import { isAbsolute } from "node:path";
@@ -105,6 +107,12 @@ export class WhatsAppChannelAccount implements ChannelAdapter {
     return adapter.sendText(delivery);
   }
 
+  public async sendFile(delivery: ChannelFileDelivery): Promise<ChannelDeliveryReceipt> {
+    const adapter = this.#adapter;
+    if (!adapter) throw new ChannelDeliveryError("deferred", "WhatsApp Channel Account is not connected");
+    return adapter.sendFile(delivery);
+  }
+
   public execute(
     action: WhatsAppChannelAccountAction,
     onEvent: (event: WhatsAppChannelAccountEvent) => Promise<void> | void = () => undefined
@@ -112,6 +120,10 @@ export class WhatsAppChannelAccount implements ChannelAdapter {
     const operation = this.#operation.then(() => this.#execute(action, onEvent));
     this.#operation = operation.catch(() => undefined);
     return operation;
+  }
+
+  public startTyping(target: ChannelReplyTarget): (() => void) | undefined {
+    return this.#adapter?.startTyping(target);
   }
 
   public async stop(): Promise<void> {

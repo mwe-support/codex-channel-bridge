@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import {
   parseConfiguration,
   type ProfileConfiguration,
@@ -69,6 +71,7 @@ const runtimeFactory: ProfileRuntimeFactory = {
 
 test("prepares, validates, and finishes an operator-owned Profile backup", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-backup-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
   const codexHome = join(root, "codex-home");
@@ -126,6 +129,7 @@ profiles:
 
 test("rejects a changed backup manifest and preserves the Profile hold", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-backup-change-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   context.after(() => rm(root, { recursive: true, force: true }));
   const stateDirectory = join(root, "state");
   await mkdir(stateDirectory, { mode: 0o700 });

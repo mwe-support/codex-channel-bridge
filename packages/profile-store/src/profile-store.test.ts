@@ -7,6 +7,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 
 import type { LogicalResultInput, NormalizedChannelMessage } from "@codex-channel-bridge/core";
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 import { ProfileStoreError, SqliteProfileStore } from "./profile-store.js";
 import { inspectProfileStore } from "./inspection.js";
@@ -50,6 +51,7 @@ function logicalResult(overrides: Partial<LogicalResultInput> = {}): LogicalResu
 
 async function temporaryDatabase(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-profile-store-test-"));
+  secureWindowsOwnerOnlyPath(directory, "directory");
   context.after(async () => rm(directory, { force: true, recursive: true }));
   return join(directory, "bridge.sqlite");
 }
@@ -79,7 +81,7 @@ test("inspects Profile storage read-only without requiring a runtime open", asyn
   store.commitMessage(message());
   store.close();
   const report = await inspectProfileStore({ profileId: "alpha", databasePath });
-  assert.equal(report.schemaVersion, 9);
+  assert.equal(report.schemaVersion, 11);
   assert.equal(report.migrationRequired, false);
   assert.equal(report.quickCheck, "ok");
   assert.equal(report.profileMatches, true);
@@ -530,6 +532,39 @@ test("persists Codex input acceptance before its Turn outcome", async (context) 
   store.close();
 });
 
+test("reserves native stream sequences durably and binds only the matching terminal Outbox", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  let store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const input = message({ providerEventId: '["event-1",null]' });
+  const archive = store.commitMessage(input);
+  const target = { conversationKey: input.conversationKey, conversationKind: "private" as const,
+    providerConversationId: input.providerConversationId, providerReplyEventId: "event-1" };
+  assert.throws(() => store.beginAnswerStream({ archiveRecordId: archive.recordId, target }), /accepted input/);
+  const binding = store.createThreadBinding({ profileId: "alpha", conversationKey: input.conversationKey,
+    scope: "conversation", codexThreadId: "thread-1", boundAtMs: 1001 }).binding;
+  const accepted = store.acceptCodexInput({ profileId: "alpha", archiveRecordId: archive.recordId,
+    bindingId: binding.bindingId, codexThreadId: "thread-1", clientUserMessageId: "client-1", acceptedAtMs: 1002 });
+  const stream = store.beginAnswerStream({ archiveRecordId: archive.recordId, target });
+  assert.equal(stream.replySequence, 1);
+  assert.deepEqual(store.beginAnswerStream({ archiveRecordId: archive.recordId, target }), stream);
+  assert.throws(() => store.beginAnswerStream({ archiveRecordId: archive.recordId,
+    target: { ...target, providerConversationId: "other-user" } }), /accepted input/);
+  store.putAnswerStream({ ...stream, state: "sending" });
+  store.close();
+  store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  context.after(() => store.close());
+  assert.equal(store.getAnswerStream(archive.recordId)?.state, "sending");
+  assert.equal(store.getAnswerStream("other-profile-record"), undefined);
+  store.transitionCodexInput({ correlationId: accepted.correlation.correlationId, state: "started",
+    codexTurnId: "turn-1", updatedAtMs: 1003 });
+  store.commitCodexTurnResult({ correlationId: accepted.correlation.correlationId, terminalStatus: "completed",
+    updatedAtMs: 1004, result: logicalResult({ target, completedAtMs: 1004, segments: [{ text: "complete answer" }] }) });
+  const [lease] = store.claimOutbox({ nowMs: 1005, leaseDurationMs: 100 });
+  assert.equal(lease?.answerStreamId, archive.recordId);
+  assert.equal(lease?.providerReplySequence, 2);
+  assert.equal(JSON.stringify(store.getAnswerStream(archive.recordId)).includes("complete answer"), false);
+});
+
 test("commits one Logical Result and all Outbox segments atomically", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
@@ -731,6 +766,30 @@ test("leases Outbox segments in order and retries ambiguous delivery durably", a
       error instanceof ProfileStoreError && error.reason === "outbox_lease_conflict"
   );
   reopened.close();
+});
+
+test("file metadata survives restart in the same ordered Logical Result and detects conflicts", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const file = { sha256: "a".repeat(64), sizeBytes: 4, filename: "report.txt" };
+  const input = { ...logicalResult(), segments: [{ text: "answer" }, { text: file.filename, file }] };
+  let store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const committed = store.commitLogicalResult(input);
+  assert.equal(store.commitLogicalResult(input).inserted, false);
+  assert.throws(() => store.commitLogicalResult({ ...input, segments: [{ text: file.filename, file: { ...file, sha256: "b".repeat(64) } }] }));
+  assert.throws(() => store.commitLogicalResult({ ...input, segments: [{ text: "bad", file: { ...file, filename: "../secret" } }] }));
+  const [first] = store.claimOutbox({ nowMs: 1000, leaseDurationMs: 100 });
+  store.settleOutbox({ outboxRecordId: first!.outboxRecordId, leaseToken: first!.leaseToken,
+    outcome: "accepted", providerMessageId: "text-receipt", acceptedAtMs: 1010 });
+  const [second] = store.claimOutbox({ nowMs: 1010, leaseDurationMs: 100 });
+  assert.deepEqual(second!.file, file);
+  store.close();
+  store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  const [retry] = store.claimOutbox({ nowMs: 1110, leaseDurationMs: 100 });
+  assert.deepEqual(retry!.file, file);
+  assert.equal(retry!.logicalResultId, committed.logicalResultId);
+  assert.equal(retry!.outboxRecordId, second!.outboxRecordId);
+  assert.equal(retry!.providerReplySequence, second!.providerReplySequence);
+  store.close();
 });
 
 test("persists WhatsApp quoted-reply facts through an Outbox restart boundary", async (context) => {

@@ -1,6 +1,7 @@
 import { lstat } from "node:fs/promises";
 
 import Database from "better-sqlite3";
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 export interface ProfileStoreCheckpoint {
   readonly busy: number;
@@ -21,6 +22,7 @@ export async function checkpointProfileStore(options: {
     process.platform !== "win32" &&
     (metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600)
   ) throw new Error("Profile database is not owner-only");
+  assertWindowsOwnerOnlyPath(options.databasePath, "file");
   const database = new Database(options.databasePath, { fileMustExist: true, timeout: 5_000 });
   try {
     const profile = database.prepare(

@@ -9,6 +9,8 @@ import type {
 
 import {
   ProfileStoreError,
+  type AnswerStreamRecord,
+  type BeginAnswerStreamInput,
   type AbandonArchiveAttachmentsInput,
   type ArchiveAttachmentRecord,
   type ArchiveObservationCommitResult,
@@ -48,6 +50,9 @@ import {
 } from "./profile-store.js";
 
 interface StorageOperationArguments {
+  readonly beginAnswerStream: readonly [BeginAnswerStreamInput];
+  readonly getAnswerStream: readonly [string];
+  readonly putAnswerStream: readonly [AnswerStreamRecord];
   readonly commitObservation: readonly [CommitArchiveObservationInput];
   readonly settleArchiveAttachment: readonly [SettleArchiveAttachmentInput];
   readonly mirroredMediaBytes: readonly [];
@@ -82,6 +87,9 @@ interface StorageOperationArguments {
 }
 
 interface StorageOperationResults {
+  readonly beginAnswerStream: AnswerStreamRecord;
+  readonly getAnswerStream: AnswerStreamRecord | undefined;
+  readonly putAnswerStream: void;
   readonly commitObservation: ArchiveObservationCommitResult;
   readonly settleArchiveAttachment: ArchiveAttachmentRecord;
   readonly mirroredMediaBytes: number;
@@ -207,6 +215,18 @@ export class ProfileStore {
 
   public abandonPendingArchiveAttachments(input: AbandonArchiveAttachmentsInput): Promise<number> {
     return this.#request("abandonPendingArchiveAttachments", input);
+  }
+
+  public beginAnswerStream(input: BeginAnswerStreamInput): Promise<AnswerStreamRecord> {
+    return this.#request("beginAnswerStream", input);
+  }
+
+  public getAnswerStream(archiveRecordId: string): Promise<AnswerStreamRecord | undefined> {
+    return this.#request("getAnswerStream", archiveRecordId);
+  }
+
+  public putAnswerStream(record: AnswerStreamRecord): Promise<void> {
+    return this.#request("putAnswerStream", record);
   }
 
   public getChannelTransportCheckpoint(

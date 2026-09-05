@@ -4,7 +4,7 @@ title: 快速开始
 
 # 快速开始
 
-目前唯一已发布构建是候选版本 `v0.1.0-rc.4`，可用于评估，但不代表稳定生产
+当前构建是候选版本 `v0.2.0-rc.1`，可用于评估，但不代表稳定生产
 承诺。在依赖某个 Provider 或平台前，请先阅读[发布状态](release-status.md)。
 
 ## 1. 安装或升级
@@ -16,13 +16,13 @@ Codex。
 macOS 或 Linux：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.1.0-rc.4 sh
+curl -fsSL https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.sh | CODEX_CHANNEL_BRIDGE_VERSION=0.2.0-rc.1 sh
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:CODEX_CHANNEL_BRIDGE_VERSION='0.1.0-rc.4'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
+$env:CODEX_CHANNEL_BRIDGE_VERSION='0.2.0-rc.1'; irm https://raw.githubusercontent.com/mwe-support/codex-channel-bridge/main/install.ps1 | iex
 ```
 
 把准确版本号换成新版本后再次执行同一条命令即可升级。已有配置、Profile 数据和
@@ -42,15 +42,14 @@ POSIX 默认安装到 `~/.local/share/codex-channel-bridge`，命令位于
 
 ### 手动校验
 
-打开 [v0.1.0-rc.4 Release 页面](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.1.0-rc.4)，
-下载 `codex-channel-bridge-0.1.0-rc.4.tar.gz` 及其校验文件，然后执行：
+打开 [v0.2.0-rc.1 Release 页面](https://github.com/mwe-support/codex-channel-bridge/releases/tag/v0.2.0-rc.1)，
+下载 `codex-channel-bridge-0.2.0-rc.1.tar.gz` 及其校验文件，然后执行：
 
 ```sh
-sha256 -c codex-channel-bridge-0.1.0-rc.4.tar.gz.sha256
+sha256 -c codex-channel-bridge-0.2.0-rc.1.tar.gz.sha256
 ```
 
-预期归档 SHA-256 为
-`c99afaed120148b5ca06da13e62de672911d7033049cd6e5d4352154c145cf70`。
+将输出与下载的 `.sha256` 文件中的值对照。
 
 ## 2. 准备前置条件
 
@@ -70,8 +69,7 @@ bridge config check --config /absolute/path/config.yaml
 
 以 `config.example.yaml` 为起点，再阅读[配置](configuration.md)以及
 [QQ](qq-adapter.md) 或 [WhatsApp](whatsapp-adapter.md) 指南。任何凭据都不得进入仓库。
-当前 `main` 构建也提供 `bridge setup quick` 与 `bridge setup full`；它们会进入
-下一个版本，不属于不可变的 `v0.1.0-rc.4`。
+也可以使用 `bridge setup quick` 与 `bridge setup full` 交互式生成相同的规范配置。
 
 ## 4. 以前台方式运行 Supervisor
 

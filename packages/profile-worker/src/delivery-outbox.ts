@@ -21,6 +21,8 @@ export interface DeliveryOutboxStore {
 }
 
 export interface DeliveryOutboxOptions {
+  readonly readOutputFile?: (file: NonNullable<OutboxDeliveryLease["file"]>) => Promise<Uint8Array>;
+  readonly finishAnswer?: (lease: OutboxDeliveryLease, adapter: ChannelAdapter) => Promise<ChannelDeliveryReceipt | undefined>;
   readonly store: DeliveryOutboxStore;
   readonly resolveAdapter: (lease: OutboxDeliveryLease) => ChannelAdapter | undefined;
   readonly clock?: () => number;
@@ -38,6 +40,8 @@ export interface DeliverySweepResult {
 }
 
 export class DeliveryOutbox {
+  readonly #readOutputFile: DeliveryOutboxOptions["readOutputFile"];
+  readonly #finishAnswer: DeliveryOutboxOptions["finishAnswer"];
   readonly #store: DeliveryOutboxStore;
   readonly #resolveAdapter: DeliveryOutboxOptions["resolveAdapter"];
   readonly #clock: () => number;
@@ -49,6 +53,8 @@ export class DeliveryOutbox {
   #activeSweep?: Promise<DeliverySweepResult>;
 
   public constructor(options: DeliveryOutboxOptions) {
+    this.#readOutputFile = options.readOutputFile;
+    this.#finishAnswer = options.finishAnswer;
     this.#store = options.store;
     this.#resolveAdapter = options.resolveAdapter;
     this.#clock = options.clock ?? Date.now;
@@ -110,7 +116,7 @@ export class DeliveryOutbox {
     }
 
     try {
-      const receipt = await adapter.sendText({
+      const delivery = {
         logicalResultId: lease.logicalResultId,
         segmentIndex: lease.segmentIndex,
         target: lease.target,
@@ -118,7 +124,17 @@ export class DeliveryOutbox {
           ? { providerReplySequence: lease.providerReplySequence }
           : {}),
         text: lease.text
-      });
+      };
+      let receipt: ChannelDeliveryReceipt;
+      if (lease.file) {
+        if (!adapter.sendFile || !this.#readOutputFile) throw new ChannelDeliveryError("rejected", "File delivery unavailable");
+        const bytes = await this.#readOutputFile(lease.file).catch(() => {
+          throw new ChannelDeliveryError("rejected", "Output snapshot unavailable");
+        });
+        receipt = await adapter.sendFile({ ...delivery, filename: lease.file.filename, bytes });
+      } else {
+        receipt = await this.#finishAnswer?.(lease, adapter) ?? await adapter.sendText(delivery);
+      }
       requireMatchingReceipt(receipt, lease);
       await this.#store.settleOutbox({
         outboxRecordId: lease.outboxRecordId,

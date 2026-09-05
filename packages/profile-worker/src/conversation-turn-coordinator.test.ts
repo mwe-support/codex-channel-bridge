@@ -139,6 +139,7 @@ class FakeTurnDriver implements NativeTurnDriver {
     target: { readonly threadId: string; readonly turnId: string };
   }> = [];
   failAfterStarted = false;
+  finalText = "terminal answer";
   failSteer = false;
   completion?: Promise<void>;
 
@@ -159,7 +160,7 @@ class FakeTurnDriver implements NativeTurnDriver {
       threadId,
       turnId: "turn-1",
       status: "completed",
-      finalText: "terminal answer",
+      finalText: this.finalText,
       clientUserMessageId: options.clientUserMessageId!
     };
   }
@@ -229,6 +230,39 @@ test("persists Binding and input correlation around native Turn execution", asyn
   ]);
   assert.equal(store.logicalResult?.target.providerReplyEventId, "event-1");
   assert.equal(store.logicalResult?.segments[0]?.text, "terminal answer");
+});
+
+test("oversized QQ terminal fallback retains all Unicode text in deliverable segments", async () => {
+  const store = new FakeStore();
+  const turnDriver = new FakeTurnDriver();
+  turnDriver.finalText = "🌲".repeat(3000);
+  const coordinator = new ConversationTurnCoordinator({ profileId: "alpha", store, turnDriver });
+  await coordinator.execute({ archiveRecordId: "archive-1", event: inboundEvent(), groupThreadScope: "conversation" });
+  const segments = store.logicalResult!.segments;
+  assert.equal(segments.length, 2);
+  assert.ok(segments.every((segment) => segment.text.length <= 5_000));
+  assert.equal(segments.map((segment) => segment.text).join(""), turnDriver.finalText);
+});
+
+test("automatic attachments share the terminal commit and preparation failure preserves the answer", async () => {
+  for (const fail of [false, true]) {
+    const store = new FakeStore();
+    const turnDriver = new FakeTurnDriver();
+    turnDriver.finalText = "[Report](report.txt)";
+    const file = { sha256: "a".repeat(64), sizeBytes: 4, filename: "report.txt" };
+    const coordinator = new ConversationTurnCoordinator({ profileId: "alpha", store, turnDriver,
+      prepareOutputFiles: async (text) => {
+        assert.equal(text, turnDriver.finalText);
+        assert.equal(store.logicalResult, undefined);
+        if (fail) throw new Error("disk unavailable");
+        return [{ text: file.filename, file }];
+      } });
+    await coordinator.execute({ archiveRecordId: "archive-1", event: inboundEvent(), groupThreadScope: "conversation" });
+    assert.equal(store.logicalResult!.segments[0]!.text, turnDriver.finalText);
+    assert.equal(store.logicalResult!.segments.length, 2);
+    assert.deepEqual(store.logicalResult!.segments[1]!.file, fail ? undefined : file);
+    assert.equal(store.correlation!.state, "terminal");
+  }
 });
 
 test("resumes an existing participant-scoped Binding", async () => {

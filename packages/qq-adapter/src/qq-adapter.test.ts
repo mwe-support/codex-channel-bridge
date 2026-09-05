@@ -4,7 +4,7 @@ import test from "node:test";
 import type { QQBot, QQBotInboundMessage, QQBotOptions } from "@tencent-connect/qqbot-nodejs";
 import { ApiError } from "@tencent-connect/qqbot-nodejs/protocol";
 
-import { ChannelDeliveryError, type ProviderInboundEvent } from "@codex-channel-bridge/core";
+import { ChannelDeliveryError, parseChannelText, type ProviderInboundEvent } from "@codex-channel-bridge/core";
 
 import {
   QQChannelAdapter,
@@ -24,6 +24,18 @@ const options: QQChannelAdapterOptions = {
 };
 
 class FakeBot implements QQBotClient {
+  readonly uploads: Array<Parameters<QQBot["uploadMedia"]>[0]> = [];
+  uploadFailure?: Error;
+  async uploadMedia(value: Parameters<QQBot["uploadMedia"]>[0]) {
+    this.uploads.push(value);
+    if (this.uploadFailure) throw this.uploadFailure;
+    return { file_info: "opaque-file", file_uuid: "file-1", ttl: 300 };
+  }
+  readonly frames: Array<{ path: string; body: unknown }> = [];
+  readonly api = { post: async <T>(path: string, body?: unknown): Promise<T> => {
+    this.frames.push({ path, body });
+    return { id: "stream-1", timestamp: 1000, remain_msg_len: 4995 } as T;
+  } };
   readonly handlers = new Map<string, Array<(...args: never[]) => unknown>>();
   readonly sent: Array<{
     target: { scope: "c2c" | "group"; targetId: string; msgId?: string };
@@ -89,12 +101,77 @@ class FakeBot implements QQBotClient {
   }
 }
 
+test("QQ file upload does not send; the message uses the durable sequence and original scope", async () => {
+  const bot = new FakeBot();
+  const channel = adapter(bot);
+  await channel.start(async () => {});
+  try {
+    for (const conversationKind of ["private", "group"] as const) {
+      await channel.sendFile({ logicalResultId: "result-file", segmentIndex: 1, providerReplySequence: 6,
+        target: { conversationKey: "conversation", conversationKind, providerConversationId: "target", providerReplyEventId: "inbound" },
+        filename: "report.txt", bytes: Buffer.from("test") });
+      assert.equal(bot.uploads.at(-1)!.srvSendMsg, false);
+      assert.equal(bot.uploads.at(-1)!.fileType, 4);
+      assert.equal(bot.sentRaw.at(-1)!.target.scope, conversationKind === "private" ? "c2c" : "group");
+      assert.deepEqual(bot.sentRaw.at(-1)!.extra, { msg_seq: 6 });
+      assert.deepEqual(bot.sentRaw.at(-1)!.media, { file_info: "opaque-file" });
+    }
+    assert.equal(bot.sent.length, 0);
+    const delivery = { logicalResultId: "result-file", segmentIndex: 1, providerReplySequence: 6,
+      target: { conversationKey: "conversation", conversationKind: "private" as const,
+        providerConversationId: "target", providerReplyEventId: "inbound" },
+      filename: "report.txt", bytes: Buffer.from("test") };
+    for (const [failure, outcome] of [
+      [new ApiError("rate limited", 429, "/files"), "deferred"],
+      [new ApiError("forbidden", 403, "/files"), "rejected"],
+      [new Error("connection reset"), "ambiguous"]
+    ] as const) {
+      bot.uploadFailure = failure;
+      await assert.rejects(channel.sendFile(delivery),
+        (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === outcome);
+      assert.equal(bot.sentRaw.length, 2); // failed upload must not send a message
+    }
+    bot.uploadFailure = undefined;
+    bot.rawSendFailure = new Error("send response lost");
+    await assert.rejects(channel.sendFile(delivery),
+      (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "ambiguous");
+    const uploads = bot.uploads.length;
+    bot.rawSendFailure = undefined;
+    assert.equal((await channel.sendFile(delivery)).outcome, "accepted");
+    assert.equal(bot.uploads.length, uploads + 1); // retry obtains a fresh provider file reference
+    assert.deepEqual(bot.sentRaw.at(-1)!.extra, { msg_seq: 6 });
+  } finally { await channel.stop(); }
+});
+
 function adapter(fake: FakeBot): QQChannelAdapter {
   return new QQChannelAdapter(options, (factoryOptions) => {
     fake.factoryOptions = factoryOptions;
     return fake;
   });
 }
+
+test("QQ C2C stream uses one anchor and stable identity/sequence, never group", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  await channel.start(async () => {});
+  const target = { conversationKey: "dm", conversationKind: "private" as const,
+    providerConversationId: "user-test", providerReplyEventId: "inbound-test" };
+  const first = await channel.sendAnswerFrame({ target, index: 0, text: "hello", done: false, providerReplySequence: 3 });
+  assert.equal(first.remainingCharacters, 4995);
+  await channel.sendAnswerFrame({ target, index: 1, text: "hello world", done: true,
+    providerReplySequence: 3, providerMessageId: first.providerMessageId });
+  assert.deepEqual(fake.frames, [
+    { path: "/v2/users/user-test/stream_messages", body: { input_mode: "replace", input_state: 1,
+      content_type: "markdown", content_raw: "hello", msg_id: "inbound-test", msg_seq: 3, index: 0 } },
+    { path: "/v2/users/user-test/stream_messages", body: { input_mode: "replace", input_state: 10,
+      content_type: "markdown", content_raw: "hello world", msg_id: "inbound-test", msg_seq: 3, index: 1, stream_msg_id: "stream-1" } }
+  ]);
+  await assert.rejects(channel.sendAnswerFrame({ target: { ...target, conversationKind: "group" },
+    index: 0, text: "no", done: false, providerReplySequence: 1 }), ChannelDeliveryError);
+  assert.equal(fake.frames.length, 2);
+  assert.equal(fake.sent.length + fake.sentRaw.length, 0);
+  await channel.stop();
+});
 
 function inbound(overrides: Partial<QQBotInboundMessage> = {}): QQBotInboundMessage {
   return {
@@ -205,6 +282,29 @@ test("distinguishes mentioned and passive QQ group messages", async () => {
     mentions: [{ is_you: true, bot: true }]
   });
   assert.equal(events[2]?.attention, "mention");
+  await channel.stop();
+});
+
+test("normalizes leading opaque mention markers before core command parsing only in addressed groups", async () => {
+  const fake = new FakeBot();
+  const channel = adapter(fake);
+  const events: ProviderInboundEvent[] = [];
+  await channel.start(async (event) => { events.push(event); });
+  const group = inbound({ kind: "group", rawEventType: "GROUP_AT_MESSAGE_CREATE",
+    groupOpenid: "group-test", content: "<@!opaque-bot-id> /model" });
+  await fake.emitMessage(1, group);
+  assert.deepEqual(parseChannelText(events[0]!.message.text!), {
+    kind: "command", command: { kind: "model.read" }
+  });
+  await fake.emitMessage(2, { ...group, content: "<@opaque-bot-id> //model" });
+  assert.deepEqual(parseChannelText(events[1]!.message.text!), { kind: "ordinary", text: "/model" });
+  await fake.emitMessage(3, { ...group, rawEventType: "GROUP_MESSAGE_CREATE" });
+  assert.equal(events[2]!.message.text, group.content);
+  assert.equal(events[2]!.attention, "passive");
+  await fake.emitMessage(4, { ...group, content: "hello <@other> /model" });
+  assert.equal(events[3]!.message.text, "hello <@other> /model");
+  await fake.emitMessage(5, inbound({ content: group.content }));
+  assert.equal(events[4]!.message.text, group.content);
   await channel.stop();
 });
 

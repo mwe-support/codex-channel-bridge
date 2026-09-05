@@ -22,7 +22,7 @@ title: Limits and roadmap
 - The release mechanism publishes a source archive and checksum, not npm
   packages or a registry-hosted container image.
 
-## Implemented on current main for the next release
+## Included in `0.2.0-rc.1`
 
 - Maintained one-command native installers and atomic Bridge upgrades that
   verify immutable release checksums and never install or upgrade Codex.
@@ -37,6 +37,10 @@ title: Limits and roadmap
   the service identity, LocalSystem, and BUILTIN\Administrators.
 
 ## Future work
+
+New feature requests and their acceptance progress are tracked in the
+[Feature requirements](feature-requirements.md) ledger, separately from release
+availability.
 
 - Release-packaged native Windows Service installation plus strict state,
   secret, and Baileys ACL enforcement on the designated host. A one-time WinSW

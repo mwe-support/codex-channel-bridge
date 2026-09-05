@@ -9,6 +9,13 @@ test("treats ordinary text and double-slash escapes as Codex input", () => {
 });
 
 test("parses the registered command vocabulary once", () => {
+  for (const [text, kind] of [["/model", "model.read"], ["/MODEL  ", "model.read"],
+    ["/reasoning\t", "reasoning.read"]]) {
+    assert.deepEqual(parseChannelText(text!), { kind: "command", command: { kind } });
+  }
+  assert.deepEqual(parseChannelText("/reasoning low"), {
+    kind: "command", command: { kind: "reasoning.select", effort: "low" }
+  });
   assert.deepEqual(parseChannelText("/status"), {
     kind: "command",
     command: { kind: "status" }

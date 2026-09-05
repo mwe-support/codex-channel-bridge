@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import { parseConfiguration } from "@codex-channel-bridge/config";
 import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
@@ -14,6 +16,7 @@ import { SupportBundleManager } from "./support-bundle.js";
 
 async function fixture(context: test.TestContext) {
   const root = await mkdtemp(join(tmpdir(), "bridge-audit-support-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
   const codexHome = join(root, "codex-home");

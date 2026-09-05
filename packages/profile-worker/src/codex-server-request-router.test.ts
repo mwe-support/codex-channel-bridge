@@ -140,3 +140,66 @@ test("fails unsupported and uncontrolled requests closed", async () => {
   );
   assert.deepEqual(runtime.errors.map((entry) => entry.error.code), [-32601, -32602]);
 });
+
+test("native resolution invalidates only the matching Thread and typed request id", async () => {
+  const runtime = new FakeRuntime();
+  let sequence = 0;
+  const router = new CodexServerRequestRouter(runtime, { newApprovalToken: () => `token-${++sequence}` });
+  for (const id of [7, "7"]) {
+    await router.accept({ id, method: "item/fileChange/requestApproval",
+      params: { threadId: "thread-1", turnId: "turn-1" } }, () => controller);
+  }
+  assert.equal(router.resolveNotification({ method: "serverRequest/resolved",
+    params: { threadId: "other", requestId: 7 } }).length, 0);
+  assert.equal(router.resolveNotification({ method: "serverRequest/resolved",
+    params: { threadId: "thread-1", requestId: 7 } }).length, 1);
+  await assert.rejects(router.respondByToken("token-1", controller, "accept"), /not pending/);
+  assert.equal(router.pendingCount(), 1);
+  assert.equal(runtime.responses.length, 0);
+  assert.equal(router.resolveNotification({ method: "turn/completed",
+    params: { threadId: "thread-1", turn: { id: "other", status: "interrupted" } } }).length, 0);
+  assert.equal(router.resolveNotification({ method: "turn/completed",
+    params: { threadId: "thread-1", turn: { id: "turn-1", status: "interrupted" } } }).length, 1);
+  assert.equal(router.pendingCount(), 0);
+  await assert.rejects(router.respondByToken("token-2", controller, "accept"), /not pending/);
+  assert.equal(runtime.responses.length, 0);
+  router.close();
+});
+
+test("all participant boundaries, duplicate decisions and closed generations fail closed", async () => {
+  const runtime = new FakeRuntime();
+  const router = new CodexServerRequestRouter(runtime);
+  const accepted = await router.accept({ id: 1, method: "item/fileChange/requestApproval",
+    params: { threadId: "thread-1", turnId: "turn-1" } }, () => controller);
+  assert.equal(accepted.kind, "approval");
+  if (accepted.kind !== "approval") return;
+  const token = accepted.approval.approvalToken;
+  for (const field of ["profileId", "channelAccountId", "channelAccountEpochId", "conversationKey", "providerIdentity"]) {
+    await assert.rejects(router.respondByToken(token, { ...controller, [field]: "other" }, "accept"), /does not control/);
+  }
+  await router.respondByToken(token, controller, "decline");
+  await assert.rejects(router.respondByToken(token, controller, "accept"), /not pending/);
+  assert.equal(runtime.responses.length, 1);
+  const pending = await router.accept({ id: 2, method: "item/fileChange/requestApproval",
+    params: { threadId: "thread-1", turnId: "turn-2" } }, () => controller);
+  router.close();
+  if (pending.kind === "approval") {
+    await assert.rejects(router.respondByToken(pending.approval.approvalToken, controller, "accept"), /not pending/);
+  }
+  assert.equal(runtime.responses.length, 1);
+});
+
+test("a response write failing during shutdown cannot resurrect an old-generation token", async () => {
+  const runtime = new FakeRuntime();
+  const router = new CodexServerRequestRouter(runtime, { newApprovalToken: () => "old-generation" });
+  await router.accept({ id: 1, method: "item/fileChange/requestApproval",
+    params: { threadId: "thread-1", turnId: "turn-1" } }, () => controller);
+  runtime.respond = async () => { router.close(); throw new Error("closed during write"); };
+  await assert.rejects(router.respondByToken("old-generation", controller, "accept"), /closed during write/);
+  assert.equal(router.pendingCount(), 0);
+  await assert.rejects(router.respondByToken("old-generation", controller, "accept"), /not pending/);
+  const late = await router.accept({ id: 2, method: "item/fileChange/requestApproval",
+    params: { threadId: "thread-1", turnId: "turn-1" } }, () => controller);
+  assert.equal(late.kind, "rejected");
+  assert.equal(router.pendingCount(), 0);
+});

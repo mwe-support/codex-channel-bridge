@@ -7,7 +7,7 @@ import type {
   WAMessage
 } from "baileys";
 
-import type { ProviderInboundEvent } from "@codex-channel-bridge/core";
+import { ChannelDeliveryError, type ProviderInboundEvent } from "@codex-channel-bridge/core";
 
 import {
   WhatsAppChannelAdapter,
@@ -27,6 +27,15 @@ class FakeSocket {
   ended = false;
   logoutCount = 0;
   logoutFailure = false;
+  readonly presence: Array<{ type: string; jid: string }> = [];
+  presenceWait: Promise<void> | undefined;
+  presenceFailure = false;
+
+  async sendPresenceUpdate(type: "composing" | "paused", jid: string): Promise<void> {
+    this.presence.push({ type, jid });
+    if (this.presenceFailure) throw new Error("presence rejected");
+    await this.presenceWait;
+  }
 
   async sendMessage(jid: string, content: unknown, options?: unknown): Promise<WAMessage> {
     this.sends.push({ jid, content, ...(options ? { options } : {}) });
@@ -44,6 +53,139 @@ class FakeSocket {
 }
 
 const auth = {} as AuthenticationState;
+
+test("WhatsApp sends document bytes to the original private or group target with quote correlation", async () => {
+  const socket = new FakeSocket();
+  const adapter = new WhatsAppChannelAdapter({ channelAccountId: "wa", auth, saveCredentials: async () => {} }, () => socket);
+  const started = adapter.start(async () => {});
+  socket.emitter.emit("connection.update", { connection: "open" });
+  await started;
+  try {
+    for (const conversationKind of ["private", "group"] as const) {
+      const target = { conversationKey: "conversation", conversationKind,
+        providerConversationId: conversationKind === "private" ? "user@lid" : "group@g.us",
+        providerReplyEventId: "inbound", providerReplyParticipantId: "sender@lid", providerReplyText: "generate file" };
+      const receipt = await adapter.sendFile({ logicalResultId: "file-result", segmentIndex: 1,
+        target, filename: "report.txt", bytes: Buffer.from("test") });
+      assert.equal(receipt.outcome, "accepted");
+      assert.equal(socket.sends.at(-1)!.jid, target.providerConversationId);
+      assert.deepEqual(socket.sends.at(-1)!.content, { document: Buffer.from("test"), mimetype: "application/octet-stream", fileName: "report.txt" });
+      assert.ok(socket.sends.at(-1)!.options);
+    }
+    const delivery = { logicalResultId: "file-result", segmentIndex: 1,
+      target: { conversationKey: "conversation", conversationKind: "private" as const,
+        providerConversationId: "user@lid" }, filename: "report.txt", bytes: Buffer.from("test") };
+    const send = socket.sendMessage.bind(socket);
+    socket.sendMessage = async () => { throw new Error("upload or send response lost"); };
+    await assert.rejects(adapter.sendFile(delivery),
+      (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "ambiguous");
+    socket.sendMessage = async () => ({ key: {} }) as WAMessage;
+    await assert.rejects(adapter.sendFile(delivery),
+      (error: unknown) => error instanceof ChannelDeliveryError && error.outcome === "ambiguous");
+    socket.sendMessage = send;
+    assert.equal((await adapter.sendFile(delivery)).outcome, "accepted");
+  } finally { await adapter.stop(); }
+});
+
+test("typing starts immediately, refreshes without text and shares overlapping group Turns", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const socket = new FakeSocket();
+  const adapter = new WhatsAppChannelAdapter({ channelAccountId: "wa", auth, saveCredentials: async () => {} }, () => socket);
+  const started = adapter.start(async () => {});
+  socket.emitter.emit("connection.update", { connection: "open" });
+  await started;
+  const target = { conversationKey: "group", conversationKind: "group" as const, providerConversationId: "group@g.us" };
+  const stopA = adapter.startTyping(target)!;
+  const stopB = adapter.startTyping(target)!;
+  const stopPrivate = adapter.startTyping({ ...target, conversationKey: "private", conversationKind: "private", providerConversationId: "user@lid" })!;
+  assert.deepEqual(socket.presence, [
+    { type: "composing", jid: "group@g.us" }, { type: "composing", jid: "user@lid" }
+  ]);
+  for (let i = 0; i < 13; i++) {
+    for (let j = 0; j < 6; j++) await Promise.resolve();
+    t.mock.timers.tick(5_000);
+  }
+  assert.equal(socket.presence.filter((entry) => entry.type === "composing").length, 28);
+  assert.equal(socket.sends.length, 0);
+  for (let j = 0; j < 6; j++) await Promise.resolve();
+  stopA(); stopA();
+  assert.equal(socket.presence.filter((entry) => entry.type === "paused").length, 0);
+  stopB(); stopPrivate();
+  await Promise.resolve();
+  assert.deepEqual(socket.presence.slice(-2), [
+    { type: "paused", jid: "group@g.us" }, { type: "paused", jid: "user@lid" }
+  ]);
+  const count = socket.presence.length;
+  t.mock.timers.tick(60_000);
+  assert.equal(socket.presence.length, count);
+  await adapter.sendText({ target, logicalResultId: "final", segmentIndex: 0, text: "complete final text" });
+  assert.deepEqual(socket.sends.map((send) => send.content), [{ text: "complete final text" }]);
+  await adapter.stop();
+});
+
+test("typing rejection, in-flight cleanup and old sockets cannot affect final delivery", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  const first = new FakeSocket();
+  const second = new FakeSocket();
+  const sockets = [first, second];
+  const adapter = new WhatsAppChannelAdapter({
+    channelAccountId: "wa", auth, saveCredentials: async () => {}, reconnectDelaysMs: [0]
+  }, () => sockets.shift()!);
+  const started = adapter.start(async () => {});
+  first.emitter.emit("connection.update", { connection: "open" });
+  await started;
+  const target = { conversationKey: "private", conversationKind: "private" as const, providerConversationId: "user@lid" };
+  let resolveSend!: () => void;
+  first.presenceWait = new Promise<void>((resolve) => { resolveSend = resolve; });
+  const stop = adapter.startTyping(target)!;
+  t.mock.timers.tick(60_000);
+  assert.equal(first.presence.length, 1); // A stalled call cannot build a send queue.
+  stop();
+  assert.equal(first.presence.length, 1);
+  resolveSend();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.equal(first.presence.at(-1)?.type, "paused");
+  first.presenceWait = undefined;
+
+  first.presenceFailure = true;
+  adapter.startTyping(target);
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  const failedCount = first.presence.length;
+  t.mock.timers.tick(60_000);
+  assert.equal(first.presence.length, failedCount);
+  await adapter.sendText({ target, logicalResultId: "final", segmentIndex: 0, text: "final after presence rejection" });
+  assert.equal(first.sends.length, 1);
+
+  first.presenceFailure = false;
+  first.presenceWait = new Promise<void>((resolve) => { resolveSend = resolve; });
+  const staleStop = adapter.startTyping(target)!;
+  first.emitter.emit("connection.update", { connection: "close" });
+  await Promise.resolve();
+  second.emitter.emit("connection.update", { connection: "open" });
+  const currentStop = adapter.startTyping(target)!;
+  const before = first.presence.length;
+  resolveSend();
+  staleStop();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  t.mock.timers.tick(5_000);
+  assert.equal(first.presence.length, before);
+  assert.equal(second.presence.filter((entry) => entry.type === "composing").length, 2);
+  await Promise.resolve();
+  currentStop();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.equal(second.presence.at(-1)?.type, "paused");
+  assert.throws(() => adapter.startTyping({ ...target, providerConversationId: "invalid" }));
+  const stops = Array.from({ length: 64 }, (_, index) => adapter.startTyping({
+    ...target, providerConversationId: `user${index}@lid`
+  })!);
+  assert.equal(adapter.startTyping({ ...target, providerConversationId: "overflow@lid" }), undefined);
+  await adapter.stop();
+  for (const cleanup of stops) cleanup();
+  const stoppedCount = second.presence.length;
+  t.mock.timers.tick(60_000);
+  assert.equal(second.presence.length, stoppedCount);
+  assert.equal(adapter.startTyping(target), undefined);
+});
 
 test("starts with history disabled and accepts only live non-resend messages", async () => {
   const socket = new FakeSocket();

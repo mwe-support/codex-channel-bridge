@@ -13,9 +13,11 @@ export type {
   TrustedChannelContext
 } from "./channel-event.js";
 export type {
+  OutputFile,
   LogicalResultInput,
   LogicalResultSegmentInput
 } from "./delivery.js";
+export { validOutputFile } from "./delivery.js";
 export type {
   CodexInputAcceptance,
   CodexInputCorrelation,
@@ -38,12 +40,15 @@ export { BRIDGE_VERSION } from "./version.js";
 export { ChannelDeliveryError } from "./channel-adapter.js";
 export type {
   ChannelAdapter,
+  ChannelAnswerFrame,
+  ChannelAnswerFrameReceipt,
   ChannelAdapterReadiness,
   ChannelAttention,
   ChannelDeliveryFailureOutcome,
   ChannelDeliveryReceipt,
   ChannelReplyTarget,
   ChannelTextDelivery,
+  ChannelFileDelivery,
   ArchiveAttachmentBytesState,
   InboundChannelEvent,
   InboundChannelAttachment,

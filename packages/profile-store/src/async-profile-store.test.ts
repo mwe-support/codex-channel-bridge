@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { LogicalResultInput, NormalizedChannelMessage } from "@codex-channel-bridge/core";
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 import { ProfileStore } from "./async-profile-store.js";
 import { ProfileStoreError } from "./profile-store.js";
@@ -46,6 +47,7 @@ function logicalResult(): LogicalResultInput {
 
 async function temporaryDatabase(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-async-store-test-"));
+  secureWindowsOwnerOnlyPath(directory, "directory");
   context.after(async () => rm(directory, { force: true, recursive: true }));
   return join(directory, "bridge.sqlite");
 }

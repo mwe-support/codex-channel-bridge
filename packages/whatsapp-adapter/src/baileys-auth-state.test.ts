@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { AuthenticationState } from "baileys";
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 import {
   activateBaileysAuthGeneration,
@@ -20,6 +21,7 @@ import {
 
 test("creates owner-only Baileys state and persists credentials and Signal keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "bridge-baileys-auth-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   const directoryPath = join(root, "active");
   try {
     const handle = await openBaileysAuthState({ directoryPath, createIfMissing: true });
@@ -69,6 +71,7 @@ test("fails closed for missing, insecure, or symlinked auth directories", async 
 
 test("activates a registered staged generation through an atomic marker", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-generations-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "channel-auth", "wa-primary");
   try {
     const first = await createStagedBaileysAuthState({ rootDirectoryPath });
@@ -118,6 +121,7 @@ test("activates a registered staged generation through an atomic marker", async 
 
 test("rejects an unregistered generation without replacing active auth", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-unregistered-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   try {
     const first = await createStagedBaileysAuthState({ rootDirectoryPath });
@@ -144,6 +148,7 @@ test("rejects an unregistered generation without replacing active auth", async (
 
 test("persists an uncertain revocation lock without exposing the provider identity", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-revocation-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   try {
     const generation = await createStagedBaileysAuthState({ rootDirectoryPath });
@@ -177,6 +182,7 @@ test("persists an uncertain revocation lock without exposing the provider identi
 
 test("forgets only the selected local Baileys account root", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-baileys-forget-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   const siblingPath = join(parent, "preserve-sibling");
   try {

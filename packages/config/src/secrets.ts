@@ -2,6 +2,8 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 const MAX_SECRET_FILE_BYTES = 1024 * 1024;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -85,6 +87,7 @@ async function readSecureSecretFile(path: string, missingAllowed: boolean): Prom
   }
   if (!before.isFile() || before.isSymbolicLink()) insecureFile();
   assertOwnerOnly(before.uid, before.mode);
+  try { assertWindowsOwnerOnlyPath(path, "file"); } catch { insecureFile(); }
 
   const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
   let handle;
@@ -93,6 +96,7 @@ async function readSecureSecretFile(path: string, missingAllowed: boolean): Prom
     const current = await handle.stat();
     if (!current.isFile() || current.dev !== before.dev || current.ino !== before.ino) insecureFile();
     assertOwnerOnly(current.uid, current.mode);
+    try { assertWindowsOwnerOnlyPath(path, "file"); } catch { insecureFile(); }
     if (current.size < 1 || current.size > MAX_SECRET_FILE_BYTES) malformedFile();
     return await handle.readFile({ encoding: "utf8" });
   } catch (error) {

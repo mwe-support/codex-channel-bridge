@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   JsonRpcId,
+  JsonRpcNotification,
   JsonRpcRequest,
   ManagedCodexRpcRuntime
 } from "@codex-channel-bridge/codex-app-server";
@@ -51,6 +52,7 @@ export class CodexServerRequestRouter {
   readonly #onExpired?: (approval: RoutedApprovalRequest) => void | Promise<void>;
   readonly #pendingByRequest = new Map<string, PendingApproval>();
   readonly #pendingByToken = new Map<string, PendingApproval>();
+  #closed = false;
 
   public constructor(
     runtime: ManagedCodexRpcRuntime,
@@ -69,6 +71,7 @@ export class CodexServerRequestRouter {
     request: JsonRpcRequest,
     resolveController: (threadId: string, turnId: string) => ApprovalControllerContext | undefined
   ): Promise<ServerRequestDisposition> {
+    if (this.#closed) return { kind: "rejected", reason: "uncontrolled" };
     if (!APPROVAL_METHODS.has(request.method)) {
       await this.#runtime.respondError(request.id, {
         code: -32601,
@@ -144,9 +147,29 @@ export class CodexServerRequestRouter {
   }
 
   public close(): void {
+    this.#closed = true;
     for (const pending of this.#pendingByRequest.values()) clearTimeout(pending.timer);
     this.#pendingByRequest.clear();
     this.#pendingByToken.clear();
+  }
+
+  /** Codex can clear a request without a Channel response (for example on interrupt). */
+  public resolveNotification(message: JsonRpcNotification): readonly RoutedApprovalRequest[] {
+    if (!isRecord(message.params) || typeof message.params.threadId !== "string") return [];
+    const params = message.params;
+    const resolved: RoutedApprovalRequest[] = [];
+    for (const [key, pending] of this.#pendingByRequest) {
+      if (pending.approval.threadId !== params.threadId) continue;
+      const matches = message.method === "serverRequest/resolved"
+        ? pending.approval.request.id === params.requestId
+        : message.method === "turn/completed" && isRecord(params.turn) &&
+          ["completed", "failed", "interrupted"].includes(String(params.turn.status)) &&
+          pending.approval.turnId === params.turn.id;
+      if (!matches) continue;
+      this.#removePending(key, pending);
+      resolved.push(pending.approval);
+    }
+    return resolved;
   }
 
   public pendingCount(): number {
@@ -173,6 +196,7 @@ export class CodexServerRequestRouter {
       await this.#runtime.respond(pending.approval.request.id, { decision });
     } catch (error) {
       if (
+        !this.#closed &&
         !this.#pendingByRequest.has(key) &&
         !this.#pendingByToken.has(pending.approval.approvalToken)
       ) {

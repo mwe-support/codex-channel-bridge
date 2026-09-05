@@ -1,5 +1,9 @@
 # QQ adapter baseline
 
+`0.2.0-rc.1` adds opt-in [automatic output-file delivery](output-files.md) using SDK
+upload plus a separate durable-sequence media send, for private and group chats.
+Recipient download acceptance is pending; this is not a released feature claim.
+
 ## Ownership and dependency
 
 `@codex-channel-bridge/qq-adapter` is a Channel-owned edge behind the shared
@@ -43,6 +47,11 @@ event that contains provider facts only:
   official payload's `mentions[].is_you` flag is also authoritative because QQ
   may deliver a desktop-client bot mention through `GROUP_MESSAGE_CREATE`.
   Other full-group events are marked `passive`.
+- `0.2.0-rc.1` also removes leading mention markup from provider-confirmed addressed
+  group text before core command parsing. This covers opaque IDs missed by SDK
+  1.0.4's AppID-only sanitizer; it preserves private/passive text and mid-body
+  mentions. Remove this extra normalization if a future pinned SDK handles that
+  exact case and the adapter-to-core contract test still passes.
 - The durable provider-event key encodes the provider message ID together with
   `msg_idx` when present.
 - The event cannot declare its Profile, Channel Account, Account Epoch, or
@@ -72,6 +81,38 @@ official SDK exposes an awaited post-commit cursor interface, and its contract
 tests must remain pinned to the installed SDK behavior.
 
 ## Text delivery
+
+### `0.2.0-rc.1`: native private-chat answers
+
+The working tree projects Codex `final_answer` item deltas into QQ C2C streaming,
+using SDK 1.0.4's authenticated API gateway. Its higher-level stream helper requires
+both anchors; this path sends only `msg_id`, as Tencent requires. It sends full
+accumulated text with `input_mode=replace`, stable `msg_seq`/stream identity,
+increasing indices and `input_state=10` only from a committed terminal Outbox lease.
+Successful DONE receipts survive restart and suppress another ordinary final reply.
+Approval messages cannot finish an answer stream. QQ groups and WhatsApp retain
+complete-result delivery.
+
+Updates coalesce at 500 ms after the first frame, with one request in flight and
+a bounded 5,000-character projection. No reasoning, commentary or tool output is
+streamed. Short answers may finish before any generation frame is sent. During
+thinking/tool execution there may be no answer text yet; this is not a typing
+indicator. `remain_msg_len` is recorded as provider metadata, not a writable
+capacity budget: real QQ accepted continued frames and DONE while it was zero.
+Actual provider failures, rather than this hint, trigger fallback.
+
+Schema 10 stores only delivery metadata and a prefix digest. Uncertain frames,
+prefix changes, capacity errors and failed stream sends fall back through the
+ordinary durable Outbox; an unreconciled accepted frame/DONE can leave a partial
+bubble or cause a duplicate. There is no provider cancellation/reconciliation
+promise. Oversized QQ results are segmented without splitting Unicode pairs or
+dropping text. No generation frame alone counts as final delivery.
+
+This is included in **`0.2.0-rc.1` / awaiting full acceptance**. Real
+private-chat incremental rendering and DONE passed;
+remaining boundary coverage is listed in the evidence below.
+See [migration requirements](migrations.md) and
+[acceptance evidence](acceptance/qq-native-streaming.md).
 
 `sendText` maps a normalized private target to the official C2C route and a
 group target to the official group route. A successful provider response

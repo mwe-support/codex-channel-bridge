@@ -7,6 +7,7 @@ import {
   inspectProfileStore,
   type ProfileStoreInspection
 } from "@codex-channel-bridge/profile-store";
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 import type { SupervisorStatus } from "@codex-channel-bridge/supervisor";
 
 export interface OperationsInspectionSource {
@@ -97,7 +98,7 @@ async function inspectProfile(
   const [workspace, codexHome, stateDirectory] = await Promise.all([
     inspectPath(profile.workspace),
     inspectPath(profile.codexHome),
-    inspectPath(profile.stateDirectory)
+    inspectPath(profile.stateDirectory, true)
   ]);
   const issues: string[] = [];
   if (workspace.kind !== "directory" || workspace.symlink) issues.push("workspace_invalid");
@@ -147,7 +148,7 @@ async function inspectProfile(
   };
 }
 
-async function inspectPath(path: string): Promise<PathInspection> {
+async function inspectPath(path: string, verifyWindowsAcl = false): Promise<PathInspection> {
   try {
     const value = await lstat(path);
     const kind = value.isDirectory() ? "directory" as const : value.isFile() ? "file" as const : "other" as const;
@@ -156,12 +157,22 @@ async function inspectPath(path: string): Promise<PathInspection> {
       kind,
       symlink: value.isSymbolicLink(),
       ownerOnly: process.platform === "win32"
-        ? null
+        ? verifyWindowsAcl ? windowsOwnerOnly(path, kind) : null
         : value.uid === process.getuid?.() && (value.mode & 0o077) === 0
     };
   } catch (error) {
     if (isMissing(error)) return { exists: false, kind: "missing", symlink: false, ownerOnly: null };
     throw error;
+  }
+}
+
+function windowsOwnerOnly(path: string, kind: "file" | "directory" | "other"): boolean {
+  if (kind === "other") return false;
+  try {
+    assertWindowsOwnerOnlyPath(path, kind);
+    return true;
+  } catch {
+    return false;
   }
 }
 

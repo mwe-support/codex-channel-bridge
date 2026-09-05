@@ -48,3 +48,25 @@ test("Windows control pipe is owned by the ACL helper and rejects broad principa
   assert.match(helper, /VerifyAcl/);
   assert.doesNotMatch(helper, /WorldSid|AnonymousSid|Everyone/);
 });
+
+test("Windows sensitive paths use one SID-based ACL helper", async () => {
+  const [helper, platform, config, secrets, store, whatsapp, output, setup] = await Promise.all([
+    read("windows/path-acl.ps1"),
+    read("src/windows-acl.ts"),
+    read("../config/src/config.ts"),
+    read("../config/src/secrets.ts"),
+    read("../profile-store/src/profile-store.ts"),
+    read("../whatsapp-adapter/src/baileys-auth-state.ts"),
+    read("../control-plane/src/owner-only-output.ts"),
+    read("../cli/src/setup.ts")
+  ]);
+  assert.match(helper, /S-1-5-18/);
+  assert.match(helper, /S-1-5-32-544/);
+  assert.match(helper, /WindowsIdentity\]::GetCurrent\(\)\.User/);
+  assert.match(helper, /GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)/);
+  assert.doesNotMatch(helper, /S-1-1-0|S-1-5-7|Everyone|Anonymous/);
+  assert.doesNotMatch(helper, /Get-Acl|Set-Acl/);
+  for (const source of [platform, config, secrets, store, whatsapp, output, setup]) {
+    assert.match(source, /WindowsOwnerOnlyPath/);
+  }
+});

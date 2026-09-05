@@ -6,6 +6,8 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 
 ## [Unreleased]
 
+## [0.2.0-rc.1] - 2026-09-05
+
 ### Added
 
 - Maintained one-command POSIX and Windows installers that verify the exact
@@ -21,6 +23,18 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 - Recorded successful one-time native Windows Service install, foreground
   Supervisor start, named-pipe status, bounded stop, uninstall, and cleanup
   acceptance using checksum-verified WinSW `2.12.0`.
+- Independent conversations start concurrent Codex Turns without a default
+  Profile-wide cap; an explicit cap and bounded queue remain available.
+- Bare `/model` and `/reasoning` query native settings for the bound Codex
+  Thread while argument-taking forms continue to change only that Thread.
+- QQ private chats use Tencent's native answer stream; QQ groups and WhatsApp
+  keep complete final replies, with a best-effort WhatsApp typing indication.
+- Correlated QQ and WhatsApp handling for native Codex command/file approval
+  requests, including cancellation and expiry cleanup.
+- Opt-in delivery of validated Workspace-local Markdown file links from
+  completed answers through immutable snapshots and the durable Outbox.
+- A versioned bilingual Docusaurus site with immutable prerelease manuals and
+  an explicit `Next` documentation lane.
 
 ### Fixed
 
@@ -33,6 +47,30 @@ This file records user-visible changes to Codex Channel Bridge. Releases follow
 - Replaced Node's default Windows named-pipe listener with a bundled helper that
   creates and verifies a protected ACL for the service identity, LocalSystem,
   and BUILTIN\Administrators before accepting control requests.
+
+### Changed
+
+- Profile schema 9 adds Archive attachment metadata, schema 10 adds QQ native
+  answer-stream correlation, and schema 11 adds immutable output-file metadata.
+  Every upgrade remains an explicit plan/snapshot/confirmation operation.
+- Kept unrelated Channel Conversations independent under concurrent work and
+  closed process-scoped approval state when Codex resolves or ends its Turn.
+
+### Release-candidate boundaries
+
+- This is a prerelease, not a stable production release. Its exact tree is the
+  next acceptance baseline.
+- Real macOS QQ and WhatsApp private/group output-file downloads matched the
+  source and Outbox digests. Native Linux, Linux Docker and Windows acceptance
+  of this new attachment path remains pending.
+- WhatsApp typing visibility/cleanup, independent-Turn interruption, and the
+  remaining QQ native-stream expiry/rate-limit/restart/concurrency cases remain
+  open even though their deterministic contracts pass.
+- The Dashboard shows version, health, Channel connectivity, bounded local
+  events and confirmed configuration apply. Editable YAML, Profile runtime logs,
+  restart controls and conversation management remain future requirements.
+- Channel Account global model/reasoning administration and host Codex App
+  conversation projection are not included.
 
 ## [0.1.0-rc.4] - 2026-09-02
 

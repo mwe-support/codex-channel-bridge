@@ -21,6 +21,10 @@ import {
   type SignalDataSet,
   type SignalDataTypeMap
 } from "baileys";
+import {
+  assertWindowsOwnerOnlyPath,
+  secureWindowsOwnerOnlyPath
+} from "@codex-channel-bridge/platform";
 
 const MAX_AUTH_FILE_BYTES = 16 * 1024 * 1024;
 const CREDS_FILE = "creds.json";
@@ -190,6 +194,7 @@ export async function openBaileysAuthState(
     throw new Error("Baileys authentication directory must be absolute");
   }
   await prepareDirectory(options.directoryPath, options.createIfMissing === true);
+  assertWindowsOwnerOnlyPath(options.directoryPath, "directory", true);
   const credsPath = join(options.directoryPath, CREDS_FILE);
   let creds = await readJson<AuthenticationCreds>(credsPath);
   if (!creds) {
@@ -268,12 +273,14 @@ async function prepareDirectory(path: string, createIfMissing: boolean): Promise
   });
   if (!metadata && createIfMissing) {
     await mkdir(path, { mode: 0o700, recursive: false });
+    secureWindowsOwnerOnlyPath(path, "directory");
     metadata = await lstat(path);
   }
   if (!metadata?.isDirectory() || metadata.isSymbolicLink()) {
     throw new Error("Baileys authentication path must be a real directory");
   }
   requireOwnerMode(metadata.uid, metadata.mode, 0o700, "Baileys authentication directory");
+  assertWindowsOwnerOnlyPath(path, "directory");
 }
 
 async function prepareGenerationRoot(path: string, createIfMissing: boolean): Promise<void> {

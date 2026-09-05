@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { ChannelAnswerStreams, type AnswerStreamStore } from "./channel-answer-streams.js";
 import { randomUUID } from "node:crypto";
 import { statfs } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -91,6 +92,7 @@ import {
 import { DeliveryOutbox } from "./delivery-outbox.js";
 import { InboundPipeline, InboundPipelineError } from "./inbound-pipeline.js";
 import { MediaArchive } from "./media-archive.js";
+import { readOutputFile } from "./output-files.js";
 import { TurnCoordinator, type TurnResult } from "./turn-coordinator.js";
 
 export type { TurnResult } from "./turn-coordinator.js";
@@ -132,7 +134,7 @@ export interface ProfileWorkerDependencies {
   readonly availableStorageBytes?: (path: string) => Promise<number>;
 }
 
-export interface ProfileStoreRuntime {
+export interface ProfileStoreRuntime extends AnswerStreamStore {
   commitObservation(input: CommitArchiveObservationInput): Promise<ArchiveObservationCommitResult>;
   settleArchiveAttachment(input: SettleArchiveAttachmentInput): Promise<ArchiveAttachmentRecord>;
   mirroredMediaBytes(): Promise<number>;
@@ -208,8 +210,10 @@ export class ProfileWorker extends EventEmitter {
   #turnCoordinator?: TurnCoordinator;
   #conversationTurnCoordinator?: ConversationTurnCoordinator;
   #deliveryOutbox?: DeliveryOutbox;
+  #mediaArchive?: MediaArchive;
   #outboxTimer?: NodeJS.Timeout;
   #store?: ProfileStoreRuntime;
+  #answerStreams?: ChannelAnswerStreams;
   #inboundPipeline?: InboundPipeline;
   readonly #channelIngress: ChannelIngressController;
   readonly #channelAdapters = new Map<string, ChannelAdapter>();
@@ -235,7 +239,7 @@ export class ProfileWorker extends EventEmitter {
     this.#dependencies = dependencies;
     const admission = config.admission ?? {
       mode: "steer",
-      maximumActiveTurns: 1,
+      maximumActiveTurns: null,
       queueCapacity: 16,
       maximumQueueAgeMs: 300_000,
       accountRateLimit: 30,
@@ -279,6 +283,15 @@ export class ProfileWorker extends EventEmitter {
           settledAtMs: Date.now()
         });
         const media = new MediaArchive(this.#store, {
+          outputFiles: {
+            workspace: this.#config.workspace,
+            directory: join(this.#config.stateDirectory, "outbound-files"),
+            excludedPaths: [this.#config.stateDirectory, this.#config.codexHome,
+              this.#config.secretsFile ?? join(this.#config.stateDirectory, "secrets.env"),
+              ...Object.values(this.#config.channelAccounts ?? {}).flatMap((account) =>
+                account.provider === "qq" ? [account.appId, account.appSecret]
+                  .filter((value) => value.startsWith("file:")).map((value) => value.slice(5)) : [])]
+          },
           rootDirectory: join(this.#config.stateDirectory, "media"),
           ...(this.#config.media
             ? {
@@ -294,6 +307,7 @@ export class ProfileWorker extends EventEmitter {
               })
         });
         this.#inboundPipeline = new InboundPipeline(this.#store, media);
+        this.#mediaArchive = media;
       } catch (error) {
         return this.#transition(
           "unavailable",
@@ -391,6 +405,8 @@ export class ProfileWorker extends EventEmitter {
       eventRouter
     });
     const conversationTurnCoordinator = new ConversationTurnCoordinator({
+      ...(this.#config.media?.sendOutputFiles
+        ? { prepareOutputFiles: (text: string) => this.#mediaArchive!.prepareOutputFiles(text) } : {}),
       profileId: this.#config.profileId,
       store: this.#store!,
       turnDriver: turnCoordinator
@@ -398,6 +414,17 @@ export class ProfileWorker extends EventEmitter {
     const listeners: CodexRuntimeListeners = {
       notification: (message) => {
         if (this.#runtime !== runtime) return;
+        for (const approval of serverRequestRouter.resolveNotification(message)) {
+          void this.#store?.settleApprovalRequest({
+            approvalToken: approval.approvalToken,
+            state: "cancelled",
+            reasonCode: "codex_request_resolved",
+            settledAtMs: Date.now()
+          }).catch(() => this.emit("channelApprovalPersistenceFailed", {
+            approvalToken: approval.approvalToken,
+            reason: "native_resolution_persistence_failed"
+          }));
+        }
         eventRouter.route(message);
         this.emit("notification", message);
       },
@@ -1022,7 +1049,7 @@ export class ProfileWorker extends EventEmitter {
       await this.#sendChannelCommandReply(
         work,
         command.kind,
-        "Commands: /help, /status, /new, /attach THREAD_ID, /detach, /stop, /approve TOKEN DECISION, /model MODEL_ID, /reasoning EFFORT. Prefix // to send a literal slash command to Codex."
+        "Commands: /help, /status, /new, /attach THREAD_ID, /detach, /stop, /approve TOKEN DECISION, /model [MODEL_ID], /reasoning [EFFORT]. Omit model/reasoning arguments to show current Thread settings. Prefix // to send a literal slash command to Codex."
       );
       return;
     }
@@ -1061,12 +1088,17 @@ export class ProfileWorker extends EventEmitter {
           approvalToken: command.approvalToken,
           decision: command.decision
         });
+        await this.#sendChannelCommandReply(work, command.kind, "Approval decision sent to Codex.");
       } catch (error) {
         this.emit("channelCommandRejected", {
           archiveRecordId: work.archiveRecordId,
           commandKind: command.kind,
           reason: error instanceof Error ? error.message : "approval_response_failed"
         });
+        await this.#sendChannelCommandReply(
+          work, command.kind,
+          "Approval response was not confirmed. The token may be expired, already answered, or not controlled by this participant in this conversation."
+        );
       }
       return;
     }
@@ -1106,7 +1138,8 @@ export class ProfileWorker extends EventEmitter {
 
     if (
       work.event.message.conversationKind === "group" &&
-      work.groupThreadScope === "conversation"
+      work.groupThreadScope === "conversation" &&
+      command.kind !== "model.read" && command.kind !== "reasoning.read"
     ) {
       await this.#sendChannelCommandReply(
         work,
@@ -1187,6 +1220,14 @@ export class ProfileWorker extends EventEmitter {
         command.kind,
         "No Codex Thread is attached. Send an ordinary message first."
       );
+      return;
+    }
+    if (command.kind === "model.read" || command.kind === "reasoning.read") {
+      const current = await coordinator.readThreadSettings(binding.codexThreadId);
+      await this.#sendChannelCommandReply(work, command.kind,
+        command.kind === "model.read"
+          ? `Current Codex Thread model: ${current.model}`
+          : `Current Codex Thread reasoning effort: ${current.reasoningEffort ?? "Codex default (unspecified)"}`);
       return;
     }
     if (!this.#probe?.experimentalMethods.includes("thread/settings/update")) {
@@ -1286,6 +1327,8 @@ export class ProfileWorker extends EventEmitter {
   async #presentChannelApproval(
     approval: import("./codex-server-request-router.js").RoutedApprovalRequest
   ): Promise<void> {
+    const router = this.#serverRequestRouter;
+    if (router?.approvalForRequest(approval.request.id)?.approvalToken !== approval.approvalToken) return;
     const account = this.#config.channelAccounts?.[approval.context.channelAccountId];
     const adapter = this.#channelAdapters.get(approval.context.channelAccountId);
     const validTarget =
@@ -1322,6 +1365,17 @@ export class ProfileWorker extends EventEmitter {
         expiresAtMs: createdAtMs + (this.#config.approval?.timeoutMs ?? 300_000)
       });
       if (!committed) throw new Error("Profile Store is unavailable");
+      // Native cancellation may arrive while the durable prompt is being committed.
+      if (router !== this.#serverRequestRouter ||
+        router.approvalForRequest(approval.request.id)?.approvalToken !== approval.approvalToken) {
+        await this.#store?.settleApprovalRequest({
+          approvalToken: approval.approvalToken,
+          state: "cancelled",
+          reasonCode: "codex_request_resolved",
+          settledAtMs: Date.now()
+        });
+        return;
+      }
       this.emit("channelApprovalQueued", {
         approvalToken: approval.approvalToken,
         logicalResultId: committed.logicalResult.logicalResultId
@@ -1367,8 +1421,17 @@ export class ProfileWorker extends EventEmitter {
   async #executeChannelWork(work: ChannelIngressInput): Promise<void> {
     const coordinator = this.#conversationTurnCoordinator;
     if (!coordinator) return;
+    let stopTyping: (() => void) | undefined;
+    const adapter = this.#channelAdapters.get(work.event.message.channelAccountId);
+    let stream: ReturnType<ChannelAnswerStreams["start"]>;
     try {
+      try {
+        stream = work.event.message.provider === "qq" && adapter
+          ? this.#answerStreams?.start(work.archiveRecordId, work.event.replyTarget, adapter) : undefined;
+        stopTyping = adapter?.startTyping?.(work.event.replyTarget);
+      } catch { /* A waiting indicator must not reject accepted Codex work. */ }
       const result = await coordinator.execute({
+        ...(stream ? { onAnswer: stream.update } : {}),
         archiveRecordId: work.archiveRecordId,
         event: work.event,
         groupThreadScope: work.groupThreadScope,
@@ -1381,6 +1444,8 @@ export class ProfileWorker extends EventEmitter {
         error: error instanceof Error ? error : new Error(String(error))
       });
     } finally {
+      await stream?.stop();
+      try { stopTyping?.(); } catch { /* Cleanup must not block admission release. */ }
       const release = this.#channelIngress.release(work.archiveRecordId, Date.now());
       this.#emitExpiredChannelWork(release.expired);
       for (const ready of release.ready) void this.#executeChannelWork(ready);
@@ -1394,6 +1459,7 @@ export class ProfileWorker extends EventEmitter {
   }
 
   async #stopChannelAdapters(): Promise<void> {
+    await this.#answerStreams?.stop();
     const adapters = [...this.#channelAdapters.values()];
     for (const unsubscribe of this.#channelAdapterUnsubscribe.values()) unsubscribe();
     this.#channelAdapterUnsubscribe.clear();
@@ -1448,7 +1514,10 @@ export class ProfileWorker extends EventEmitter {
   #startDeliveryOutbox(): void {
     const store = this.#store;
     if (!store || this.#deliveryOutbox) return;
+    this.#answerStreams = new ChannelAnswerStreams(store);
     this.#deliveryOutbox = new DeliveryOutbox({
+      readOutputFile: (file) => readOutputFile(join(this.#config.stateDirectory, "outbound-files"), file),
+      finishAnswer: (lease, adapter) => this.#answerStreams!.finish(lease, adapter),
       store,
       resolveAdapter: (lease) => {
         const account = this.#config.channelAccounts?.[lease.channelAccountId];

@@ -42,8 +42,12 @@ new ordinary input calls App Server `turn/steer` with its exact Thread ID and
 is persisted before the native request, and the correlation is terminalized with
 the active Turn. An ambiguous outcome is marked `uncertain` and is not replayed.
 
-If the Profile active-Turn limit is reached by another Thread, steer mode rejects
-new work as `busy`; it does not silently form a queue.
+In `0.2.0-rc.1`, independent Threads have no Profile concurrency cap by default:
+`admission.maximumActiveTurns: null`. Private and group work can overlap.
+Operators may explicitly set a finite cap; only then can another Thread consume
+the last slot and cause `busy`. Steer mode does not silently form a queue.
+An active same-Thread Turn without a steerable initiator/target can still cause
+`busy`; removing the Profile cap does not bypass Thread control.
 
 ## Queue mode
 

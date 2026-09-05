@@ -30,7 +30,9 @@ Router 会分配一个与 App Server Request ID 不同的 Opaque、Generation-lo
 
 Core Parser 将 `session` 映射为 Native `acceptForSession`。命令先经过 Access Policy，随后 Router 再次检查完整 Trusted Participant Context，最后响应原始 Request。默认 `minimal` Mode 隐藏 Command 与 File Content；Profile Configuration 可以选择 `summary` 或 `detailed`，所有投射字段仍保持有界。
 
-Response Window 默认五分钟，可按 Profile 配置。超时会返回 Native `cancel`。确定 Rejected 或 Deferred 的 Presentation Failure 也会立即 Cancel。Provider Send 结果 Ambiguous 时，Prompt 可能已经送达，因此 Request 保持 Pending，直到 Initiator 响应或超时。
+Response Window 默认五分钟，可按 Profile 配置。超时返回原生 `cancel`。记录确定拒绝的展示结果；延期或不确定的发送在有界响应窗口内使用既有 Outbox 重试。不确定发送可能已到达；任何投递状态都不代表授权执行，也不能延长 QQ 的平台回复权限。
+
+`0.2.0-rc.1` 中，成功发送决定后会给渠道一条简短确认，表示已写回 Codex，不表示操作已执行成功。非法、过期、已使用或参与者不匹配的 TOKEN 得到相同的不泄露详情的拒绝提示。原生 `serverRequest/resolved` 和终态 `turn/completed` 通知使匹配的 TOKEN 失效，并拒绝未发出的提示，不再回答已被 Codex 清除的请求；不引入新的 Reviewer 决策。
 
 ## 持久传输与 Generation Boundary
 

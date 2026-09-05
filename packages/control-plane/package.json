@@ -1,6 +1,6 @@
 {
   "name": "@codex-channel-bridge/control-plane",
-  "version": "0.1.0-dev",
+  "version": "0.2.0-rc.1",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,9 +12,10 @@
     }
   },
   "dependencies": {
-    "@codex-channel-bridge/config": "0.1.0-dev",
-    "@codex-channel-bridge/core": "0.1.0-dev",
-    "@codex-channel-bridge/profile-store": "0.1.0-dev",
-    "@codex-channel-bridge/supervisor": "0.1.0-dev"
+    "@codex-channel-bridge/config": "0.2.0-rc.1",
+    "@codex-channel-bridge/core": "0.2.0-rc.1",
+    "@codex-channel-bridge/platform": "0.2.0-rc.1",
+    "@codex-channel-bridge/profile-store": "0.2.0-rc.1",
+    "@codex-channel-bridge/supervisor": "0.2.0-rc.1"
   }
 }

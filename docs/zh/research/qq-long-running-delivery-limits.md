@@ -2,6 +2,27 @@
 
 调研日期：2026-08-27
 
+## 契约澄清——2026-09-04
+
+用户重申 QQ 私聊必须使用原生流式回复；QQ 群聊与 WhatsApp 保持完整文本回复。
+此前 WhatsApp 模拟流式回退不取消此需求，见
+[FR-006](../feature-requirements.md#fr-006--qq-私聊原生流式回复)。
+下方历史建议中的“C2C 流式先保持可选”描述的是尚未验证的实现基线，
+不是已接受的目标行为。
+
+2026-09-04 只读复核确认：官方
+[C2C 接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_stream_messages.post.html)
+仍支持原生流式，官方
+[群聊接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html)
+仍明确不支持流式参数。SDK 1.0.4 提供 `openStream`，但修复前 Bridge QQ Adapter
+只使用离散消息发送。Next 工作区已实现[原生流式链路](../qq-adapter.md)。后续真实账号
+测试验证了 44 帧（含 DONE）被接受及客户端增量展示，完整边界验收仍待完成。
+续帧成功期间 `remain_msg_len=0`，因此不能把它用作可写容量的停止条件。
+这是实际提供商结果，不是对未明确文档化的字段语义作保证，见
+[验收证据](../acceptance/qq-native-streaming.md)。不能把普通回复回执计为流式验收通过。
+
+## 原始调研
+
 本文评估 QQ Bot 能否像 Codex 原生客户端一样展示长周期 Codex 任务。资料只来自腾讯 QQ
 机器人官方文档，以及本仓库精确锁定的腾讯官方 SDK：
 **@tencent-connect/qqbot-nodejs 1.0.4**，提交

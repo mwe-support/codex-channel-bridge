@@ -22,7 +22,7 @@ Parser 识别 `/help`、`/status`、`/new`、`/attach THREAD_ID`、`/detach`、`
 
 Steer 是默认模式。同一 Thread Binding 存在 Active Native Turn 时，新的普通输入使用精确 Thread ID 与 `expectedTurnId` 调用 App Server `turn/steer`，且不占用新的 Active-turn Slot。Bridge 在原生 Request 前持久化 Input Acceptance，并让该 Correlation 随 Active Turn 进入终态。不明确的 Outcome 标记为 `uncertain`，且不自动重放。
 
-若 Profile Active-turn Limit 已被另一个 Thread 占满，Steer Mode 会以 `busy` 拒绝新 Work，不会静默形成 Queue。
+`0.2.0-rc.1` 中默认不设置不同 Thread 之间的 Profile 并发上限：`admission.maximumActiveTurns: null`，私聊与群聊可以同时执行。管理员可显式设置有限上限，此时另一 Thread 才可能占满名额并导致 `busy`。Steer Mode 不会静默形成 Queue。同一 Thread 存在 Active Turn 但发起人/目标不允许 steer 时，仍可能返回 `busy`；取消 Profile 上限不会绕过 Thread 控制。
 
 ## Queue Mode
 

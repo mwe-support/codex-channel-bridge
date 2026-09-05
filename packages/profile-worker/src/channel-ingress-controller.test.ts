@@ -51,6 +51,38 @@ function ingress(mode: "steer" | "queue" = "steer") {
   );
 }
 
+test("unlimited admission keeps QQ and WhatsApp group/private work independent", () => {
+  for (const provider of ["qq", "whatsapp"] as const) {
+    for (const mode of ["steer", "queue"] as const) {
+      const controller = new ChannelIngressController(new AdmissionController({
+        mode, maximumActiveTurns: null, queueCapacity: 2, maximumQueueAgeMs: 100,
+        accountRateLimit: 10, accountRateWindowMs: 1000, ready: true
+      }));
+      const work = (kind: "group" | "private", record: string) => ({
+        archiveRecordId: record,
+        event: event({
+          message: { ...event().message, provider, conversationKind: kind,
+            conversationKey: `${provider}:${kind}`, providerEventId: record },
+          attention: kind === "group" ? "mention" : "direct",
+          replyTarget: { ...event().replyTarget, conversationKey: `${provider}:${kind}`, conversationKind: kind }
+        }),
+        accessPolicy: openPolicy,
+        groupThreadScope: "conversation" as const
+      });
+      const group = work("group", "group");
+      const dm = work("private", "private");
+      assert.equal(controller.accept(group).disposition.kind, "start");
+      controller.markTurnStarted("group", { threadId: "group-thread", turnId: "group-turn" });
+      assert.equal(controller.accept(dm).disposition.kind, "start");
+      controller.markTurnStarted("private", { threadId: "dm-thread", turnId: "dm-turn" });
+      assert.equal(controller.accept(work("private", "follow-up")).disposition.kind, mode === "steer" ? "steer" : "queued");
+      controller.release("group", 1001);
+      assert.deepEqual(controller.activeTurnFor(dm), { kind: "allowed", target: { threadId: "dm-thread", turnId: "dm-turn" } });
+      if (mode === "queue") assert.deepEqual(controller.release("private", 1002).ready.map((entry) => entry.archiveRecordId), ["follow-up"]);
+    }
+  }
+});
+
 test("applies access before commands and ordinary admission", () => {
   const controller = ingress();
   const denied = controller.accept({

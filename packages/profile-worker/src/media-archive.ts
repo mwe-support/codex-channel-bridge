@@ -5,12 +5,14 @@ import { join } from "node:path";
 
 import type {
   ProviderAttachmentContentSource,
+  LogicalResultSegmentInput,
   InboundChannelAttachment
 } from "@codex-channel-bridge/core";
 import type {
   ArchiveAttachmentRecord,
   SettleArchiveAttachmentInput
 } from "@codex-channel-bridge/profile-store";
+import { outputFileLinks, outputStoredBytes, snapshotOutputFile, OUTPUT_FILE_LIMIT } from "./output-files.js";
 
 export interface MediaArchiveStore {
   mirroredMediaBytes(): Promise<number>;
@@ -18,6 +20,7 @@ export interface MediaArchiveStore {
 }
 
 export interface MediaArchiveOptions {
+  readonly outputFiles?: { readonly workspace: string; readonly directory: string; readonly excludedPaths: readonly string[] };
   readonly rootDirectory: string;
   readonly perAttachmentLimitBytes?: number;
   readonly profileQuotaBytes?: number;
@@ -27,6 +30,7 @@ export interface MediaArchiveOptions {
 }
 
 export class MediaArchive {
+  readonly #outputFiles: MediaArchiveOptions["outputFiles"];
   readonly #rootDirectory: string;
   readonly #store: MediaArchiveStore;
   readonly #perAttachmentLimitBytes: number;
@@ -37,6 +41,7 @@ export class MediaArchive {
   #tail: Promise<void> = Promise.resolve();
 
   public constructor(store: MediaArchiveStore, options: MediaArchiveOptions) {
+    this.#outputFiles = options.outputFiles;
     this.#store = store;
     this.#rootDirectory = options.rootDirectory;
     this.#perAttachmentLimitBytes = options.perAttachmentLimitBytes ?? 64 * 1024 * 1024;
@@ -55,6 +60,32 @@ export class MediaArchive {
     return operation;
   }
 
+  public prepareOutputFiles(text: string): Promise<readonly LogicalResultSegmentInput[]> {
+    const operation = this.#tail.then(async () => {
+      if (!this.#outputFiles) return [];
+      const paths = outputFileLinks(text);
+      const segments: LogicalResultSegmentInput[] = [];
+      for (const path of paths.slice(0, 3)) {
+        try {
+          const used = await this.#store.mirroredMediaBytes() + await outputStoredBytes(this.#outputFiles.directory);
+          const available = this.#availableStorageBytes ? await this.#availableStorageBytes() : Infinity;
+          const limitBytes = Math.min(this.#perAttachmentLimitBytes, OUTPUT_FILE_LIMIT,
+            this.#profileQuotaBytes - used, available - (this.#storageSafetyFloorBytes ?? 0));
+          const file = await snapshotOutputFile({ ...this.#outputFiles, path, limitBytes });
+          if (!segments.some((segment) => segment.file?.sha256 === file.sha256 && segment.file.filename === file.filename)) {
+            segments.push({ text: file.filename, file });
+          }
+        } catch {
+          segments.push({ text: "A linked file was not attached: unavailable, outside the permitted Workspace scope, or beyond storage/size limits." });
+        }
+      }
+      if (paths.length > 3) segments.push({ text: "Only the first three local file links can be attached per response." });
+      return segments;
+    });
+    this.#tail = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
   async #mirror(
     attachment: ArchiveAttachmentRecord,
     source: ProviderAttachmentContentSource
@@ -67,7 +98,8 @@ export class MediaArchive {
       return toInboundAttachment(await this.#unavailable(attachment, "attachment_limit"));
     }
 
-    const usedBytes = await this.#store.mirroredMediaBytes();
+    const usedBytes = await this.#store.mirroredMediaBytes() +
+      (this.#outputFiles ? await outputStoredBytes(this.#outputFiles.directory) : 0);
     if (
       attachment.declaredSizeBytes !== undefined &&
       usedBytes + attachment.declaredSizeBytes > this.#profileQuotaBytes

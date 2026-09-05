@@ -3,10 +3,12 @@ import { chmodSync, lstatSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 
 import Database from "better-sqlite3";
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 import type {
   ChannelConversationKind,
   ChannelProvider,
+  ChannelReplyTarget,
   CodexInputAcceptance,
   CodexInputCorrelation,
   LogicalResultInput,
@@ -15,9 +17,11 @@ import type {
   ThreadBindingKey
 } from "@codex-channel-bridge/core";
 import { searchArchiveHybrid } from "./hybrid-retrieval.js";
+import { ANSWER_STREAM_SCHEMA } from "./answer-stream-schema.js";
+import { validOutputFile, type OutputFile } from "@codex-channel-bridge/core";
 
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 11;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_LOGICAL_RESULT_BYTES = 16 * 1024 * 1024;
 const MAX_LOGICAL_RESULT_SEGMENTS = 1_000;
@@ -282,7 +286,26 @@ export interface ClaimOutboxOptions {
   readonly limit?: number;
 }
 
+export interface BeginAnswerStreamInput {
+  readonly archiveRecordId: string;
+  readonly target: ChannelReplyTarget;
+}
+
+export interface AnswerStreamRecord {
+  readonly archiveRecordId: string;
+  readonly replySequence: number;
+  readonly nextIndex: number;
+  readonly state: "idle" | "sending" | "ready" | "done" | "fallback";
+  readonly prefixSha256: string;
+  readonly prefixLength: number;
+  readonly providerMessageId?: string;
+  readonly acceptedAtMs?: number;
+  readonly remainingCharacters?: number;
+}
+
 export interface OutboxDeliveryLease {
+  readonly file?: OutputFile;
+  readonly answerStreamId?: string;
   readonly outboxRecordId: string;
   readonly logicalResultId: string;
   readonly segmentIndex: number;
@@ -464,6 +487,8 @@ interface OutboxIdRow {
 }
 
 interface OutboxClaimRow {
+  readonly file_json: string | null;
+  readonly answer_stream_id: string | null;
   readonly outbox_record_id: string;
   readonly logical_result_id: string;
   readonly segment_index: number;
@@ -598,6 +623,7 @@ export class SqliteProfileStore {
         ...(options.readOnly ? { readonly: true, fileMustExist: true } : {})
       });
       if (process.platform !== "win32" && !existed) chmodSync(options.databasePath, 0o600);
+      assertWindowsOwnerOnlyPath(options.databasePath, "file");
       configureDatabase(database, options.busyTimeoutMs ?? 5_000, options.readOnly ?? false);
       requireFts5(database, options.readOnly ?? false);
       initializeOrValidateSchema(database, options.profileId);
@@ -612,6 +638,73 @@ export class SqliteProfileStore {
   public commitMessage(message: NormalizedChannelMessage): ArchiveCommitResult {
     const result = this.commitObservation({ message, attachments: [] });
     return { recordId: result.recordId, inserted: result.inserted };
+  }
+
+  public getAnswerStream(archiveRecordId: string): AnswerStreamRecord | undefined {
+    this.#requireOpen();
+    const row = this.#database.prepare<[string, string], { state_json: string }>(
+      `SELECT s.state_json FROM answer_streams s JOIN message_archive a
+       ON a.record_id = s.archive_record_id WHERE a.profile_id = ? AND a.record_id = ?`
+    ).get(this.#profileId, archiveRecordId);
+    return row ? JSON.parse(row.state_json) as AnswerStreamRecord : undefined;
+  }
+
+  public beginAnswerStream(input: BeginAnswerStreamInput): AnswerStreamRecord {
+    this.#requireOpen();
+    return this.#database.transaction(() => {
+      const archive = this.#database.prepare<[string, string], {
+        channel_account_id: string; channel_account_epoch_id: string;
+        provider_event_id: string; conversation_key: string; provider_conversation_id: string;
+      }>(`SELECT a.* FROM message_archive a JOIN codex_input_correlations c
+          ON c.archive_record_id = a.record_id WHERE a.profile_id = ? AND a.record_id = ?
+          AND a.provider = 'qq' AND a.conversation_kind = 'private'
+          AND c.state IN ('accepted', 'started')`).get(this.#profileId, input.archiveRecordId);
+      let anchor: unknown = archive?.provider_event_id;
+      try { anchor = JSON.parse(String(anchor))[0]; } catch { /* Legacy plain event identifier. */ }
+      if (!archive || input.target.conversationKind !== "private" ||
+          input.target.conversationKey !== archive.conversation_key ||
+          input.target.providerConversationId !== archive.provider_conversation_id ||
+          !input.target.providerReplyEventId || input.target.providerReplyEventId !== anchor) {
+        throw new ProfileStoreError("invalid_outbox_operation", "Native stream does not match accepted input");
+      }
+      const existing = this.getAnswerStream(input.archiveRecordId);
+      if (existing) return existing;
+      const [replySequence] = allocateReplySequences(this.#database, {
+        profileId: this.#profileId, provider: "qq", channelAccountId: archive.channel_account_id,
+        channelAccountEpochId: archive.channel_account_epoch_id, target: input.target, segments: [{ text: "" }]
+      });
+      const record: AnswerStreamRecord = { archiveRecordId: input.archiveRecordId,
+        replySequence: replySequence!, nextIndex: 0, state: "idle", prefixLength: 0,
+        prefixSha256: createHash("sha256").update("").digest("hex") };
+      this.#database.prepare("INSERT INTO answer_streams VALUES (?, ?)")
+        .run(record.archiveRecordId, JSON.stringify(record));
+      return record;
+    }).immediate();
+  }
+
+  public putAnswerStream(record: AnswerStreamRecord): void {
+    this.#requireOpen();
+    const current = this.getAnswerStream(record.archiveRecordId);
+    const completesFrame = current?.state === "sending" && (record.state === "ready" || record.state === "done");
+    const startsFrame = (current?.state === "idle" || current?.state === "ready") && record.state === "sending";
+    if (!current || current.state === "done" || record.replySequence !== current.replySequence ||
+        (!completesFrame && !startsFrame && record.state !== "fallback") ||
+        !["idle", "sending", "ready", "done", "fallback"].includes(record.state) ||
+        !Number.isSafeInteger(record.nextIndex) || record.nextIndex !== current.nextIndex + (completesFrame ? 1 : 0) ||
+        !Number.isSafeInteger(record.prefixLength) || record.prefixLength < 0 || record.prefixLength > 5_000 ||
+        !/^[a-f0-9]{64}$/.test(record.prefixSha256) ||
+        (record.providerMessageId !== undefined && !validExternalId(record.providerMessageId)) ||
+        (current.providerMessageId !== undefined && current.providerMessageId !== record.providerMessageId) ||
+        ((record.state === "ready" || record.state === "done") && (!record.providerMessageId || record.acceptedAtMs === undefined)) ||
+        (record.acceptedAtMs !== undefined && (!Number.isSafeInteger(record.acceptedAtMs) || record.acceptedAtMs < 0)) ||
+        (record.remainingCharacters !== undefined && (!Number.isSafeInteger(record.remainingCharacters) || record.remainingCharacters < 0))) {
+      throw new ProfileStoreError("invalid_outbox_operation", "Invalid native stream transition");
+    }
+    this.#database.prepare("UPDATE answer_streams SET state_json = ? WHERE archive_record_id = ?")
+      .run(JSON.stringify({ archiveRecordId: record.archiveRecordId, replySequence: record.replySequence,
+        nextIndex: record.nextIndex, state: record.state, prefixSha256: record.prefixSha256,
+        prefixLength: record.prefixLength, providerMessageId: record.providerMessageId,
+        acceptedAtMs: record.acceptedAtMs, remainingCharacters: record.remainingCharacters }), record.archiveRecordId);
   }
 
   public commitObservation(input: CommitArchiveObservationInput): ArchiveObservationCommitResult {
@@ -1942,12 +2035,13 @@ export class SqliteProfileStore {
            provider_reply_text_body,
            provider_reply_sequence,
            text_body,
+           file_json,
            status,
            attempt_count,
            next_attempt_at_ms,
            created_at_ms,
            updated_at_ms
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
     );
     const replySequences = allocateReplySequences(this.#database, input);
     const outboxRecordIds = input.segments.map((segment, segmentIndex) => {
@@ -1968,6 +2062,7 @@ export class SqliteProfileStore {
         input.target.providerReplyText ?? null,
         replySequences[segmentIndex],
         segment.text,
+        segment.file ? JSON.stringify(segment.file) : null,
         input.completedAtMs,
         input.completedAtMs,
         input.completedAtMs
@@ -2004,7 +2099,18 @@ export class SqliteProfileStore {
           { profileId: string; nowMs: number; limit: number },
           OutboxClaimRow
         >(
-          `SELECT current.outbox_record_id,
+          `SELECT (SELECT s.archive_record_id FROM answer_streams s
+                    JOIN message_archive a ON a.record_id = s.archive_record_id
+                    JOIN codex_input_correlations c ON c.archive_record_id = s.archive_record_id
+                    JOIN logical_results r ON r.codex_turn_id = c.codex_turn_id AND r.profile_id = c.profile_id
+                      AND r.codex_thread_id = c.codex_thread_id
+                    WHERE r.logical_result_id = current.logical_result_id AND r.source_kind = 'codex_turn'
+                      AND a.channel_account_id = current.channel_account_id
+                      AND a.channel_account_epoch_id = current.channel_account_epoch_id
+                      AND a.provider_conversation_id = current.provider_conversation_id
+                      AND a.conversation_key = current.conversation_key AND a.provider = current.provider
+                      AND c.state = 'terminal' LIMIT 1) AS answer_stream_id,
+                  current.outbox_record_id,
                   current.logical_result_id,
                   current.segment_index,
                   current.provider,
@@ -2018,6 +2124,7 @@ export class SqliteProfileStore {
                   current.provider_reply_text_body,
                   current.provider_reply_sequence,
                   current.text_body,
+                  current.file_json,
                   current.attempt_count
              FROM delivery_outbox AS current
             WHERE current.profile_id = @profileId
@@ -2409,6 +2516,11 @@ function assertStorePath(databasePath: string, existed: boolean): void {
       "Profile store parent must be owner-only"
     );
   }
+  try {
+    assertWindowsOwnerOnlyPath(dirname(databasePath), "directory");
+  } catch {
+    throw new ProfileStoreError("insecure_store_path", "Profile store parent is not owner-only");
+  }
   if (!existed) return;
   const file = lstatSync(databasePath);
   if (!file.isFile() || file.isSymbolicLink()) {
@@ -2425,6 +2537,11 @@ function assertStorePath(databasePath: string, existed: boolean): void {
       "insecure_store_path",
       "Profile store must be owner-only"
     );
+  }
+  try {
+    assertWindowsOwnerOnlyPath(databasePath, "file");
+  } catch {
+    throw new ProfileStoreError("insecure_store_path", "Profile store is not owner-only");
   }
 }
 
@@ -2670,6 +2787,7 @@ function createSchema(database: Database.Database, profileId: string): void {
           provider_reply_sequence IS NULL OR provider_reply_sequence > 0
         ),
         text_body TEXT NOT NULL,
+        file_json TEXT CHECK(file_json IS NULL OR json_valid(file_json)),
         status TEXT NOT NULL CHECK (
           status IN ('pending', 'leased', 'retry_wait', 'accepted', 'rejected')
         ),
@@ -2767,6 +2885,7 @@ function createSchema(database: Database.Database, profileId: string): void {
         UNIQUE (profile_id, channel_account_id)
       );
     `);
+    database.exec(ANSWER_STREAM_SCHEMA);
     database
       .prepare("INSERT INTO profile_metadata (singleton, profile_id) VALUES (1, ?)")
       .run(profileId);
@@ -3009,7 +3128,8 @@ function validateLogicalResult(input: LogicalResultInput, profileId: string): vo
         segment !== null &&
         typeof segment.text === "string" &&
         segment.text.length > 0 &&
-        Buffer.byteLength(segment.text, "utf8") <= MAX_TEXT_BYTES
+        Buffer.byteLength(segment.text, "utf8") <= MAX_TEXT_BYTES &&
+        (segment.file === undefined || validOutputFile(segment.file))
     );
   const totalBytes = validSegments
     ? input.segments.reduce((total, segment) => total + Buffer.byteLength(segment.text, "utf8"), 0)
@@ -3153,7 +3273,9 @@ function durableResultDigest(input: DurableResultInput): string {
     input.target.providerReplyEventId ?? null,
     input.target.providerReplyParticipantId ?? null,
     input.target.providerReplyText ?? null,
-    input.segments.map((segment) => segment.text)
+    input.segments.map((segment) => segment.file
+      ? [segment.text, segment.file.sha256, segment.file.sizeBytes, segment.file.filename]
+      : segment.text)
   ]);
   return createHash("sha256").update(canonical).digest("hex");
 }
@@ -3275,6 +3397,7 @@ function toOutboxLease(
   leaseExpiresAtMs: number
 ): OutboxDeliveryLease {
   return {
+    ...(row.answer_stream_id ? { answerStreamId: row.answer_stream_id } : {}),
     outboxRecordId: row.outbox_record_id,
     logicalResultId: row.logical_result_id,
     segmentIndex: row.segment_index,
@@ -3299,6 +3422,7 @@ function toOutboxLease(
       ? { providerReplySequence: row.provider_reply_sequence }
       : {}),
     text: row.text_body,
+    ...(row.file_json ? { file: JSON.parse(row.file_json) as OutputFile } : {}),
     attemptNumber: row.attempt_count + 1,
     leaseToken,
     leaseExpiresAtMs

@@ -12,8 +12,7 @@ valid configuration fields, and unknown fields fail validation.
 
 ## Interactive setup
 
-The current `main` branch provides two interactive entry points for the next
-release:
+Release `0.2.0-rc.1` provides two interactive entry points:
 
 ```sh
 bridge setup quick
@@ -33,8 +32,7 @@ creates the Profile state directory with owner-only permissions, and writes the
 new configuration atomically. QQ uses `env:QQ_BOT_APP_ID` and
 `env:QQ_BOT_APP_SECRET` in quick mode; the wizard never asks for or writes a
 credential value. WhatsApp authentication is still created later through the
-host-local pairing command. These commands are not present in the immutable
-`v0.1.0-rc.4` tag.
+host-local pairing command.
 
 ## Schema
 
@@ -56,7 +54,7 @@ profiles:
     secretsFile: /absolute/path/to/bridge-state/secrets.env
     admission:
       mode: steer
-      maximumActiveTurns: 1
+      maximumActiveTurns: null
       queueCapacity: 16
       maximumQueueAgeMs: 300000
       accountRateLimit: 30
@@ -65,6 +63,7 @@ profiles:
       timeoutMs: 300000
       detail: minimal
     media:
+      sendOutputFiles: false
       perAttachmentLimitBytes: 67108864
       profileQuotaBytes: 10737418240
     channelAccounts:
@@ -137,9 +136,15 @@ Provider Identity. An `allowlist` must contain at least one exact identifier;
 to `conversation`; `participant` gives each admitted group participant a
 separate Codex Thread Binding.
 
-Profile-local `admission` defaults to steer mode with one active Turn, a
+In `0.2.0-rc.1`, Profile-local `admission` defaults to steer mode with no concurrent-Turn
+cap across independent Threads (`maximumActiveTurns: null`), a
 16-entry queue limit, five-minute maximum queue age, and 30 ordinary inputs per
 Channel Account per 60 seconds. The queue is used only when `mode: queue`.
+An explicit integer from 1 through 64 enables an operator-selected Profile cap.
+Existing explicit caps remain effective; change a former value of 1 to `null`
+to allow independent private/group conversations to overlap. Same-Thread
+steer/queue behavior is unchanged. Host resources and shared Workspace conflicts
+remain the operator's responsibility.
 Limits are checked after Access Policy and command parsing and before native
 Codex work. See [`admission.md`](admission.md) for runtime semantics.
 
@@ -154,8 +159,11 @@ JSON-RPC request ID to the Channel. See [`approval-routing.md`](approval-routing
 Profile-local `media` defaults to 64 MiB per attachment and 10 GiB of mirrored
 bytes for the Profile. Set `perAttachmentLimitBytes` and `profileQuotaBytes` as
 positive integers; the Profile quota must be at least the per-attachment
-limit. These limits bound only mirrored bytes. Attachment metadata remains in
-the Message Archive when bytes exceed a limit or cannot be fetched.
+limit. These limits cover mirrored inbound bytes plus retained outbound file
+snapshots. Attachment metadata remains in the Message Archive when bytes exceed
+a limit or cannot be fetched. `sendOutputFiles` defaults to false; opt-in changes
+require explicit config apply and Profile restart. See [automatic output attachments](output-files.md)
+for recognition, export scope, schema 11 migration, and acceptance status.
 
 The dotenv parser accepts ordinary `KEY=VALUE` records and literal single- or
 double-quoted values. It does not execute shell syntax, expand variables,

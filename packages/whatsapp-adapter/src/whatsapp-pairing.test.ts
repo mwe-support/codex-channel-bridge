@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import type { AuthenticationState } from "baileys";
 
 import { openActiveBaileysAuthState } from "./baileys-auth-state.js";
@@ -28,6 +30,7 @@ class FakePairingSocket {
 
 test("presents QR material, proves identity, and activates staged auth", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-pairing-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   const socket = new FakePairingSocket();
   const materials: WhatsAppPairingMaterial[] = [];
@@ -74,6 +77,7 @@ test("presents QR material, proves identity, and activates staged auth", async (
 
 test("fails closed on Provider Identity mismatch and discards staged auth", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-pairing-mismatch-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   const socket = new FakePairingSocket();
   let auth: AuthenticationState | undefined;
@@ -104,6 +108,7 @@ test("fails closed on Provider Identity mismatch and discards staged auth", asyn
 
 test("recreates the pairing Socket for bounded restartRequired", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-pairing-restart-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   const sockets = [new FakePairingSocket(), new FakePairingSocket()];
   const created: FakePairingSocket[] = [];

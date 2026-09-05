@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import type { ProfileConfiguration } from "@codex-channel-bridge/config";
 import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 
@@ -11,6 +13,7 @@ import { applyProfilePurge, planProfilePurge } from "./profile-purge.js";
 
 async function fixture(context: test.TestContext): Promise<Readonly<ProfileConfiguration>> {
   const root = await mkdtemp(join(tmpdir(), "bridge-profile-purge-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   await chmod(root, 0o700);
   context.after(async () => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");

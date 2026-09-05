@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import { SecretResolutionError, SecretResolver } from "./secrets.js";
 
 async function temporaryDirectory(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bridge-secret-test-"));
+  secureWindowsOwnerOnlyPath(directory, "directory");
   context.after(async () => rm(directory, { force: true, recursive: true }));
   return directory;
 }

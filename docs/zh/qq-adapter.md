@@ -1,5 +1,8 @@
 # QQ Adapter 基线
 
+`0.2.0-rc.1` 增加显式启用的[自动输出文件投递](output-files.md)，使用 SDK 上传及独立的
+持久序号媒体消息发送，覆盖私聊与群聊。收件客户端下载验收待完成，不代表已发布。
+
 ## 所有权与依赖
 
 `@codex-channel-bridge/qq-adapter` 是共享 `ChannelAdapter` 接口背后的
@@ -38,6 +41,9 @@ Adapter 只接受 C2C 与 QQ 群消息 Event。它先应用官方 SDK Content Sa
   Participant。`GROUP_AT_MESSAGE_CREATE` 标记为 `mention`。官方 Payload 中的
   `mentions[].is_you` 也具有权威性，因为 QQ 可能通过 `GROUP_MESSAGE_CREATE` 投递
   Desktop Client 的机器人 Mention。其他全量群消息 Event 标记为 `passive`。
+- `0.2.0-rc.1` 还会在核心命令解析前，清理提供商已确认对 Bot 发起的群消息开头提及标记，
+  覆盖 SDK 1.0.4 仅匹配 AppID 时遗漏的不透明 ID。保留私聊/未提及正文以及正文中间的提及。
+  将来固定 SDK 已能处理该情形且适配器到核心的契约测试仍通过时，移除此额外规范化。
 - Durable Provider-event Key 编码 Provider Message ID，并在存在时同时编码
   `msg_idx`。
 - 该 Event 无法声明自身的 Profile、Channel Account、Account Epoch 或 Bridge
@@ -62,6 +68,30 @@ Transport Checkpoint。Sequence 在同一个 Gateway Session 内不能后退；�
 Interface 后必须移除，并且其 Contract Test 必须继续绑定已安装 SDK 的准确行为。
 
 ## 文本投递
+
+### `0.2.0-rc.1`：私聊原生答案流
+
+工作区实现将 Codex `final_answer` item 增量投射到 QQ C2C 原生流式接口，
+使用 SDK 1.0.4 的鉴权 API 入口。SDK 上层流式 helper 要求同时传两个锚点；此处按腾讯契约
+只发送 `msg_id`。使用 `input_mode=replace` 发送累积全文，保持 `msg_seq` 与流身份不变、
+递增帧序号，仅由已提交的终态 Outbox 租约发送 `input_state=10`。
+成功 DONE 回执在重启后可恢复，不再补发普通完整答案。审批消息不能结束答案流。
+QQ 群聊及 WhatsApp 保留完整结果投递。
+
+首帧后按 500 毫秒合并更新，每条流最多一个在途请求、5,000 字符有界投射。
+不流式展示推理、commentary 或工具输出。短答案可能在首个生成帧发送前就已完成。
+思考/工具执行期间可能尚无答案文本；此功能不是输入中气泡。`remain_msg_len` 仅记录为
+提供商元数据，不作为可写容量：真实 QQ 在它为零时仍接受续帧及 DONE。
+由实际提供商失败触发回退，而非该提示值。
+
+Schema 10 仅保存投递元数据及前缀摘要。不确定帧、前缀变化、容量错误与流发送失败通过
+普通持久 Outbox 回退；无法核实的已接受帧/DONE 可能留下部分气泡或造成重复。
+不承诺提供商取消或对账能力。超长 QQ 结果完整分段，不拆开 Unicode 字符对、不丢正文。
+生成帧成功本身不代表最终投递成功。
+
+当前为 **`0.2.0-rc.1` / 待完整验收**。
+真实私聊增量展示与 DONE 已通过；其余边界覆盖见下方证据。
+参见[迁移要求](migrations.md)与[验收证据](acceptance/qq-native-streaming.md)。
 
 `sendText` 把规范化 Private Target 映射到官方 C2C Route，把 Group Target 映射到
 官方 Group Route。Provider 成功响应会生成 `accepted` Receipt。明确且非限流的

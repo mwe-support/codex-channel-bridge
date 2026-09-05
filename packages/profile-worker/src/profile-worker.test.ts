@@ -58,6 +58,7 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
   completeTurns = true;
   startFailure = false;
   respondErrorFailure = false;
+  reasoningEffort: string | null = "medium";
   readonly models = [{
     id: "model-a",
     model: "model-a",
@@ -90,7 +91,7 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
         model: "model-a",
         modelProvider: "openai",
         cwd: "/tmp/workspace",
-        reasoningEffort: "medium"
+        reasoningEffort: this.reasoningEffort
       } as TResult;
     }
     if (method === "thread/settings/update") return {} as TResult;
@@ -134,6 +135,11 @@ class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
 }
 
 class FakeStore implements ProfileStoreRuntime {
+  async beginAnswerStream(): Promise<import("@codex-channel-bridge/profile-store").AnswerStreamRecord> {
+    throw new Error("No native stream in this fixture");
+  }
+  async getAnswerStream(): Promise<undefined> { return undefined; }
+  async putAnswerStream(): Promise<void> {}
   closed = false;
   readonly messages: NormalizedChannelMessage[] = [];
   readonly logicalResults: LogicalResultInput[] = [];
@@ -382,6 +388,14 @@ class FakeStore implements ProfileStoreRuntime {
 }
 
 class FakeAdapter implements ChannelAdapter {
+  typingStarted = 0;
+  typingStopped = 0;
+  typingThrows = false;
+  startTyping(): () => void {
+    if (this.typingThrows) throw new Error("typing unavailable");
+    this.typingStarted += 1;
+    return () => { this.typingStopped += 1; };
+  }
   started = false;
   stopped = false;
   startFailure = false;
@@ -941,6 +955,13 @@ test("routes an allowed QQ message through Codex correlation into the durable Ou
   assert.equal(store.logicalResults.length, 1);
   assert.equal(store.logicalResults[0]?.segments[0]?.text, "done");
   assert.equal(store.logicalResults[0]?.target.providerReplyEventId, "message-1");
+  assert.equal(adapter.typingStarted, 1);
+  assert.equal(adapter.typingStopped, 1);
+  adapter.typingThrows = true;
+  const withoutTyping = once(worker, "channelTurnCompleted");
+  await adapter.receive(inboundEvent(2, "complete reply despite typing failure"));
+  await withoutTyping;
+  assert.equal(store.logicalResults.length, 2);
   await worker.stop();
 });
 
@@ -979,6 +1000,20 @@ test("projects private QQ Thread commands into native Codex settings and binding
   await adapter.receive(inboundEvent(1));
   await completed;
 
+  for (const [sequence, text, expected] of [
+    [20, "/model", "Current Codex Thread model: model-a"],
+    [21, "/reasoning", "Current Codex Thread reasoning effort: medium"]
+  ] as const) {
+    const before = runtime.requests.length;
+    const delivered = once(worker, "channelCommandDelivered");
+    await adapter.receive(inboundEvent(sequence, text));
+    await delivered;
+    assert.equal(adapter.deliveries.at(-1)?.text, expected);
+    assert.deepEqual(runtime.requests.slice(before), [
+      { method: "thread/resume", params: { threadId: "thread-1" } }
+    ]);
+  }
+
   for (const [sequence, text] of [[2, "/model model-a"], [3, "/reasoning low"]] as const) {
     const delivered = once(worker, "channelCommandDelivered");
     await adapter.receive(inboundEvent(sequence, text));
@@ -998,6 +1033,55 @@ test("projects private QQ Thread commands into native Codex settings and binding
   assert.equal(store.binding, undefined);
   assert.equal(adapter.deliveries.at(-1)?.providerReplySequence, 1);
   assert.equal(adapter.deliveries.at(-1)?.text, "The next ordinary message will start a new Codex Thread.");
+  const before = runtime.requests.length;
+  const unbound = once(worker, "channelCommandDelivered");
+  await adapter.receive(inboundEvent(22, "/model"));
+  await unbound;
+  assert.equal(adapter.deliveries.at(-1)?.text, "No Codex Thread is attached. Send an ordinary message first.");
+  assert.equal(runtime.requests.length, before);
+  await worker.stop();
+});
+
+test("shared groups can query native settings without update capability but cannot change them", async () => {
+  const runtime = new FakeRuntime();
+  runtime.reasoningEffort = null;
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const deps = dependencies(runtime, store);
+  const worker = new ProfileWorker({
+    profileId: "profile-a", workspace: "/tmp/workspace", codexHome: "/tmp/codex-home",
+    stateDirectory: "/tmp/bridge-state",
+    channelAccounts: { "qq-primary": {
+      id: "qq-primary", provider: "qq", enabled: true, epochId: "epoch-1",
+      appId: "env:QQ_APP_ID", appSecret: "env:QQ_APP_SECRET", groupThreadScope: "conversation",
+      accessPolicy: { privateChats: { mode: "open", allow: [] },
+        groupChats: { mode: "open", allow: [] }, groupParticipants: { mode: "open", allow: [] } }
+    } }
+  }, { ...deps, probe: async () => ({ ...testedProbe, experimentalMethods: [] }),
+    createQQAdapter: () => adapter });
+  await worker.start();
+  const event = (sequence: number, text: string): ProviderInboundEvent => {
+    const input = inboundEvent(sequence, text);
+    return { ...input, message: { ...input.message, conversationKind: "group" },
+      replyTarget: { ...input.replyTarget, conversationKind: "group" } };
+  };
+  const completed = once(worker, "channelTurnCompleted");
+  await adapter.receive(event(1, "hello"));
+  await completed;
+  for (const [sequence, text, expected] of [
+    [2, "/model", "Current Codex Thread model: model-a"],
+    [3, "/reasoning", "Current Codex Thread reasoning effort: Codex default (unspecified)"],
+    [4, "/model model-a", "This shared group Thread setting requires host-local Profile Administrator control."]
+  ] as const) {
+    const before = runtime.requests.length;
+    const delivered = once(worker, "channelCommandDelivered");
+    await adapter.receive(event(sequence, text));
+    await delivered;
+    assert.equal(adapter.deliveries.at(-1)?.text, expected);
+    assert.deepEqual(runtime.requests.slice(before), sequence === 4 ? [] : [
+      { method: "thread/resume", params: { threadId: "thread-1" } }
+    ]);
+  }
   await worker.stop();
 });
 
@@ -1216,6 +1300,23 @@ test("presents stable Codex Approval Requests and accepts only a bound Channel r
   await adapter.receive(inboundEvent(2, `/approve ${approval.approvalToken} accept`));
   await responded;
   assert.deepEqual(runtime.responses, [{ id: 42, result: { decision: "accept" } }]);
+
+  assert.match(adapter.deliveries.at(-1)?.text ?? "", /decision sent to Codex/);
+  await adapter.receive(inboundEvent(3, `/approve ${approval.approvalToken} accept`));
+  assert.match(adapter.deliveries.at(-1)?.text ?? "", /not confirmed/);
+  assert.equal(runtime.responses.length, 1);
+
+  const againQueued = once(worker, "channelApprovalQueued");
+  const againRouted = once(worker, "channelApprovalRequested");
+  runtime.emit("serverRequest", { id: 43, method: "item/fileChange/requestApproval",
+    params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-2", startedAtMs: 2 } });
+  const [again] = await againRouted;
+  await againQueued;
+  runtime.emit("notification", { method: "serverRequest/resolved",
+    params: { threadId: "thread-1", requestId: 43 } });
+  await adapter.receive(inboundEvent(4, `/approve ${again.approvalToken} accept`));
+  assert.match(adapter.deliveries.at(-1)?.text ?? "", /not confirmed/);
+  assert.equal(runtime.responses.length, 1);
 
   const completed = once(worker, "channelTurnCompleted");
   runtime.completeTurn();
@@ -1481,9 +1582,12 @@ test("restarts a failed App Server generation without restarting adapters or rep
   await started;
 
   const failed = once(worker, "channelTurnFailed");
+  assert.equal(adapter.typingStarted, 1);
+  assert.equal(adapter.typingStopped, 0);
   const recovered = once(worker, "codexGenerationRecovered");
   firstRuntime.emit("protocolFault", new Error("child exited"));
   await Promise.all([failed, recovered]);
+  assert.equal(adapter.typingStopped, 1);
 
   assert.equal(firstRuntime.stopped, true);
   assert.equal(adapter.stopped, false);

@@ -10,6 +10,8 @@ export type BridgeCommand =
       readonly approvalToken: string;
       readonly decision: "accept" | "acceptForSession" | "decline" | "cancel";
     }
+  | { readonly kind: "model.read" }
+  | { readonly kind: "reasoning.read" }
   | { readonly kind: "model.select"; readonly modelId: string }
   | { readonly kind: "reasoning.select"; readonly effort: string };
 
@@ -50,11 +52,13 @@ export function parseChannelText(text: string): ParsedChannelText {
         threadId
       }));
     case "model":
+      if (!argument) return { kind: "command", command: { kind: "model.read" } };
       return requiredArgument(commandName, argument, (modelId) => ({
         kind: "model.select",
         modelId
       }));
     case "reasoning":
+      if (!argument) return { kind: "command", command: { kind: "reasoning.read" } };
       return requiredArgument(commandName, argument, (effort) => ({
         kind: "reasoning.select",
         effort

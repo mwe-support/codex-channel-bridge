@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import type { AuthenticationState, WAMessage } from "baileys";
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 import {
   activateBaileysAuthGeneration,
@@ -21,13 +22,15 @@ import {
 } from "./whatsapp-channel-account.js";
 
 class FakeRuntimeSocket {
+  readonly sent: unknown[] = [];
   readonly emitter = new EventEmitter();
   readonly ev = this.emitter as unknown as AdapterSocket["ev"];
   readonly user = { id: "15551112222:1@s.whatsapp.net" };
   ended = false;
   logoutCount = 0;
 
-  async sendMessage(): Promise<WAMessage> {
+  async sendMessage(_jid: string, content: unknown): Promise<WAMessage> {
+    this.sent.push(content);
     return { key: { id: "out-1" } } as WAMessage;
   }
 
@@ -50,6 +53,7 @@ class FakePairingSocket {
 
 test("pairs a missing account and replaces only its inner Adapter", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-account-pair-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   const pairingSocket = new FakePairingSocket();
   const runtimeSockets: FakeRuntimeSocket[] = [];
@@ -90,11 +94,16 @@ test("pairs a missing account and replaces only its inner Adapter", async () => 
     assert.equal(events.length, 1);
     assert.equal(events[0]?.kind, "pairing_material");
     assert.equal(account.readiness(), "ready");
+    const fileDelivery = { logicalResultId: "file", segmentIndex: 1, filename: "report.txt", bytes: Buffer.from("test"),
+      target: { conversationKey: "private", conversationKind: "private" as const, providerConversationId: "recipient@lid" } };
+    assert.equal((await account.sendFile(fileDelivery)).outcome, "accepted");
+    assert.deepEqual(runtimeSockets[0]!.sent, [{ document: Buffer.from("test"), mimetype: "application/octet-stream", fileName: "report.txt" }]);
 
     assert.deepEqual(await account.execute({ kind: "disconnect" }), {
       kind: "disconnected"
     });
     assert.equal(account.readiness(), "degraded");
+    await assert.rejects(account.sendFile(fileDelivery), /not connected/);
     const reconnect = account.execute({ kind: "connect" });
     await waitUntil(() => runtimeSockets.length === 2);
     runtimeSockets[1]!.emitter.emit("connection.update", { connection: "open" });
@@ -107,6 +116,7 @@ test("pairs a missing account and replaces only its inner Adapter", async () => 
 
 test("persists logout uncertainty and blocks ordinary reconnect", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-account-logout-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   await prepareRegisteredAuth(rootDirectoryPath);
   const socket = new FakeRuntimeSocket();
@@ -138,6 +148,7 @@ test("persists logout uncertainty and blocks ordinary reconnect", async () => {
 
 test("requires exact confirmation before forgetting only local auth", async () => {
   const parent = await mkdtemp(join(tmpdir(), "bridge-whatsapp-account-forget-"));
+  secureWindowsOwnerOnlyPath(parent, "directory");
   const rootDirectoryPath = join(parent, "wa-primary");
   await prepareRegisteredAuth(rootDirectoryPath);
   const socket = new FakeRuntimeSocket();

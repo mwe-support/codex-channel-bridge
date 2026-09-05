@@ -4,8 +4,9 @@ Normal Supervisor startup never changes an existing Profile database schema.
 An older database keeps only that Profile `unavailable: migration_required`;
 the Supervisor and sibling Profiles remain live.
 
-The current binary supports Bridge Profile schema version 8 to version 9 and
-composed version 3, 4, 5, 6, or 7 to version 9 paths. Unknown versions and inconsistent
+Release `0.2.0-rc.1` supports Bridge Profile schema version 10 to version 11 and
+composed version 3 through 9 to version 11 paths.
+Unknown versions and inconsistent
 schema shapes fail closed. Version 3 to 4 adds and backfills durable QQ passive
 reply sequences. Version 4 to 5 retains the provider conversation target in the
 Message Archive and generalizes Logical Result source identity so restart
@@ -20,7 +21,13 @@ original-text fields to the Outbox; existing records remain valid without a
 quote. Version 8 to 9 creates durable Archive attachment metadata and media
 state without fetching or rewriting historical Channel content. Every path
 verifies Profile ownership, the resulting schema, foreign
-keys, and SQLite `quick_check`.
+keys, and SQLite `quick_check`. Version 9 to 10 adds native answer-stream delivery
+metadata (provider identity, sequence, frame state and prefix digest), not an
+answer transcript. It requires the same explicit snapshot/apply gate below;
+an existing deployment must not simply restart into this working tree. Version
+10 to 11 adds nullable immutable file metadata to `delivery_outbox`, preserving
+old text records and their digests. It does not copy Workspace files during
+migration or enable automatic export. See [output attachments](output-files.md).
 
 ## Plan
 

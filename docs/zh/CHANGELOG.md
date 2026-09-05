@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0-rc.1] - 2026-09-05
+
 ### 新增
 
 - 增加官方维护的 POSIX 与 Windows 一键安装器：验证准确发布版本的校验和与包内
@@ -19,6 +21,17 @@
   版本。
 - 记录使用已核验 Checksum 的 WinSW `2.12.0` 完成一次性原生 Windows Service
   安装、前台 Supervisor 启动、Named Pipe Status、有界停止、卸载与清理验收。
+- 不同会话默认可并发启动 Codex Turn，不受 Profile 全局上限限制；仍保留显式
+  可选上限与有界队列。
+- 无参数 `/model` 和 `/reasoning` 查询绑定 Codex Thread 的原生设置；带参数
+  形式继续只修改该 Thread。
+- QQ 私聊使用腾讯原生回复流；QQ 群聊与 WhatsApp 保持完整终态回复，WhatsApp
+  另提供尽力而为的输入中提示。
+- 对原生 Codex 命令/文件审批请求，在 QQ 与 WhatsApp 中进行关联处理，包含取消
+  和过期清理。
+- 可选地识别完成回复中的工作区本地 Markdown 文件链接，生成不可变快照并通过
+  Durable Outbox 自动投递。
+- 增加版本化中英双语 Docusaurus 文档站，保留不可变预发布手册与 `Next` 文档线。
 
 ### 修复
 
@@ -31,6 +44,24 @@
 - 使用随项目提供的 Helper 替换 Node 默认的 Windows Named-pipe Listener；Helper
   在接受 Control Request 前，为 Service Identity、LocalSystem 与
   BUILTIN\Administrators 创建并验证 Protected ACL。
+
+### 变更
+
+- Profile schema 9 增加 Archive 附件元数据，schema 10 增加 QQ 原生回复流关联，
+  schema 11 增加不可变输出文件元数据。升级仍必须显式 plan、snapshot 并确认。
+- 并发工作时保持无关 Channel Conversation 相互独立，并在 Codex 解决请求或
+  Turn 结束时关闭进程范围审批状态。
+
+### 候选发布边界
+
+- 这是候选发布版，不是稳定生产版本；其准确代码树作为下一轮验收基线。
+- macOS 上 QQ 与 WhatsApp 私聊/群聊真实输出文件下载均与源文件和 Outbox 摘要
+  一致；该附件链路的原生 Linux、Linux Docker 与 Windows 验收仍待完成。
+- WhatsApp 输入中提示的可见性/清理、独立 Turn 中断，以及 QQ 原生流的剩余
+  过期/限流/重启/并发场景仍未完成，虽然确定性契约已经通过。
+- Dashboard 显示版本、Health、Channel Connectivity、有界本地 Event，并可确认
+  应用配置；YAML 编辑、Profile 实时日志、重启控制与会话管理仍是未来需求。
+- 不包含 Channel Account 全局模型/思考强度管理，也不包含宿主 Codex App 会话投射。
 
 ## [0.1.0-rc.4] - 2026-09-02
 

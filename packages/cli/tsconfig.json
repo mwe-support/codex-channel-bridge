@@ -12,6 +12,7 @@
     { "path": "../control-plane" },
     { "path": "../codex-app-server" },
     { "path": "../profile-worker" },
+    { "path": "../platform" },
     { "path": "../supervisor" }
   ]
 }

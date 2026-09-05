@@ -50,9 +50,17 @@ contents are hidden in the default `minimal` mode. Profile configuration may
 select `summary` or `detailed`; every projected field remains bounded.
 
 The response window defaults to five minutes and is configurable per Profile.
-Expiry returns native `cancel`. A definite or deferred presentation failure
-also cancels immediately. An ambiguous provider send remains pending until the
-initiator responds or the timeout expires because the prompt may have arrived.
+Expiry returns native `cancel`. Rejected presentation is recorded; deferred and
+ambiguous sends use the bounded response window and existing Outbox retries.
+An ambiguous send may already have arrived. None of these outcomes authorizes
+the operation or extends QQ's provider reply permissions.
+
+In `0.2.0-rc.1`, successful decisions receive a short Channel acknowledgement (response
+written to Codex, not a claim that the operation succeeded). Invalid, expired,
+reused or wrong-participant tokens receive the same non-disclosing rejection.
+Native `serverRequest/resolved` and terminal `turn/completed` notifications
+invalidate matching tokens and reject unsent prompts without answering an
+already-cleared request. No new Reviewer decision is introduced.
 
 ## Durable transport and generation boundary
 

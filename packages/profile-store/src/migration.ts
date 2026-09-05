@@ -15,8 +15,13 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
 import Database from "better-sqlite3";
+import { ANSWER_STREAM_SCHEMA } from "./answer-stream-schema.js";
+import {
+  assertWindowsOwnerOnlyPath,
+  secureWindowsOwnerOnlyPath
+} from "@codex-channel-bridge/platform";
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 11;
 const MIN_ESTIMATED_ADDITIONAL_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
@@ -145,6 +150,30 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     requireTo: requireVersionNineShape,
     operations: versionEightToNineOperations(),
     irreversibleSteps: versionEightToNineIrreversibleSteps()
+  },
+  {
+    fromVersion: 9,
+    toVersion: 10,
+    requireFrom: requireVersionNineShape,
+    migrate: (database) => database.transaction(() => {
+      database.exec(ANSWER_STREAM_SCHEMA);
+      database.pragma("user_version = 10");
+    }).immediate(),
+    requireTo: requireVersionTenShape,
+    operations: ["create native answer stream delivery metadata", "set SQLite user_version to 10"],
+    irreversibleSteps: ["older Bridge binaries cannot read schema 10; rollback requires the prepared snapshot"]
+  },
+  {
+    fromVersion: 10,
+    toVersion: 11,
+    requireFrom: requireVersionTenShape,
+    migrate: (database) => database.transaction(() => {
+      database.exec("ALTER TABLE delivery_outbox ADD COLUMN file_json TEXT CHECK(file_json IS NULL OR json_valid(file_json))");
+      database.pragma("user_version = 11");
+    }).immediate(),
+    requireTo: requireVersionElevenShape,
+    operations: ["add immutable output-file metadata to delivery outbox", "set SQLite user_version to 11"],
+    irreversibleSteps: ["older Bridge binaries cannot read schema 11; rollback requires the prepared snapshot"]
   }
 ];
 
@@ -164,7 +193,7 @@ export async function planProfileStoreMigration(
     currentVersion = Number(database.pragma("user_version", { simple: true }));
     requireProfile(database, target.profileId);
     if (currentVersion === CURRENT_SCHEMA_VERSION) {
-      requireVersionNineShape(database);
+      requireVersionElevenShape(database);
       operations = [];
       irreversibleSteps = [];
     } else {
@@ -271,7 +300,7 @@ export async function applyProfileStoreMigration(
       activeStep = undefined;
       version = step.toVersion;
     }
-    requireVersionNineShape(database);
+    requireVersionElevenShape(database);
     const quickCheck = String(database.pragma("quick_check", { simple: true }));
     if (quickCheck !== "ok") throw new Error("SQLite quick_check failed");
   } catch (error) {
@@ -883,6 +912,12 @@ function assertOwnerOnlyStore(databasePath: string): void {
   ) {
     throw new ProfileMigrationError("insecure_store_path", "Profile store is not owner-only");
   }
+  try {
+    assertWindowsOwnerOnlyPath(dirname(databasePath), "directory");
+    assertWindowsOwnerOnlyPath(databasePath, "file");
+  } catch {
+    throw new ProfileMigrationError("insecure_store_path", "Profile store is not owner-only");
+  }
 }
 
 function openReadonly(databasePath: string): Database.Database {
@@ -995,8 +1030,8 @@ function requireVersionEightShape(database: Database.Database): void {
   }
 }
 
-function requireVersionNineShape(database: Database.Database): void {
-  requireVersionSixCompatibleShape(database, CURRENT_SCHEMA_VERSION);
+function requireVersionNineShape(database: Database.Database, version = 9): void {
+  requireVersionSixCompatibleShape(database, version);
   const checkpointColumns = tableColumns(database, "channel_transport_checkpoints");
   const outboxColumns = tableColumns(database, "delivery_outbox");
   const attachmentColumns = tableColumns(database, "archive_attachments");
@@ -1011,6 +1046,21 @@ function requireVersionNineShape(database: Database.Database): void {
     !attachmentColumns.includes("mirrored_size_bytes")
   ) {
     throw new ProfileMigrationError("schema_mismatch", "Schema version 9 shape is inconsistent");
+  }
+}
+
+function requireVersionTenShape(database: Database.Database, version = 10): void {
+  requireVersionNineShape(database, version);
+  const columns = tableColumns(database, "answer_streams");
+  if (!columns.includes("state_json") || !columns.includes("archive_record_id")) {
+    throw new ProfileMigrationError("schema_mismatch", "Schema version 10 shape is inconsistent");
+  }
+}
+
+function requireVersionElevenShape(database: Database.Database): void {
+  requireVersionTenShape(database, 11);
+  if (!tableColumns(database, "delivery_outbox").includes("file_json")) {
+    throw new ProfileMigrationError("schema_mismatch", "Schema version 11 shape is inconsistent");
   }
 }
 
@@ -1062,6 +1112,9 @@ async function digestSqliteSet(databasePath: string): Promise<{ digest: string; 
     ) {
       throw new ProfileMigrationError("insecure_store_path", "SQLite set is not owner-only");
     }
+    try { assertWindowsOwnerOnlyPath(path, "file"); } catch {
+      throw new ProfileMigrationError("insecure_store_path", "SQLite set is not owner-only");
+    }
     bytes += stat.size;
     hash.update(path === databasePath ? "database\0" : "wal\0");
     for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -1080,9 +1133,11 @@ function appendAudit(auditPath: string, record: Record<string, unknown>): void {
       ) {
         throw new Error("insecure audit file");
       }
+      assertWindowsOwnerOnlyPath(auditPath, "file");
     }
     const descriptor = openSync(auditPath, "a", 0o600);
     try {
+      secureWindowsOwnerOnlyPath(auditPath, "file");
       appendFileSync(descriptor, `${JSON.stringify(record)}\n`, "utf8");
       fsyncSync(descriptor);
     } finally {

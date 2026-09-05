@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+
 import { parseConfiguration } from "@codex-channel-bridge/config";
 import { SqliteProfileStore } from "@codex-channel-bridge/profile-store";
 
@@ -11,6 +13,7 @@ import { OperationsInspector } from "./operations-inspector.js";
 
 test("inspects one Profile without mutating its runtime or database", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-doctor-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
   const codexHome = join(root, "codex-home");
@@ -56,7 +59,7 @@ profiles:
   assert.equal(result.ok, true);
   assert.equal(result.inspectedAtMs, 12_345);
   assert.equal(result.profiles[0]?.store?.quickCheck, "ok");
-  assert.equal(result.profiles[0]?.store?.schemaVersion, 9);
+  assert.equal(result.profiles[0]?.store?.schemaVersion, 11);
   assert.equal(
     result.profiles[0]?.paths.stateDirectory.ownerOnly,
     process.platform === "win32" ? null : true
@@ -70,6 +73,7 @@ profiles:
 
 test("reports read-only path and store issues without throwing", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "bridge-doctor-bad-"));
+  secureWindowsOwnerOnlyPath(root, "directory");
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
   const stateDirectory = join(root, "state");

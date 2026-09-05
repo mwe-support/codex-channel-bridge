@@ -317,8 +317,13 @@ response. Do not create an outage backlog or automatically execute rejected
 input after recovery; archive retention is evidence, not acceptance for later
 execution.
 
-Apply simple Profile-local Admission Control before starting Codex work. Each
-Profile has configurable maximum active Turns, one bounded FIFO for explicit
+Apply simple Profile-local Admission Control before starting Codex work.
+Independent Codex Threads have no Bridge-imposed concurrent-Turn limit by
+default; a busy group must not consume a private conversation's only slot.
+An administrator may explicitly set a Profile-wide cap. Preserve native
+same-Thread steer/queue behavior, account admission rate and disk protection;
+unlimited Thread admission is not CPU, memory or Workspace conflict isolation.
+Each Profile has one bounded FIFO for explicit
 queue mode, a maximum queue age, and a simple per-Channel-Account admission
 rate. Steer mode does not create an ordinary-message queue. Queueing is allowed
 only while the Profile is ready; it is not an outage backlog. When the FIFO is
@@ -580,6 +585,15 @@ GitHub Releases as immutable; corrections use a new version.
 
 ## Documentation and Completion
 
+- When discussing a new feature or starting, advancing, blocking, or completing
+  feature work, read and update `docs/feature-requirements.md` and its Chinese
+  counterpart. Record a user-requested, unimplemented feature as `accepted`
+  once feasibility and scope are agreed, before implementation begins. Keep
+  unresolved proposals in `discussing`; discussion is not implementation
+  approval. Reuse the requirement ID and update status, remaining work, and
+  evidence in the same change as development progress. Mark `done` only after
+  the recorded acceptance criteria pass; record the actual release tag
+  separately, without treating unreleased code as shipped.
 - Every human-authored document under `docs/` must have a Chinese counterpart
   under `docs/zh/` with the same relative path. For example,
   `docs/adr/0001-example.md` maps to `docs/zh/adr/0001-example.md`. Files already

@@ -17,7 +17,7 @@ title: 限制与路线图
 - Restore 只支持兼容路径与相同 OS Family，不会改写 Codex 历史来伪造可移植性。
 - 发布机制提供源码归档与校验和，不发布 npm Package 或 Registry Container Image。
 
-## 当前 main 已实现并进入下个版本
+## 已纳入 `0.2.0-rc.1`
 
 - 提供官方维护的一条命令原生安装器与原子 Bridge 升级；校验不可变 Release
   Checksum，且绝不安装或升级 Codex。
@@ -32,6 +32,9 @@ title: 限制与路线图
   LocalSystem 与 BUILTIN\Administrators 的 Protected DACL。
 
 ## 未来工作
+
+新增功能需求与验收进度记录在[功能需求清单](feature-requirements.md)中，
+与已发布版本的可用性分开维护。
 
 - 在指定 Windows Host 上完成随 Release 提供的 Windows Service 安装，以及严格
   State、Secret 与 Baileys ACL Enforcement；一次性 WinSW Lifecycle 与严格

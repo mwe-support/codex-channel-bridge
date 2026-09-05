@@ -4,6 +4,7 @@ import type {
   CodexInputAcceptance,
   CodexInputCorrelation,
   InboundChannelEvent,
+  LogicalResultSegmentInput,
   ThreadBinding,
   ThreadBindingKey,
   ThreadBindingScope
@@ -48,6 +49,7 @@ export interface NativeTurnDriver {
 }
 
 export interface ConversationTurnInput {
+  readonly onAnswer?: (text: string) => void;
   readonly archiveRecordId: string;
   readonly event: InboundChannelEvent;
   readonly groupThreadScope: ThreadBindingScope;
@@ -72,6 +74,7 @@ export interface ConversationSteerResult {
 }
 
 export interface ConversationTurnCoordinatorOptions {
+  readonly prepareOutputFiles?: (text: string) => Promise<readonly LogicalResultSegmentInput[]>;
   readonly profileId: string;
   readonly store: ConversationTurnStore;
   readonly turnDriver: NativeTurnDriver;
@@ -85,6 +88,7 @@ export interface ConversationTurnCoordinatorOptions {
  * turn/start, and durably enqueues terminal output before reporting success.
  */
 export class ConversationTurnCoordinator {
+  readonly #prepareOutputFiles: ConversationTurnCoordinatorOptions["prepareOutputFiles"];
   readonly #profileId: string;
   readonly #store: ConversationTurnStore;
   readonly #turnDriver: NativeTurnDriver;
@@ -94,6 +98,7 @@ export class ConversationTurnCoordinator {
   readonly #terminalTurns = new Map<string, { readonly status: string; readonly atMs: number }>();
 
   public constructor(options: ConversationTurnCoordinatorOptions) {
+    this.#prepareOutputFiles = options.prepareOutputFiles;
     this.#profileId = options.profileId;
     this.#store = options.store;
     this.#turnDriver = options.turnDriver;
@@ -125,6 +130,7 @@ export class ConversationTurnCoordinator {
     let startedTurnId: string | undefined;
     try {
       const turn = await this.#turnDriver.runPreparedTurn(text, binding.codexThreadId, {
+        ...(input.onAnswer ? { onAnswer: input.onAnswer } : {}),
         clientUserMessageId,
         onStarted: async (_threadId, turnId) => {
           startedTurnId = turnId;
@@ -138,6 +144,9 @@ export class ConversationTurnCoordinator {
         }
       });
       const completedAtMs = this.#now();
+      const files = turn.status === "completed" && this.#prepareOutputFiles
+        ? await this.#prepareOutputFiles(turn.finalText).catch(() => [{ text: "Linked files could not be prepared for delivery." }])
+        : [];
       const terminal = await this.#store.commitCodexTurnResult({
         correlationId: acceptance.correlation.correlationId,
         terminalStatus: turn.status,
@@ -151,7 +160,8 @@ export class ConversationTurnCoordinator {
           channelAccountEpochId: input.event.message.channelAccountEpochId,
           target: input.event.replyTarget,
           completedAtMs,
-          segments: splitResult(turn.finalText || `Codex Turn ended with status: ${turn.status}`)
+          segments: [...splitResult(turn.finalText || `Codex Turn ended with status: ${turn.status}`,
+            input.event.message.provider === "qq" ? 5_000 : Infinity), ...files]
         }
       });
       this.#rememberTerminalTurn(turn.turnId, turn.status, completedAtMs);
@@ -310,13 +320,13 @@ export function threadBindingKeyFor(
   };
 }
 
-function splitResult(text: string): readonly { readonly text: string }[] {
+function splitResult(text: string, maxCharacters: number): readonly { readonly text: string }[] {
   const segments: Array<{ text: string }> = [];
   let current = "";
   let currentBytes = 0;
   for (const character of text) {
     const bytes = Buffer.byteLength(character, "utf8");
-    if (currentBytes + bytes > RESULT_SEGMENT_BYTES && current) {
+    if ((currentBytes + bytes > RESULT_SEGMENT_BYTES || current.length + character.length > maxCharacters) && current) {
       segments.push({ text: current });
       current = "";
       currentBytes = 0;

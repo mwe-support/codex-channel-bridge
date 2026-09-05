@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { parseConfiguration } from "@codex-channel-bridge/config";
 
 import { AdmissionController } from "./admission-controller.js";
 
@@ -13,6 +14,26 @@ function request(workId: string, overrides: Record<string, unknown> = {}) {
     ...overrides
   };
 }
+
+test("default admission lets independent conversations overlap while preserving exact Turn control", () => {
+  const config = parseConfiguration(JSON.stringify({ schemaVersion: 1, profiles: { test: {
+    workspace: "/tmp/test-workspace", codexHome: "/tmp/test-codex", stateDirectory: "/tmp/test-state"
+  } } })).configuration.profiles.test!;
+  const admission = new AdmissionController({ ...config.admission, accountRateLimit: 1000, ready: true });
+  for (let i = 0; i < 70; i++) {
+    assert.equal(admission.admit(request(`conversation-${i}`)).disposition.kind, "start");
+    admission.markTurnStarted(`conversation-${i}`, { threadId: `native-${i}`, turnId: `turn-${i}` });
+  }
+  assert.deepEqual(admission.admit(request("follow-up", { threadKey: "thread-conversation-0" })).disposition,
+    { kind: "steer", workId: "follow-up", target: { threadId: "native-0", turnId: "turn-0" } });
+  assert.equal(admission.admit(request("other-participant", {
+    threadKey: "thread-conversation-0", providerIdentity: "other"
+  })).disposition.kind, "rejected");
+  admission.release("conversation-0", 1001);
+  assert.equal(admission.snapshot().active, 69);
+  assert.deepEqual(admission.activeTurnFor("thread-conversation-1", "member-1"),
+    { kind: "allowed", target: { threadId: "native-1", turnId: "turn-1" } });
+});
 
 test("steers the exact active Turn without consuming a new-Turn slot", () => {
   const admission = new AdmissionController({

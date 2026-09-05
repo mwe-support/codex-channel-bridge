@@ -95,6 +95,27 @@ export interface ChannelDeliveryReceipt {
   readonly acceptedAtMs: number;
 }
 
+export interface ChannelFileDelivery extends Omit<ChannelTextDelivery, "text"> {
+  readonly filename: string;
+  readonly bytes: Uint8Array;
+}
+
+/** Native same-message update, not a new logical result or a typing indication. */
+export interface ChannelAnswerFrame {
+  readonly target: ChannelReplyTarget;
+  readonly providerReplySequence: number;
+  readonly providerMessageId?: string;
+  readonly index: number;
+  readonly text: string;
+  readonly done: boolean;
+}
+
+export interface ChannelAnswerFrameReceipt {
+  readonly providerMessageId: string;
+  readonly acceptedAtMs: number;
+  readonly remainingCharacters?: number;
+}
+
 export type ChannelDeliveryFailureOutcome = "rejected" | "ambiguous" | "deferred";
 
 export class ChannelDeliveryError extends Error {
@@ -113,6 +134,11 @@ export type ChannelAdapterReadiness = "stopped" | "starting" | "ready" | "degrad
 export interface ChannelAdapter {
   start(onEvent: (event: ProviderInboundEvent) => Promise<void>): Promise<void>;
   sendText(delivery: ChannelTextDelivery): Promise<ChannelDeliveryReceipt>;
+  sendFile?(delivery: ChannelFileDelivery): Promise<ChannelDeliveryReceipt>;
+  /** Optional provider-native answer stream. Unsupported targets must reject without sending. */
+  sendAnswerFrame?(frame: ChannelAnswerFrame): Promise<ChannelAnswerFrameReceipt>;
+  /** Best-effort native waiting indication. Returned cleanup is idempotent and non-blocking. */
+  startTyping?(target: ChannelReplyTarget): (() => void) | undefined;
   stop(): Promise<void>;
   readiness(): ChannelAdapterReadiness;
   subscribeReadiness(

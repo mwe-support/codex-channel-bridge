@@ -22,6 +22,7 @@ export interface TurnResult {
 }
 
 export interface RunTurnOptions {
+  readonly onAnswer?: (text: string) => void;
   readonly clientUserMessageId?: string;
   readonly onStarted?: (threadId: string, turnId: string) => Promise<void>;
 }
@@ -88,7 +89,7 @@ export class TurnCoordinator {
       throw new Error("Codex Thread must be started or resumed before turn/start");
     }
     const clientUserMessageId = options.clientUserMessageId ?? randomUUID();
-    const registration = this.#eventRouter.beginTurn(threadId);
+    const registration = this.#eventRouter.beginTurn(threadId, options.onAnswer);
     this.#pendingTurnStarts += 1;
 
     try {

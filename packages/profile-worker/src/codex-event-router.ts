@@ -36,6 +36,8 @@ export interface CodexEventRouterOptions {
 }
 
 type TurnSignal =
+  | { readonly kind: "answer_started"; readonly itemId: string }
+  | { readonly kind: "answer_delta"; readonly itemId: string; readonly delta: string }
   | { readonly kind: "agent_message"; readonly text: string }
   | { readonly kind: "completed"; readonly status: string };
 
@@ -46,6 +48,9 @@ interface RoutedSignal {
 }
 
 interface TurnSlot {
+  readonly onAnswer?: (text: string) => void;
+  answerItemId?: string;
+  answerText: string;
   readonly threadId: string;
   readonly completion: Promise<RoutedTurnTerminal>;
   readonly resolve: (result: RoutedTurnTerminal) => void;
@@ -71,7 +76,7 @@ export class CodexEventRouter {
     this.#maxBufferedSignals = maxBufferedSignals;
   }
 
-  public beginTurn(threadId: string): CodexTurnRegistration {
+  public beginTurn(threadId: string, onAnswer?: (text: string) => void): CodexTurnRegistration {
     if (this.#closedError) {
       throw new CodexEventRouterError("router_closed", this.#closedError.message);
     }
@@ -94,6 +99,8 @@ export class CodexEventRouter {
     void completion.catch(() => undefined);
 
     const slot: TurnSlot = {
+      ...(onAnswer ? { onAnswer } : {}),
+      answerText: "",
       threadId,
       completion,
       resolve,
@@ -170,6 +177,23 @@ export class CodexEventRouter {
 
   #apply(slot: TurnSlot, signal: TurnSignal): void {
     if (slot.settled || !slot.claimedTurnId) return;
+    if (signal.kind === "answer_started") {
+      slot.answerItemId = signal.itemId;
+      slot.answerText = slot.agentMessages.join("\n\n");
+      if (slot.answerText) slot.answerText += "\n\n";
+      return;
+    }
+    if (signal.kind === "answer_delta") {
+      if (!slot.onAnswer || slot.answerItemId !== signal.itemId || slot.answerText.length > 5_000) return;
+      // A bounded projection only; terminal text still comes from item/completed.
+      if (slot.answerText.length + signal.delta.length > 5_000) {
+        slot.answerItemId = undefined;
+        return;
+      }
+      slot.answerText += signal.delta;
+      try { slot.onAnswer(slot.answerText); } catch { /* Presentation cannot fail a Turn. */ }
+      return;
+    }
     if (signal.kind === "agent_message") {
       slot.agentMessages.push(signal.text);
       return;
@@ -208,10 +232,23 @@ function routeSignal(message: JsonRpcNotification): RoutedSignal | null {
   const params = asRecord(message.params);
   if (!params || typeof params.threadId !== "string") return null;
 
+  if (message.method === "item/started" && typeof params.turnId === "string") {
+    const item = asRecord(params.item);
+    if (item?.type !== "agentMessage" || item.phase !== "final_answer" || typeof item.id !== "string") return null;
+    return { threadId: params.threadId, turnId: params.turnId,
+      signal: { kind: "answer_started", itemId: item.id } };
+  }
+  if (message.method === "item/agentMessage/delta" && typeof params.turnId === "string" &&
+      typeof params.itemId === "string" && typeof params.delta === "string") {
+    return { threadId: params.threadId, turnId: params.turnId,
+      signal: { kind: "answer_delta", itemId: params.itemId, delta: params.delta } };
+  }
+
   if (message.method === "item/completed") {
     if (typeof params.turnId !== "string") return null;
     const item = asRecord(params.item);
     if (item?.type !== "agentMessage" || typeof item.text !== "string") return null;
+    if (item.phase === "commentary") return null;
     return {
       threadId: params.threadId,
       turnId: params.turnId,

@@ -4,6 +4,7 @@ import { isAbsolute, join, normalize, relative, sep } from "node:path";
 
 import { parseDocument, stringify } from "yaml";
 import { z } from "zod";
+import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
@@ -24,7 +25,7 @@ export interface ChannelAccessPolicyConfiguration {
 
 export interface AdmissionConfiguration {
   readonly mode: "steer" | "queue";
-  readonly maximumActiveTurns: number;
+  readonly maximumActiveTurns: number | null;
   readonly queueCapacity: number;
   readonly maximumQueueAgeMs: number;
   readonly accountRateLimit: number;
@@ -37,6 +38,7 @@ export interface ApprovalConfiguration {
 }
 
 export interface MediaConfiguration {
+  readonly sendOutputFiles?: boolean;
   readonly perAttachmentLimitBytes: number;
   readonly profileQuotaBytes: number;
 }
@@ -213,6 +215,12 @@ async function validateProfileDirectories(configuration: BridgeConfiguration): P
         (stateDirectory.uid !== process.getuid?.() || (stateDirectory.mode & 0o777) !== 0o700)
       ) {
         issues.push(`profiles.${profile.id}.stateDirectory must be owned by the service user with mode 0700`);
+      } else if (process.platform === "win32") {
+        try {
+          assertWindowsOwnerOnlyPath(profile.stateDirectory, "directory", true);
+        } catch {
+          issues.push(`profiles.${profile.id}.stateDirectory must have an owner-only Windows ACL`);
+        }
       }
     })
   );
@@ -236,7 +244,7 @@ const secretReferenceSchema = z.string({ error: "must be a Secret Reference" }).
     (value.startsWith("env:") && ENVIRONMENT_NAME.test(value.slice(4))) ||
     (value.startsWith("file:") && isAbsolute(value.slice(5))),
   { error: "must be an env:NAME or file:/absolute/path Secret Reference" }
-);
+).transform((value) => value.startsWith("file:") ? `file:${normalize(value.slice(5))}` : value);
 const defaultObject = <T extends z.ZodType>(schema: T) =>
   z.preprocess((value) => value === undefined ? {} : value, schema);
 const accessRuleSchema = defaultObject(z.strictObject({
@@ -295,7 +303,7 @@ const channelAccountsSchema = z.record(
 ));
 const admissionSchema = defaultObject(z.strictObject({
   mode: z.enum(["steer", "queue"], { error: "must equal steer or queue" }).default("steer"),
-  maximumActiveTurns: integer(1, 64, 1),
+  maximumActiveTurns: z.number().int().min(1).max(64).nullable().default(null),
   queueCapacity: integer(0, 10_000, 16),
   maximumQueueAgeMs: integer(1_000, 86_400_000, 300_000),
   accountRateLimit: integer(1, 100_000, 30),
@@ -308,6 +316,7 @@ const approvalSchema = defaultObject(z.strictObject({
   }).default("minimal")
 }));
 const mediaSchema = defaultObject(z.strictObject({
+  sendOutputFiles: z.boolean().default(false),
   perAttachmentLimitBytes: integer(1, 1024 * 1024 * 1024 * 1024, 64 * 1024 * 1024),
   profileQuotaBytes: integer(1, Number.MAX_SAFE_INTEGER, 10 * 1024 * 1024 * 1024)
 }).superRefine((value, context) => {
