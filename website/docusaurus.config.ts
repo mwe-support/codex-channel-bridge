@@ -38,6 +38,11 @@ const config: Config = {
               path: "next",
               banner: "unreleased"
             },
+            "0.2.0-rc.1": {
+              label: "0.2.0-rc.1 (prerelease)",
+              path: "0.2.0-rc.1",
+              banner: "none"
+            },
             "0.1.0-rc.4": {
               label: "0.1.0-rc.4 (prerelease)",
               path: "0.1.0-rc.4",
