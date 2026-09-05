@@ -1,7 +1,8 @@
 # 按能力判断 Codex 兼容性与准入/投递独立性——Next
 
-- 日期：2026-09-05。本次是基于 `90e4449f3f4bf84015758be5c97241368acee070`
-  的未提交 Next 改动，不是新发布，也不修改不可变的 `0.2.0-rc.1` 产物。
+- 日期：2026-09-05。最初验收基于 `90e4449f3f4bf84015758be5c97241368acee070`
+  的未提交 Next 快照，随后作为候选 `0c8ce805d0b874c527895f195ed3e293c4a8dac2`
+  发布到同步分支。不是新版本发布，也不修改不可变的 `0.2.0-rc.1` 产物。
 - 生产 TypeScript SHA-256：
   `3d2ff226783356650b3ca07992805d06db0c18a6daedc407e6ed22cb72ef4eb8`。
   对全部 76 个受跟踪的 `packages/**/*.ts` 文件，排除测试、contract 和 `.d.ts`，
@@ -69,8 +70,48 @@ Thread 历史。这仍是同一 OS 用户和 OpenAI 账号下的应用层隔离�
 镜像明确的包版本用于可复现构建，不是 Bridge 兼容性门槛；另行验证省略版本或提供
 `latest` 时均在版本输入校验处失败。运行中的容器不自行更新。
 
-本轮没有重跑 Windows 验收。上述 Linux/Docker 检查不证明其真实 QQ 投递，也不代表
-新一轮 systemd/Windows/launchd 服务安装或全部平台故障模式的验收。
+上述 Linux/Docker 检查不证明其真实 QQ 投递，也不代表新一轮
+systemd/Windows/launchd 服务安装或全部平台故障模式的验收。
+
+## Windows 后续验收——部分通过，候选尚未全绿
+
+任务读取接口未返回最新轮次正文，因此以下 Windows 结果由用户转交。候选提交为
+`0c8ce805d0b874c527895f195ed3e293c4a8dac2`，Tree 为
+`5189864d38ff4f5d6210cad4c391935d9295456b`。76 个生产源码文件的 Git Blob 和检出
+字节均匹配上方指纹，无 CRLF 差异。独立验收 worktree 在准备测试补丁前是干净的。
+宿主为 Windows `10.0.26200`、Node `24.13.0`、npm `11.6.2`、实际 Codex `0.153.4`；
+报告的稳定 Schema 摘要也与上方 macOS/Linux 一致。
+
+| 命令 | 退出码 | pass / fail / skip 或结果 |
+| --- | ---: | --- |
+| `npm ci` | 0 | 安装成功 |
+| `npm run check` | 1 | 单元阶段：244 / 4 / 4 |
+| `npm run test:control-contract` | 0 | 5 / 0 / 0 |
+| `npm run test:contract` | 0 | 原生协议契约通过 |
+| `npm run test:supervisor-contract` | 0 | 双 Profile 隔离与停止通过 |
+| `npm run docs:build` | 0 | 工具测试 2 / 0 / 0，双语构建成功 |
+| `npm run test:release-tool` | 0 | 3 / 0 / 1 |
+| `npm run test:platform-contract` | 0 | 静态检查 4 / 0 / 0 |
+
+其中三项是测试缺陷：既有 Operations Inspector 断言预期 `null`，实际 Windows
+状态目录 ACL 检查返回 `true`；新增的按账户 Outbox 测试和既有原生流测试把关闭
+数据库的钩子注册在删除目录之后，导致 Windows `EBUSY`。最小修复只改两个测试文件，
+7 行增加、8 行删除，保留安全断言目的，不增加 skip。补丁 SHA-256：
+`c3b039fbfdfb62d009aadaafb243b5a1dfa2c06f3e37ccf0b242aa822f7b84f8`。
+协调端已重建完全一致的补丁字节，32 项本地定向测试通过；macOS 完整
+`npm run check` 也通过 252 项单元、4 项发布工具和 4 项平台检查，2 项文档工具测试
+通过。生产源码不变。
+
+第四项仍是宿主前提缺口：输出文件测试创建 `alias.txt` 符号链接时返回 `EPERM`。
+Windows 应用补丁后的定向结果为 3 pass / 1 fail；尚未报告修正后候选的完整 check。
+真实管道 DACL 检查通过，仅当前用户、SYSTEM、Administrators。SCM 创建服务权限
+探测返回错误 5，因此真实 Windows Service 生命周期尚未验收。这些情况不能改记为
+新增 skip 或验收通过，也不得通过扩大 ACL 或静默启用系统功能来隐藏。
+
+Windows 原目录仍在 `main / 90e4449`，两行 WIP 依赖声明及文件摘要保持不变；
+原始 stash 对象为 `fa72a20fd26be9db1e4857bc228fd138163efc28`。补丁最初只在
+验收 worktree 中准备，Windows 未提交或推送。下一步是在干净 worktree 中获取协调端
+的新提交，全量复验，并将符号链接及服务权限明确保留为待完成条件。
 
 ## 恢复结果
 
@@ -82,4 +123,5 @@ Thread 历史。这仍是同一 OS 用户和 OpenAI 账号下的应用层隔离�
   `fe6f3a0ed081b31d3090582c568d38555830e8dcb86b43982eebaefa7e244c47`。
 - Supervisor live；主 Profile、QQ 和 WhatsApp Adapter ready；次 Profile stopped。
   没有活动测试工作、待审批请求或待投递 Outbox 记录。
-- 没有数据库迁移、Profile purge、Archive 删除、创建 tag、提交或发布。
+- 最初真实验收期间没有数据库迁移、Profile purge、Archive 删除、tag、提交或发布；
+  后续候选提交用于跨设备同步，不是版本发布。

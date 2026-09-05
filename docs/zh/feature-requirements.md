@@ -41,12 +41,12 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-008 | Channel Account 管理员与全局设置命令 | deferred（延期） | unassigned |
 | FR-009 | QQ 与 WhatsApp 原生审批可靠性 | done（已完成） | `0.2.0-rc.1` |
 | FR-010 | 自动输出文件投递到原会话 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
-| FR-011 | 各 Channel Account 独立投递 | done（已完成） | Next / unassigned |
-| FR-012 | 按实际能力判断 Codex 兼容性 | done（已完成） | Next / unassigned |
+| FR-011 | 各 Channel Account 独立投递 | awaiting-acceptance（待验收） | Next / unassigned |
+| FR-012 | 按实际能力判断 Codex 兼容性 | awaiting-acceptance（待验收） | Next / unassigned |
 
 ## FR-011 — 各 Channel Account 独立投递
 
-- 更新：2026-09-05。状态：`done`；版本：Next / unassigned。
+- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：Next / unassigned。
 - 用户授权落实消融结论、修订 AGENTS.md，并使用两个凭据通过真实 QQ 客户端进行
   多 Profile 验收。归属 Bridge 调度：复用 Outbox，按账户独立领取/发送，保留租约、
   回执与 Logical Result 分段顺序，不引入中央调度器或新 Schema。
@@ -58,12 +58,13 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 已实现并通过 macOS/原生 Linux 的 252 项单元测试、发布/平台检查及原生契约，
   Docker 原生契约通过。16 条带标记的真实 QQ 输入均进入终态，最终投递 accepted；
   队首跳过、晋升审批、跨 Profile 审批拒绝、中断隔离均实测通过。主配置/原绑定已恢复，
-  次 Profile 停用并保留数据。Windows 本轮未重跑，不作其验收声明；尚未提交或发布。
+  次 Profile 停用并保留数据。后续 Windows 候选验收为部分通过，状态回到待验收；两项测试文件修正及
+  符号链接/SCM 权限缺口见证据。候选已提交到同步分支，未发布。
 - [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
 
 ## FR-012 — 按实际能力判断 Codex 兼容性
 
-- 更新：2026-09-05。状态：`done`；版本：Next / unassigned。
+- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：Next / unassigned。
 - 用户明确要求不固定 Codex CLI 版本，以适应宿主频繁更新。Codex 仍由管理员提供，
   Bridge 不修改其安装。
 - 取消版本下限与宿主测试中的固定版本/摘要断言。探测生成的方法和真实初始化/模型
@@ -76,7 +77,8 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 已取消版本门槛和固定版本/摘要契约断言，保留能力失败关闭与历史验证标记。
   macOS、原生 Linux、Linux Docker 均使用实际 Codex 0.153.4 通过原生契约；
   真实 QQ 多 Profile 回归通过。其他版本的标签行为由合成 Schema 回归验证，
-  不宣称已实测所有 CLI 版本。Windows 本轮未重跑；未修改宿主安装、提交或发布。
+  不宣称已实测所有 CLI 版本。后续 Windows 原生契约通过，但完整候选仍待测试修正后的全量复验及权限前提；
+  状态回到待验收。未修改宿主安装；候选已提交到同步分支，未发布。
 - [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
 
 

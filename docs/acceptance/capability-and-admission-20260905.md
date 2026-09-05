@@ -1,8 +1,9 @@
 # Capability-based Codex compatibility and admission/delivery independence — Next
 
-- Date: 2026-09-05. This is uncommitted Next work based on
-  `90e4449f3f4bf84015758be5c97241368acee070`, not a new release or a modification
-  of the immutable `0.2.0-rc.1` artifact.
+- Date: 2026-09-05. The original run validated an uncommitted Next snapshot based
+  on `90e4449f3f4bf84015758be5c97241368acee070`, subsequently published as candidate
+  `0c8ce805d0b874c527895f195ed3e293c4a8dac2`. This is not a new release or a
+  modification of the immutable `0.2.0-rc.1` artifact.
 - Production TypeScript SHA-256:
   `3d2ff226783356650b3ca07992805d06db0c18a6daedc407e6ed22cb72ef4eb8`.
   Hash input is the sorted repository-relative path, newline, then file bytes
@@ -84,9 +85,56 @@ The image's explicit package version is a reproducibility input, not a Bridge
 compatibility gate. Additional builds with an omitted version or `latest` fail
 at the version-input guard. Running containers do not self-update.
 
-Windows acceptance was not rerun in this change. The Linux/Docker checks above
-do not establish live QQ delivery there, nor a new systemd/Windows/launchd service
-installation or every external provider failure mode.
+The Linux/Docker checks above do not establish live QQ delivery there, nor a new
+systemd/Windows/launchd service installation or every external provider failure mode.
+
+## Windows follow-up — partial, not a green candidate
+
+The Windows task's result was supplied by the user after the task-reading
+interface returned empty recent-turn bodies. The reported candidate commit is
+`0c8ce805d0b874c527895f195ed3e293c4a8dac2`, tree
+`5189864d38ff4f5d6210cad4c391935d9295456b`. All 76 production source files match
+the fingerprint above in both Git blobs and checkout bytes, without CRLF drift.
+The isolated acceptance worktree was clean before preparing the test-only fix.
+Host: Windows `10.0.26200`, Node `24.13.0`, npm `11.6.2`, actual Codex `0.153.4`;
+the reported stable schema digest also matches the macOS/Linux value above.
+
+| Command | Exit | Pass / fail / skip or outcome |
+| --- | ---: | --- |
+| `npm ci` | 0 | Installed successfully |
+| `npm run check` | 1 | Unit stage: 244 / 4 / 4 |
+| `npm run test:control-contract` | 0 | 5 / 0 / 0 |
+| `npm run test:contract` | 0 | Native protocol contract passed |
+| `npm run test:supervisor-contract` | 0 | Two-Profile isolation and stop passed |
+| `npm run docs:build` | 0 | Tool tests 2 / 0 / 0; both locales built |
+| `npm run test:release-tool` | 0 | 3 / 0 / 1 |
+| `npm run test:platform-contract` | 0 | Static checks 4 / 0 / 0 |
+
+Three failures are test defects: the existing Operations Inspector assertion
+expected `null` even though the Windows state-directory ACL check returns `true`;
+the new account-scoped Outbox test and existing native-stream test registered
+database close after directory deletion, causing Windows `EBUSY`. The minimal
+fix changes only two test files (7 inserted / 8 deleted lines), preserves every
+assertion's security purpose, and adds no skip. Its SHA-256 is
+`c3b039fbfdfb62d009aadaafb243b5a1dfa2c06f3e37ccf0b242aa822f7b84f8`;
+the coordinator reproduced the exact patch bytes and passed 32 local targeted
+tests. Its full macOS `npm run check` also passes 252 unit, 4 release-tool and
+4 platform checks; both documentation tool tests pass. Production source is unchanged.
+
+The fourth failure remains a host prerequisite: creating the output-file test's
+`alias.txt` symlink returns `EPERM`. Windows targeted testing after the fix was
+3 pass / 1 fail; no full corrected-candidate check has been reported yet. The
+real pipe DACL check passed for only the current user, SYSTEM and Administrators.
+SCM create-service access returned error 5, so real Windows Service lifecycle
+acceptance remains unperformed. These are not additional skips or successful
+acceptance. Do not broaden ACLs or silently enable system features to hide them.
+
+The original Windows checkout remains on `main` at `90e4449`, with its two WIP
+dependency lines and file digests preserved. The original stash object is
+`fa72a20fd26be9db1e4857bc228fd138163efc28`. The patch was initially prepared only
+in the acceptance worktree, without a Windows commit or push. The next gate is
+to fetch the coordinator's new commit into a clean worktree and repeat the full
+check, keeping symlink and service permissions explicit outstanding conditions.
 
 ## Restoration
 
@@ -100,4 +148,6 @@ installation or every external provider failure mode.
   `fe6f3a0ed081b31d3090582c568d38555830e8dcb86b43982eebaefa7e244c47`.
 - Supervisor live; primary Profile, QQ and WhatsApp adapters ready; secondary
   stopped. No active test work, pending Approval Request or pending Outbox delivery.
-- No database migration, Profile purge, archive deletion, tag, commit or release.
+- The original live run performed no database migration, Profile purge, archive
+  deletion, tag, commit or release. Later candidate commits are synchronization
+  checkpoints, not releases.

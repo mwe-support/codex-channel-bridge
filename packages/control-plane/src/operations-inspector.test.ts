@@ -60,10 +60,7 @@ profiles:
   assert.equal(result.inspectedAtMs, 12_345);
   assert.equal(result.profiles[0]?.store?.quickCheck, "ok");
   assert.equal(result.profiles[0]?.store?.schemaVersion, 11);
-  assert.equal(
-    result.profiles[0]?.paths.stateDirectory.ownerOnly,
-    process.platform === "win32" ? null : true
-  );
+  assert.equal(result.profiles[0]?.paths.stateDirectory.ownerOnly, true);
   assert.equal(result.profiles[0]?.disk?.availableBytes! > 0, true);
   assert.deepEqual(result.profiles[0]?.issues, []);
   assert.equal(statusReads, 1);

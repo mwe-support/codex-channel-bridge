@@ -46,12 +46,12 @@ behavior. No separate issue database or requirements service is needed.
 | FR-008 | Channel Account administrator and global settings commands | deferred | unassigned |
 | FR-009 | QQ and WhatsApp native approval reliability | done | `0.2.0-rc.1` |
 | FR-010 | Automatic output-file delivery to the originating conversation | awaiting-acceptance | `0.2.0-rc.1` |
-| FR-011 | Independent delivery per Channel Account | done | Next / unassigned |
-| FR-012 | Codex compatibility from actual capabilities | done | Next / unassigned |
+| FR-011 | Independent delivery per Channel Account | awaiting-acceptance | Next / unassigned |
+| FR-012 | Codex compatibility from actual capabilities | awaiting-acceptance | Next / unassigned |
 
 ## FR-011 — Independent delivery per Channel Account
 
-- Updated: 2026-09-05. Status: `done`; release: Next / unassigned.
+- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: Next / unassigned.
 - User authorized the ablation follow-up, revised AGENTS.md, and real QQ client
   acceptance using two credentials for multiple Profiles. Bridge-owned scheduling:
   reuse Outbox with account-scoped claims/sends, preserve leases, receipts and
@@ -68,12 +68,14 @@ behavior. No separate issue database or requirements service is needed.
   reached terminal state with accepted final deliveries. Eligibility skipping,
   promoted-work approval, cross-Profile approval rejection and interruption
   isolation passed live. Original primary config/binding restored; secondary
-  disabled with data retained. Windows was not rerun and is not claimed; no commit/release.
+  disabled with data retained. Windows follow-up is partial, returning this entry to awaiting acceptance;
+  see the evidence for the two-file test correction and symlink/SCM prerequisites.
+  Candidate commits exist on the sync branch; no release.
 - [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
 
 ## FR-012 — Codex compatibility from actual capabilities
 
-- Updated: 2026-09-05. Status: `done`; release: Next / unassigned.
+- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: Next / unassigned.
 - User explicitly rejected a fixed Codex CLI version because host updates are
   frequent. Codex remains administrator-supplied and is never updated by Bridge.
 - Remove the version floor and fixed-version/hash host-test assertions. Probe
@@ -90,8 +92,10 @@ behavior. No separate issue database or requirements service is needed.
   capability failure boundaries and historical verification labels. macOS, native
   Linux and Linux Docker pass native contracts with actual Codex 0.153.4; real
   QQ multi-Profile regressions pass. Other version-label behavior uses synthetic
-  schema regressions, not a claim to have run every CLI version. Windows was not
-  rerun; no host installation change, commit or release.
+  schema regressions, not a claim to have run every CLI version. Windows native contracts
+  passed, but the complete candidate awaits full rechecking after test corrections
+  and the permission prerequisites, returning this entry to awaiting acceptance.
+  No host installation change; candidate commits on the sync branch, no release.
 - [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
 
 

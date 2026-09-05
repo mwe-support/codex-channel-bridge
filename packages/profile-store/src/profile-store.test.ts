@@ -76,9 +76,10 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
 });
 
 test("scopes Outbox claims and lease recovery to one account while preserving segment order", async (context) => {
+  let store: SqliteProfileStore;
+  context.after(() => store?.close());
   const databasePath = await temporaryDatabase(context);
-  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
-  context.after(() => store.close());
+  store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   for (let index = 0; index < 8; index++) {
     store.commitLogicalResult(logicalResult({ codexTurnId: `turn-busy-${index}` }));
   }
@@ -558,8 +559,10 @@ test("persists Codex input acceptance before its Turn outcome", async (context) 
 });
 
 test("reserves native stream sequences durably and binds only the matching terminal Outbox", async (context) => {
+  let store: SqliteProfileStore;
+  context.after(() => store?.close());
   const databasePath = await temporaryDatabase(context);
-  let store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
   const input = message({ providerEventId: '["event-1",null]' });
   const archive = store.commitMessage(input);
   const target = { conversationKey: input.conversationKey, conversationKind: "private" as const,
@@ -577,7 +580,6 @@ test("reserves native stream sequences durably and binds only the matching termi
   store.putAnswerStream({ ...stream, state: "sending" });
   store.close();
   store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
-  context.after(() => store.close());
   assert.equal(store.getAnswerStream(archive.recordId)?.state, "sending");
   assert.equal(store.getAnswerStream("other-profile-record"), undefined);
   store.transitionCodexInput({ correlationId: accepted.correlation.correlationId, state: "started",
