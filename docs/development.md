@@ -164,6 +164,30 @@ code, lockfile, and documentation version drift.
 
 ## Platform verification priority
 
+### Synchronizing an acceptance candidate across hosts
+
+Use a committed candidate on a dedicated remote branch as the transfer unit;
+record its full commit and tree IDs. This is an acceptance checkpoint, not a
+release or permission to overwrite another host's work. Keep candidate publication
+under one coordinating task so simultaneous hosts cannot push competing tips.
+
+Before fetching, preserve the receiving host's staged, unstaged and untracked
+work and record any stash object IDs. Never discard or blindly replay WIP into
+the acceptance checkout. Fetch the candidate, verify the supplied SHA, then use
+a separate clean worktree with its own dependencies. For byte comparisons across
+Windows and POSIX, distinguish Git blob identity from checkout line endings;
+create the acceptance worktree with `core.autocrlf=false` and `core.eol=lf`, or
+report canonical blob hashes explicitly. Do not change the original checkout's
+global Git settings.
+
+Run platform contracts on that exact candidate. If Windows needs a fix, return
+the minimal diff and evidence to the coordinator, publish a new reviewed candidate,
+then fetch and test its new SHA. Report whether old local changes are already
+upstream, uniquely needed, or unresolved based on content. Preserve the original
+WIP until that decision is reviewed; never include credentials or runtime data
+in commits, patches or cross-host transfers. Reuse the same final commit when
+claiming acceptance across multiple hosts.
+
 Implement and accept platform behavior in this order:
 
 1. Native macOS on the local development machine.
@@ -201,11 +225,13 @@ CLI. See [`acceptance/platform-stage-7.md`](acceptance/platform-stage-7.md).
 | --- | --- | --- |
 | `0.149.1` | `9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9` | tested |
 
-The source-of-truth manifest is
-`protocol/codex/0.149.1/manifest.json`. The Bridge regenerates the schema from
-the actual configured executable. It fails closed below the minimum version or
-when a required stable method is missing. A newer compatible schema is allowed
-but reported as `unverified`.
+The table and `protocol/codex/0.149.1/manifest.json` record historical acceptance,
+not an executable allowlist. Regenerate the actual executable's schema and probe
+initialization/model discovery. No version floor or digest mismatch rejects a
+capable executable. Required gaps fail closed; optional gaps disable only their
+features, including support for methods promoted to stable. Untested combinations
+may run after required probes pass but remain `unverified`. The host contract no
+longer asserts one version/hash or requires optional methods.
 
 Run the real, Thread-free contract test:
 

@@ -54,7 +54,7 @@ sha256 -c codex-channel-bridge-0.2.0-rc.1.tar.gz.sha256
 ## 2. 准备前置条件
 
 - Node.js 22 或更高版本，以及 npm 10 或更高版本。
-- 由主机管理员安装的 Codex CLI `0.149.1`。
+- 由主机管理员安装、具备所需 App Server 能力的 Codex CLI；不要求固定版本。
 - 每个 Profile 各自独占的绝对 Workspace、Codex Home 和 Bridge State 目录。
 - 通过 Secret Reference 提供 QQ 凭据，或通过本地主机配对流程创建 Profile 本地
   WhatsApp Auth 目录。

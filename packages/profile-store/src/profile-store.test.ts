@@ -75,6 +75,31 @@ test("opens an owner-only WAL database and deduplicates provider events", async 
   reopened.close();
 });
 
+test("scopes Outbox claims and lease recovery to one account while preserving segment order", async (context) => {
+  const databasePath = await temporaryDatabase(context);
+  const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });
+  context.after(() => store.close());
+  for (let index = 0; index < 8; index++) {
+    store.commitLogicalResult(logicalResult({ codexTurnId: `turn-busy-${index}` }));
+  }
+  store.commitLogicalResult(logicalResult({ channelAccountId: "qq-other", codexTurnId: "turn-other" }));
+  const busy = store.claimOutbox({ channelAccountId: "qq-primary", nowMs: 1_000, leaseDurationMs: 100, limit: 8 });
+  assert.equal(busy.length, 8);
+  assert.ok(busy.every((entry) => entry.channelAccountId === "qq-primary" && entry.segmentIndex === 0));
+  const other = store.claimOutbox({ channelAccountId: "qq-other", nowMs: 1_101, leaseDurationMs: 100 });
+  assert.equal(other.length, 1);
+  assert.equal(other[0]?.channelAccountId, "qq-other");
+  assert.equal(other[0]?.segmentIndex, 0);
+  assert.equal(store.outboxCountsForChannelAccount("qq-primary").leased, 8);
+  const recovered = store.claimOutbox({ channelAccountId: "qq-primary", nowMs: 1_101, leaseDurationMs: 100, limit: 8 });
+  assert.ok(recovered.every((entry) => entry.attemptNumber === 2));
+  assert.equal(store.outboxCountsForChannelAccount("qq-other").leased, 1);
+  store.settleOutbox({ outboxRecordId: other[0]!.outboxRecordId, leaseToken: other[0]!.leaseToken,
+    outcome: "accepted", providerMessageId: "received", acceptedAtMs: 1_102 });
+  assert.equal(store.claimOutbox({ channelAccountId: "qq-other", nowMs: 1_103, leaseDurationMs: 100 })[0]?.segmentIndex, 1);
+  assert.throws(() => store.claimOutbox({ channelAccountId: "", nowMs: 1_104, leaseDurationMs: 100 }), /claim is invalid/);
+});
+
 test("inspects Profile storage read-only without requiring a runtime open", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });

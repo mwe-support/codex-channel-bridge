@@ -130,6 +130,21 @@ test("expires queued input and clears it when the Profile becomes unavailable", 
   });
 });
 
+test("starts oldest eligible work while preserving order within a busy Thread", () => {
+  const admission = new AdmissionController({ mode: "queue", maximumActiveTurns: 2,
+    queueCapacity: 4, maximumQueueAgeMs: 1_000, accountRateLimit: 10,
+    accountRateWindowMs: 1_000, ready: true });
+  admission.admit(request("a"));
+  admission.admit(request("b"));
+  admission.admit(request("a2", { threadKey: "thread-a" }));
+  admission.admit(request("a3", { threadKey: "thread-a" }));
+  admission.admit(request("c"));
+  assert.deepEqual(admission.release("b", 1_010).ready.map((entry) => entry.workId), ["c"]);
+  assert.deepEqual(admission.snapshot(), { active: 2, queued: 2, ready: true });
+  assert.deepEqual(admission.release("a", 1_020).ready.map((entry) => entry.workId), ["a2"]);
+  assert.deepEqual(admission.release("a2", 1_030).ready.map((entry) => entry.workId), ["a3"]);
+});
+
 test("rate-limits each Channel Account independently", () => {
   const admission = new AdmissionController({
     mode: "steer",

@@ -16,7 +16,7 @@ State Root、Codex Home、Workspace 与 Secret File 必须保存在仓库外。
 1. 选择不可变的 `vVERSION` GitHub Release，下载
    `codex-channel-bridge-VERSION.tar.gz` 及其 `.sha256` 文件，验证校验和，并且
    只使用该源码包内的文档。生产部署不能使用持续变化的 `main` checkout。
-2. 由 Service Identity 安装 Node.js 22 或更高版本，以及 Codex CLI `0.149.1`。
+2. 为 Service Identity 提供 Node.js 22 或更高版本，以及管理员安装、具备所需 App Server 能力的 Codex CLI。
    在 Service Definition 中写入已验证的 Node 绝对 Path，并在每个 Profile
    Configuration 中写入已验证的 `codexExecutable` 绝对 Path；Service-manager
    `PATH` Lookup 不能用作 Version Selection Mechanism。
@@ -65,12 +65,14 @@ sudo -u codex-bridge node /opt/codex-channel-bridge/packages/cli/dist/main.js st
 ```sh
 BRIDGE_VERSION="$(cat docs/VERSION)"
 docker build -f packages/platform/docker/Dockerfile \
+  --build-arg CODEX_VERSION="${CODEX_VERSION:?Set an explicit Codex package version}" \
   -t "codex-channel-bridge:$BRIDGE_VERSION" .
 ```
 
 Build Stage 使用完整 Bookworm Image 提供 `better-sqlite3` 所需 Native Compiler
 Toolchain。Runtime 使用 Bookworm Slim，以已有的非 Root `node` Identity 运行，并在
-Image Build 时固定 Codex CLI `0.149.1`。运行中的 Container 不执行 Package
+构建者通过 `CODEX_VERSION` 显式提供 Codex 包版本，确保构建可复现；这不是 Bridge
+兼容性白名单。运行时按能力探测决定是否可用。Container 不执行 Package
 Installation 或 Self-update。
 
 Configuration 以 Read-only 方式 Mount；每个已配置 Profile State Directory、

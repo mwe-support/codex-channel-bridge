@@ -9,31 +9,31 @@ import type { CodexVerification, ProfileReasonCode } from "@codex-channel-bridge
 
 const execFileAsync = promisify(execFile);
 
-export const PINNED_CODEX_VERSION = "0.149.1";
-export const MINIMUM_CODEX_VERSION = PINNED_CODEX_VERSION;
-export const PINNED_STABLE_SCHEMA_SHA256 =
-  "9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9";
+// Historical acceptance evidence, never an executable allowlist.
+const TESTED_PROTOCOL_SNAPSHOTS = [{
+  cliVersion: "0.149.1",
+  schemaSha256: "9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9"
+}] as const;
 
 export const REQUIRED_STABLE_METHODS = [
   "initialize",
   "thread/start",
   "thread/resume",
   "thread/read",
-  "thread/compact/start",
   "turn/start",
   "turn/steer",
   "turn/interrupt",
   "model/list"
 ] as const;
 
-export const OPTIONAL_EXPERIMENTAL_METHODS = ["thread/settings/update"] as const;
+export const OPTIONAL_METHODS = ["thread/settings/update"] as const;
 
 export interface ProtocolProbeResult {
   readonly cliVersion: string;
   readonly verification: CodexVerification;
   readonly schemaSha256: string;
   readonly requiredMethods: readonly string[];
-  readonly experimentalMethods: readonly string[];
+  readonly optionalMethods: readonly string[];
 }
 
 export class CodexProtocolProbeError extends Error {
@@ -68,14 +68,6 @@ export function assessProtocolSchema(
   schema: unknown,
   schemaSha256?: string
 ): ProtocolProbeResult {
-  const parsedVersion = parseVersion(cliVersion);
-  if (!parsedVersion || compareVersions(parsedVersion, parseVersion(MINIMUM_CODEX_VERSION)!) < 0) {
-    throw new CodexProtocolProbeError(
-      "unsupported_codex_version",
-      `Codex CLI ${cliVersion} is below the minimum supported ${MINIMUM_CODEX_VERSION}`
-    );
-  }
-
   const methods = extractProtocolMethods(schema);
   const missing = REQUIRED_STABLE_METHODS.filter((method) => !methods.has(method));
   if (missing.length > 0) {
@@ -86,7 +78,9 @@ export function assessProtocolSchema(
   }
 
   const verification: CodexVerification =
-    cliVersion === PINNED_CODEX_VERSION && schemaSha256 === PINNED_STABLE_SCHEMA_SHA256
+    TESTED_PROTOCOL_SNAPSHOTS.some((snapshot) =>
+      snapshot.cliVersion === cliVersion && snapshot.schemaSha256 === schemaSha256
+    )
       ? "tested"
       : "unverified";
   return {
@@ -94,7 +88,7 @@ export function assessProtocolSchema(
     verification,
     schemaSha256: schemaSha256 ?? "not-computed",
     requiredMethods: [...REQUIRED_STABLE_METHODS],
-    experimentalMethods: []
+    optionalMethods: OPTIONAL_METHODS.filter((method) => methods.has(method))
   };
 }
 
@@ -112,17 +106,13 @@ export async function probeCodexProtocol(
       });
       versionOutput = result.stdout;
     } catch (error) {
-      const reason = isMissingExecutable(error) ? "codex_not_found" : "codex_start_failed";
-      throw new CodexProtocolProbeError(reason, "Unable to execute the administrator-supplied Codex CLI");
+      if (isMissingExecutable(error)) {
+        throw new CodexProtocolProbeError("codex_not_found", "Unable to execute the administrator-supplied Codex CLI");
+      }
+      versionOutput = "";
     }
 
-    const cliVersion = parseCliVersion(versionOutput);
-    if (!cliVersion) {
-      throw new CodexProtocolProbeError(
-        "unsupported_codex_version",
-        "Unable to parse the administrator-supplied Codex CLI version"
-      );
-    }
+    const cliVersion = parseCliVersion(versionOutput) ?? "unknown";
 
     try {
       await execFileAsync(
@@ -146,7 +136,7 @@ export async function probeCodexProtocol(
       directory,
       timeoutMs
     );
-    return { ...stable, experimentalMethods };
+    return { ...stable, optionalMethods: [...new Set([...stable.optionalMethods, ...experimentalMethods])] };
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -168,31 +158,14 @@ async function probeExperimentalMethods(
       join(experimentalDirectory, "codex_app_server_protocol.v2.schemas.json")
     );
     const methods = extractProtocolMethods(JSON.parse(bundle.toString("utf8")) as unknown);
-    return OPTIONAL_EXPERIMENTAL_METHODS.filter((method) => methods.has(method));
+    return OPTIONAL_METHODS.filter((method) => methods.has(method));
   } catch {
     return [];
   }
 }
 
 function parseCliVersion(output: string): string | null {
-  return output.match(/(?:codex-cli\s+)?(\d+\.\d+\.\d+)/)?.[1] ?? null;
-}
-
-function parseVersion(version: string): readonly [number, number, number] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function compareVersions(
-  left: readonly [number, number, number],
-  right: readonly [number, number, number]
-): number {
-  for (let index = 0; index < 3; index += 1) {
-    const difference = left[index]! - right[index]!;
-    if (difference !== 0) return difference;
-  }
-  return 0;
+  return output.match(/(?:codex-cli\s+)?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)*)/)?.[1] ?? null;
 }
 
 function isMissingExecutable(error: unknown): boolean {

@@ -28,7 +28,8 @@ test("Docker image is non-root, pinned, signal-aware, and checks Supervisor live
   const dockerfile = await read("docker/Dockerfile");
   assert.match(dockerfile, /^FROM node:22\.23\.1-bookworm AS build$/m);
   assert.match(dockerfile, /^FROM node:22\.23\.1-bookworm-slim AS runtime$/m);
-  assert.match(dockerfile, /^ARG CODEX_VERSION=0\.149\.1$/m);
+  assert.match(dockerfile, /^ARG CODEX_VERSION$/m);
+  assert.match(dockerfile, /test -n "\$CODEX_VERSION"/);
   assert.match(dockerfile, /^USER node$/m);
   assert.match(dockerfile, /^STOPSIGNAL SIGTERM$/m);
   assert.match(dockerfile, /HEALTHCHECK[\s\S]*"status"[\s\S]*control\.sock/);

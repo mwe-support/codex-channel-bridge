@@ -1,3 +1,6 @@
 # Use local IPC for administration and defer the Web Console
 
+ADR 0053 supersedes the Web Console deferral with an optional restricted local
+Dashboard. The IPC, authorization and remote-exposure boundaries below remain.
+
 First-release administration will use structured host-local IPC: an owner-only Unix domain socket on macOS, Linux, and Docker, or a named pipe protected by a strict Windows ACL, with peer identity checked where available and every operation authorized. The CLI uses it for status, diagnostics, Profile management, and backup coordination; Docker operators run the CLI inside the container. No TCP or HTTP administration endpoint ships initially, while a Web Administration Console remains a future planned capability whose own ADR must define authentication, authorization, TLS, browser security, auditing, and network exposure before implementation.

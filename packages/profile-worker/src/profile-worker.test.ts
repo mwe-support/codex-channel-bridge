@@ -48,7 +48,7 @@ const testedProbe: ProtocolProbeResult = {
   verification: "tested",
   schemaSha256: "test",
   requiredMethods: [],
-  experimentalMethods: ["thread/settings/update"]
+  optionalMethods: ["thread/settings/update"]
 };
 
 class FakeRuntime extends EventEmitter implements ManagedCodexRpcRuntime {
@@ -351,9 +351,10 @@ class FakeStore implements ProfileStoreRuntime {
     return [];
   }
 
-  async claimOutbox(_options: ClaimOutboxOptions) {
+  async claimOutbox(options: ClaimOutboxOptions) {
     this.outboxClaimCount += 1;
     const lease = this.pendingApprovalLease;
+    if (options.channelAccountId && lease?.channelAccountId !== options.channelAccountId) return [];
     this.pendingApprovalLease = undefined;
     return lease ? [lease] : [];
   }
@@ -523,7 +524,7 @@ test("starts a Profile only after schema and live model probes pass", async () =
   assert.equal(runtime.requests[0]?.method, "model/list");
   assert.equal(store.abandonedPendingAttachments, 1);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(store.outboxClaimCount >= 1);
+  assert.equal(store.outboxClaimCount, 0); // No Channel Accounts have been configured.
   await worker.stop();
   assert.equal(runtime.stopped, true);
 });
@@ -554,6 +555,62 @@ test("runs a minimal Thread and Turn without storing Codex history", async () =>
   );
   assert.equal(runtime.listenerCount("notification"), 1);
   await worker.stop();
+});
+
+test("a full blocked account batch does not stop a sibling account's later delivery", async (context) => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const blocked = new FakeAdapter();
+  const healthy = new FakeAdapter();
+  let unblock!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>((resolve) => { unblock = resolve; });
+  const sending = new Promise<void>((resolve) => { started = resolve; });
+  const send = blocked.sendText.bind(blocked);
+  blocked.sendText = async (delivery) => { started(); await gate; return send(delivery); };
+  const pending: OutboxDeliveryLease[] = [];
+  const add = (channelAccountId: string, count: number) => {
+    for (let index = 0; index < count; index++) pending.push({
+      outboxRecordId: `${channelAccountId}-${index}`, logicalResultId: `${channelAccountId}-${index}`,
+      channelAccountId, channelAccountEpochId: "epoch-1", provider: "qq", segmentIndex: 0,
+      target: { conversationKey: channelAccountId, conversationKind: "private", providerConversationId: "user-1" },
+      text: "synthetic result", attemptNumber: 1, leaseToken: `${channelAccountId}-${index}`,
+      leaseExpiresAtMs: Date.now() + 30_000
+    });
+  };
+  add("qq-blocked", 8);
+  store.claimOutbox = async (options) => {
+    const leases = pending.filter((lease) => !options.channelAccountId || lease.channelAccountId === options.channelAccountId)
+      .slice(0, options.limit);
+    for (const lease of leases) pending.splice(pending.indexOf(lease), 1);
+    return leases;
+  };
+  const worker = new ProfileWorker({
+    profileId: "profile-a", workspace: "/tmp/workspace", codexHome: "/tmp/codex-home",
+    stateDirectory: "/tmp/bridge-state",
+    channelAccounts: Object.fromEntries(["qq-blocked", "qq-healthy"].map((id) => [id, {
+      id, provider: "qq" as const, enabled: true, epochId: "epoch-1",
+      appId: "env:QQ_APP_ID", appSecret: "env:QQ_APP_SECRET", groupThreadScope: "conversation" as const,
+      accessPolicy: { privateChats: { mode: "deny" as const, allow: [] },
+        groupChats: { mode: "deny" as const, allow: [] }, groupParticipants: { mode: "deny" as const, allow: [] } }
+    }]))
+  }, { ...dependencies(runtime, store), createQQAdapter: (options) =>
+    options.channelAccountId === "qq-blocked" ? blocked : healthy });
+  context.after(async () => { unblock(); await worker.stop(); });
+  await worker.start();
+  // Keep a referenced timer while the production poll timers are intentionally unref'ed.
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([sending, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("send not started")), 2_000);
+    })]);
+  } finally { clearTimeout(timer); }
+  add("qq-healthy", 1);
+  const deadline = Date.now() + 2_000;
+  while (!healthy.deliveries.length && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(healthy.deliveries.length, 1);
+  assert.equal(blocked.deliveries.length, 0);
+  assert.equal(worker.health().readiness, "ready");
 });
 
 test("fails closed on a relative Workspace path", async () => {
@@ -1057,7 +1114,7 @@ test("shared groups can query native settings without update capability but cann
       accessPolicy: { privateChats: { mode: "open", allow: [] },
         groupChats: { mode: "open", allow: [] }, groupParticipants: { mode: "open", allow: [] } }
     } }
-  }, { ...deps, probe: async () => ({ ...testedProbe, experimentalMethods: [] }),
+  }, { ...deps, probe: async () => ({ ...testedProbe, optionalMethods: [] }),
     createQQAdapter: () => adapter });
   await worker.start();
   const event = (sequence: number, text: string): ProviderInboundEvent => {

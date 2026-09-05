@@ -26,6 +26,10 @@ Steer 是默认模式。同一 Thread Binding 存在 Active Native Turn 时，�
 
 ## Queue Mode
 
-Queue Mode 只在 Profile Ready 时使用一个有界 FIFO。Queue 已满时以 `busy` 拒绝最新 Input；旧 Entry 过期时不会执行，并会逐条报告。Active Slot 释放后从队首启动 Eligible Work；实现不会跳过被阻塞的队首，因此保持严格 FIFO。
+Queue Mode 只在 Profile Ready 时使用一个有界队列。Queue 已满时以 `busy` 拒绝最新 Input；旧 Entry 过期时不会执行，并会逐条报告。Next：Active Slot 释放后按入队顺序寻找最早 Eligible Work，跳过其 Thread 仍活动的输入；保证同一 Thread Binding 内 FIFO，不承诺全 Profile 严格 FIFO。
+
+Next，已通过[真实 QQ 验收](acceptance/capability-and-admission-20260905.md)：队列工作晋升后，在执行前登记为活动工作。Channel 上下文与原生
+Turn 目标保存在同一条活动记录中，让审批控制者查找和账户排空检查在工作释放前
+始终关联到同一项工作，包括排空期间。保留既有 Turn Initiator 校验；不同 Thread 的队首跳过规则见上文。
 
 Rate Window 按 Channel Account 分开计算。Admission State 有意保持为 Profile-local In-memory State：已接受的 Codex Correlation、Thread Binding、Archive 与 Delivery State 是持久的；Queued Ordinary Input 尚不是已接受的 Codex Work，Profile 变为 Unavailable 时会被明确丢弃。

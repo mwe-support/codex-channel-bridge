@@ -20,8 +20,8 @@ service manager
             -> WhatsApp adapter
 ```
 
-首版通过本地 stdio 连接 App Server，通过 Owner-only Local IPC 完成管理；不开放
-TCP、WebSocket、HTTP 或 Web 管理服务。
+App Server 通过本地 stdio 连接，管理操作使用 Owner-only Local IPC。可选本地
+Dashboard 按 ADR 0053 仅绑定回环地址，并将操作转发到相同 IPC；不开放远程管理。
 
 ## 职责归属
 

@@ -46,6 +46,54 @@ behavior. No separate issue database or requirements service is needed.
 | FR-008 | Channel Account administrator and global settings commands | deferred | unassigned |
 | FR-009 | QQ and WhatsApp native approval reliability | done | `0.2.0-rc.1` |
 | FR-010 | Automatic output-file delivery to the originating conversation | awaiting-acceptance | `0.2.0-rc.1` |
+| FR-011 | Independent delivery per Channel Account | done | Next / unassigned |
+| FR-012 | Codex compatibility from actual capabilities | done | Next / unassigned |
+
+## FR-011 — Independent delivery per Channel Account
+
+- Updated: 2026-09-05. Status: `done`; release: Next / unassigned.
+- User authorized the ablation follow-up, revised AGENTS.md, and real QQ client
+  acceptance using two credentials for multiple Profiles. Bridge-owned scheduling:
+  reuse Outbox with account-scoped claims/sends, preserve leases, receipts and
+  Logical Result segment ordering; no central scheduler or new schema.
+- Acceptance: a blocked/full-batch account cannot prevent another account's
+  current or later delivery; scoped expiry preserves sibling leases; existing
+  retry/restart/drain contracts pass. Real QQ tests cover both Profiles, overlap,
+  interruption isolation, queue promotion and completed provider/client delivery.
+- Related admission work stays under FR-003: same-Thread FIFO with oldest-eligible
+  scanning, total capacity/TTL, and active-state consistency. Retain all retrieval
+  signals until a separate measured tradeoff is accepted.
+- Implemented; macOS/native Linux pass 252 unit tests, release/platform checks
+  and native contracts; Docker native contracts pass. All 16 marked real QQ inputs
+  reached terminal state with accepted final deliveries. Eligibility skipping,
+  promoted-work approval, cross-Profile approval rejection and interruption
+  isolation passed live. Original primary config/binding restored; secondary
+  disabled with data retained. Windows was not rerun and is not claimed; no commit/release.
+- [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
+
+## FR-012 — Codex compatibility from actual capabilities
+
+- Updated: 2026-09-05. Status: `done`; release: Next / unassigned.
+- User explicitly rejected a fixed Codex CLI version because host updates are
+  frequent. Codex remains administrator-supplied and is never updated by Bridge.
+- Remove the version floor and fixed-version/hash host-test assertions. Probe
+  generated methods and live initialization/model discovery; required capability
+  gaps fail Profile-local, optional gaps disable only their feature. Recognize
+  optional methods promoted to stable; keep untested combinations unverified.
+- Docker takes an explicit build version rather than a supported-version default.
+  Preserve historical acceptance snapshots instead of rewriting their evidence.
+- Acceptance: older/newer/prerelease labels do not gate an otherwise capable
+  schema; missing required methods fail closed; missing/promoted optional methods
+  behave correctly; run native contracts with the current host executable and
+  real QQ multi-Profile regressions. No host Codex installation changes.
+- Removed version gates and fixed-version/hash assertions while retaining
+  capability failure boundaries and historical verification labels. macOS, native
+  Linux and Linux Docker pass native contracts with actual Codex 0.153.4; real
+  QQ multi-Profile regressions pass. Other version-label behavior uses synthetic
+  schema regressions, not a claim to have run every CLI version. Windows was not
+  rerun; no host installation change, commit or release.
+- [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
+
 
 ## FR-009 — QQ and WhatsApp native approval reliability
 
@@ -274,7 +322,19 @@ requirement blocked/deferred and explain the boundary before implementation.
 
 ## FR-003 — Independent conversations without a default concurrency cap
 
-- Updated: 2026-09-04. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Follow-up, Next / unassigned: the user authorized audit A4's active-state
+  cleanup. The queued-work regression failed before the fix (account active
+  count 0 instead of 1) and passes after co-locating Channel context and Turn
+  target and registering promoted work. It also covers controller lookup,
+  participant checks, drain retention and release cleanup. FIFO and admission
+  limits were unchanged in A4; the subsequent Next amendment to ADR 0052 enables cross-Thread eligibility scanning. This follow-up is not part of the immutable release;
+  `npm run check` passes 250 unit, 4 release-tool and 4 static platform tests;
+  `npm run docs:test` passes 2 tool tests and `git diff --check` passes. Subsequent live QQ
+  promotion/approval, eligibility and interruption isolation passed; primary config
+  and original binding are restored. Other existing FR-003 gates retain their status.
+  See [this run's evidence](acceptance/capability-and-admission-20260905.md).
+  Candidate code is deployed locally, not committed or released.
 - Request: group/private conversations must not block each other merely because
   they share a Profile; no default Bridge concurrent-Turn limit.
 - Ownership: Bridge admission only. Codex owns each Thread/Turn; no new process,

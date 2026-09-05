@@ -51,11 +51,17 @@ An active same-Thread Turn without a steerable initiator/target can still cause
 
 ## Queue mode
 
-Queue mode uses one bounded FIFO only while the Profile is ready. It rejects the
+Queue mode uses one bounded queue only while the Profile is ready. It rejects the
 newest input as `busy` when full, expires old entries without executing them, and
-surfaces each expiry. Releasing an active slot starts eligible work from the head;
-the implementation does not skip a blocked head and therefore preserves strict
-FIFO order.
+surfaces each expiry. In Next, releasing an active slot starts the oldest
+eligible entry, skipping work whose Thread is still active. FIFO holds within a
+Thread Binding; strict Profile-wide FIFO is not promised.
+
+Next, verified by [live QQ acceptance](acceptance/capability-and-admission-20260905.md): promoted queued work is registered as active
+before execution. Its Channel context and native Turn target share one active
+record, so approval-controller lookup and account quiescence checks retain the
+same work until release, including during a drain. Existing Turn Initiator
+checks remain; independent Threads follow the eligibility rule above.
 
 The rate window is per Channel Account. Admission state is deliberately
 Profile-local and in memory: accepted Codex correlation, Thread Binding, archive,

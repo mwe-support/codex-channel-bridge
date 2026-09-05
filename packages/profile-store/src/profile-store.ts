@@ -284,6 +284,7 @@ export interface ClaimOutboxOptions {
   readonly nowMs: number;
   readonly leaseDurationMs: number;
   readonly limit?: number;
+  readonly channelAccountId?: string;
 }
 
 export interface BeginAnswerStreamInput {
@@ -2090,13 +2091,15 @@ export class SqliteProfileStore {
                   updated_at_ms = @nowMs
             WHERE profile_id = @profileId
               AND status = 'leased'
+              AND (@channelAccountId IS NULL OR channel_account_id = @channelAccountId)
               AND lease_expires_at_ms <= @nowMs`
         )
-        .run({ profileId: this.#profileId, nowMs: options.nowMs });
+        .run({ profileId: this.#profileId, nowMs: options.nowMs,
+          channelAccountId: options.channelAccountId ?? null });
 
       const rows = this.#database
         .prepare<
-          { profileId: string; nowMs: number; limit: number },
+          { profileId: string; nowMs: number; limit: number; channelAccountId: string | null },
           OutboxClaimRow
         >(
           `SELECT (SELECT s.archive_record_id FROM answer_streams s
@@ -2128,6 +2131,7 @@ export class SqliteProfileStore {
                   current.attempt_count
              FROM delivery_outbox AS current
             WHERE current.profile_id = @profileId
+              AND (@channelAccountId IS NULL OR current.channel_account_id = @channelAccountId)
               AND current.status IN ('pending', 'retry_wait')
               AND current.next_attempt_at_ms <= @nowMs
               AND NOT EXISTS (
@@ -2142,7 +2146,8 @@ export class SqliteProfileStore {
                      current.segment_index ASC
             LIMIT @limit`
         )
-        .all({ profileId: this.#profileId, nowMs: options.nowMs, limit });
+        .all({ profileId: this.#profileId, nowMs: options.nowMs, limit,
+          channelAccountId: options.channelAccountId ?? null });
 
       const update = this.#database.prepare(
         `UPDATE delivery_outbox
@@ -3352,6 +3357,7 @@ function allocateReplySequences(
 function validateClaimOptions(options: ClaimOutboxOptions): void {
   const limit = options.limit ?? DEFAULT_LIMIT;
   if (
+    (options.channelAccountId !== undefined && !validExternalId(options.channelAccountId)) ||
     !Number.isSafeInteger(options.nowMs) ||
     options.nowMs < 0 ||
     !Number.isSafeInteger(options.leaseDurationMs) ||

@@ -14,10 +14,7 @@ export {
   assessProtocolSchema,
   CodexProtocolProbeError,
   extractProtocolMethods,
-  MINIMUM_CODEX_VERSION,
-  OPTIONAL_EXPERIMENTAL_METHODS,
-  PINNED_CODEX_VERSION,
-  PINNED_STABLE_SCHEMA_SHA256,
+  OPTIONAL_METHODS,
   probeCodexProtocol,
   REQUIRED_STABLE_METHODS
 } from "./protocol-schema.js";

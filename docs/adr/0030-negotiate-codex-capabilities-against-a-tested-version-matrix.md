@@ -1,3 +1,21 @@
-# Negotiate Codex capabilities against a tested version matrix
+# Negotiate actual Codex capabilities; record versions as evidence
 
-The Bridge will declare a minimum Codex CLI version and publish an explicit matrix of versions verified against generated-schema and behavioral contract tests, while probing the actual App Server capabilities at each Profile-worker startup instead of inferring them from version numbers. A missing stable capability required for correctness keeps that Profile unavailable; a missing experimental capability disables only its enhancement and reports the degradation. Versions newer than the tested matrix may run only when required stable probes pass and remain visibly unverified, avoiding both latest-only lock-in and false compatibility claims.
+Next amendment, accepted 2026-09-05: remove the previous version floor and fixed
+CLI/schema expectations. The administrator supplies Codex. At Profile startup,
+generate schemas from that executable and verify required methods plus live
+initialization and model discovery. Missing required capabilities fail that
+Profile closed; absent optional capabilities disable only their enhancements.
+Look for optional methods on the stable surface first, then the experimental
+surface, allowing promotion without a Bridge release.
+
+Actual version and schema digest are diagnostic and acceptance evidence, not an
+allowlist. Preserve historical tested snapshots; all other combinations remain
+unverified even when startup probes pass. The host contract runs against the
+configured executable without asserting one version/hash or requiring optional
+methods. Probes do not establish every runtime behavior: retain Turn, approval,
+recovery and Channel acceptance tests. Never mutate the host Codex installation.
+Docker requires an explicit builder-selected package version for reproducibility;
+the runtime still uses capability checks and never updates itself.
+
+Sources: [official schema generation and initialization](https://learn.chatgpt.com/docs/app-server#message-schema)
+and the [0.153.4 schema export implementation](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/app-server-protocol/src/export.rs).

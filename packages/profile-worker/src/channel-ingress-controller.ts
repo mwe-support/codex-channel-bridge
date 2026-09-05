@@ -70,8 +70,7 @@ export interface ChannelIngressRelease {
 export class ChannelIngressController {
   readonly #admission: AdmissionController;
   readonly #queued = new Map<string, ChannelIngressInput>();
-  readonly #active = new Map<string, ChannelIngressInput>();
-  readonly #turnTargets = new Map<string, ActiveTurnTarget>();
+  readonly #active = new Map<string, { readonly work: ChannelIngressInput; target?: ActiveTurnTarget }>();
 
   public constructor(admission: AdmissionController) {
     this.#admission = admission;
@@ -125,8 +124,10 @@ export class ChannelIngressController {
   }
 
   public markTurnStarted(archiveRecordId: string, target: ActiveTurnTarget): void {
+    const active = this.#active.get(archiveRecordId);
+    if (!active) throw new Error("Ingress work is not active");
     this.#admission.markTurnStarted(archiveRecordId, target);
-    this.#turnTargets.set(archiveRecordId, target);
+    active.target = target;
   }
 
   public activeTurnFor(input: ChannelIngressInput): ReturnType<AdmissionController["activeTurnFor"]> {
@@ -138,12 +139,12 @@ export class ChannelIngressController {
 
   public release(archiveRecordId: string, nowMs: number): ChannelIngressRelease {
     this.#active.delete(archiveRecordId);
-    this.#turnTargets.delete(archiveRecordId);
     const released = this.#admission.release(archiveRecordId, nowMs);
     return {
       ready: released.ready.flatMap((entry) => {
         const work = this.#queued.get(entry.workId);
         this.#queued.delete(entry.workId);
+        if (work) this.#active.set(entry.workId, { work });
         return work ? [work] : [];
       }),
       expired: this.#takeExpired(released.expired)
@@ -168,7 +169,7 @@ export class ChannelIngressController {
   ): { readonly active: number; readonly queued: number } {
     return {
       active: [...this.#active.values()].filter(
-        (work) => work.event.message.channelAccountId === channelAccountId
+        ({ work }) => work.event.message.channelAccountId === channelAccountId
       ).length,
       queued: [...this.#queued.values()].filter(
         (work) => work.event.message.channelAccountId === channelAccountId
@@ -180,9 +181,9 @@ export class ChannelIngressController {
     threadId: string,
     turnId: string
   ): ChannelIngressInput | undefined {
-    for (const [workId, target] of this.#turnTargets) {
-      if (target.threadId === threadId && target.turnId === turnId) {
-        return this.#active.get(workId);
+    for (const { work, target } of this.#active.values()) {
+      if (target?.threadId === threadId && target.turnId === turnId) {
+        return work;
       }
     }
     return undefined;
@@ -194,7 +195,7 @@ export class ChannelIngressController {
   ): ChannelIngressDisposition {
     switch (decision.disposition.kind) {
       case "start":
-        this.#active.set(input.archiveRecordId, input);
+        this.#active.set(input.archiveRecordId, { work: input });
         return { kind: "start", work: input };
       case "steer":
         return { kind: "steer", work: input, target: decision.disposition.target };

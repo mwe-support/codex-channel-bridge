@@ -21,6 +21,7 @@ export interface DeliveryOutboxStore {
 }
 
 export interface DeliveryOutboxOptions {
+  readonly channelAccountId?: string;
   readonly readOutputFile?: (file: NonNullable<OutboxDeliveryLease["file"]>) => Promise<Uint8Array>;
   readonly finishAnswer?: (lease: OutboxDeliveryLease, adapter: ChannelAdapter) => Promise<ChannelDeliveryReceipt | undefined>;
   readonly store: DeliveryOutboxStore;
@@ -40,6 +41,7 @@ export interface DeliverySweepResult {
 }
 
 export class DeliveryOutbox {
+  readonly #channelAccountId: string | undefined;
   readonly #readOutputFile: DeliveryOutboxOptions["readOutputFile"];
   readonly #finishAnswer: DeliveryOutboxOptions["finishAnswer"];
   readonly #store: DeliveryOutboxStore;
@@ -53,6 +55,7 @@ export class DeliveryOutbox {
   #activeSweep?: Promise<DeliverySweepResult>;
 
   public constructor(options: DeliveryOutboxOptions) {
+    this.#channelAccountId = options.channelAccountId;
     this.#readOutputFile = options.readOutputFile;
     this.#finishAnswer = options.finishAnswer;
     this.#store = options.store;
@@ -93,6 +96,7 @@ export class DeliveryOutbox {
   async #runSweep(): Promise<DeliverySweepResult> {
     const nowMs = this.#clock();
     const leases = await this.#store.claimOutbox({
+      ...(this.#channelAccountId !== undefined ? { channelAccountId: this.#channelAccountId } : {}),
       nowMs,
       leaseDurationMs: this.#leaseDurationMs,
       limit: this.#batchSize

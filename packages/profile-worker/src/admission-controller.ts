@@ -131,13 +131,17 @@ export class AdmissionController {
     this.#active.delete(workId);
     const expired = this.#expire(nowMs);
     const ready: AdmissionRequest[] = [];
-    while (
-      this.#queue.length > 0 &&
-      this.#active.size < (this.#options.maximumActiveTurns ?? Infinity)
+    // ponytail: O(queue * active) scan; add a Thread index if measured admission cost warrants it.
+    for (let index = 0;
+      index < this.#queue.length &&
+      this.#active.size < (this.#options.maximumActiveTurns ?? Infinity);
     ) {
-      const candidate = this.#queue[0]!;
-      if (this.#activeForThread(candidate.threadKey)) break;
-      this.#queue.shift();
+      const candidate = this.#queue[index]!;
+      if (this.#activeForThread(candidate.threadKey)) {
+        index += 1;
+        continue;
+      }
+      this.#queue.splice(index, 1);
       this.#active.set(candidate.workId, {
         threadKey: candidate.threadKey,
         initiatorIdentity: candidate.providerIdentity

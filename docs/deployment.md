@@ -18,7 +18,7 @@ Before registering a service:
    `codex-channel-bridge-VERSION.tar.gz` and its `.sha256` file, verify the
    checksum, and use only the documentation inside that archive. Do not deploy
    a moving `main` checkout as a production version.
-2. Install Node.js 22 or newer and Codex CLI `0.149.1` as the service identity.
+2. Provide Node.js 22 or newer and an administrator-installed Codex CLI with the required App Server capabilities to the service identity.
    Put the verified absolute Node path in the service definition and the
    verified absolute `codexExecutable` path in every Profile configuration;
    service-manager `PATH` lookup is not a version-selection mechanism.
@@ -69,13 +69,16 @@ Build the production multi-stage image from the repository root:
 ```sh
 BRIDGE_VERSION="$(cat docs/VERSION)"
 docker build -f packages/platform/docker/Dockerfile \
+  --build-arg CODEX_VERSION="${CODEX_VERSION:?Set an explicit Codex package version}" \
   -t "codex-channel-bridge:$BRIDGE_VERSION" .
 ```
 
 The build stage includes the native compiler toolchain from the full Bookworm
 image for `better-sqlite3`. The runtime uses Bookworm Slim, runs as the existing
-non-root `node` identity, and pins Codex CLI `0.149.1` at image build time. The
-running container performs no package installation or self-update.
+non-root `node` identity. Supply an explicit Codex package version in
+`CODEX_VERSION` for reproducible builds; this is not a Bridge compatibility
+allowlist. Runtime capability probes decide availability. The running container
+performs no package installation or self-update.
 
 Mount the configuration read-only and give the container writable, owner-only
 volumes for every configured Profile state directory, Codex home, and

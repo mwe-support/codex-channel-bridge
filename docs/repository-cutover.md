@@ -2,7 +2,7 @@
 
 Status: completed on 2026-08-26.
 
-This directory is now an independent repository on `main` with no remote. It was cut from a detached exploratory worktree at legacy commit `0060ee641de85708114f7daf305bcf7700d7de90`; the old remote and history were not retained. This checklist remains as the cutover record and as the procedure to audit or reproduce the boundary.
+At cutover, this directory became an independent repository on `main` without a remote; the user may subsequently configure this standalone project's remote. It was cut from a detached exploratory worktree at legacy commit `0060ee641de85708114f7daf305bcf7700d7de90`; the old remote and history were not retained. This checklist remains as the cutover record and as the procedure to audit or reproduce the boundary.
 
 ## Preserve
 

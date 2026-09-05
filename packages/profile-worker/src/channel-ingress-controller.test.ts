@@ -137,7 +137,7 @@ test("removes one slash from escaped ordinary input before Codex admission", () 
   }
 });
 
-test("returns queued work and its full trusted payload on release", () => {
+test("promotes queued work with its controller and account activity until release", () => {
   const controller = ingress("queue");
   const first = {
     archiveRecordId: "archive-1",
@@ -153,8 +153,31 @@ test("returns queued work and its full trusted payload on release", () => {
     })
   };
   assert.equal(controller.accept(first).disposition.kind, "start");
+  controller.markTurnStarted("archive-1", { threadId: "thread-1", turnId: "turn-1" });
   assert.deepEqual(controller.accept(second).disposition, { kind: "queued", position: 1 });
+  assert.deepEqual(controller.snapshotForChannelAccount("qq-primary"), { active: 1, queued: 1 });
   assert.deepEqual(controller.release("archive-1", 1_050).ready, [second]);
+  assert.equal(controller.controllerForTurn("thread-1", "turn-1"), undefined);
+  assert.deepEqual(controller.snapshot(), { active: 1, queued: 0, ready: true });
+  assert.deepEqual(controller.snapshotForChannelAccount("qq-primary"), { active: 1, queued: 0 });
+  assert.deepEqual(controller.snapshotForChannelAccount("other-account"), { active: 0, queued: 0 });
+
+  const target = { threadId: "thread-1", turnId: "turn-2" };
+  controller.markTurnStarted("archive-2", target);
+  assert.equal(controller.controllerForTurn(target.threadId, target.turnId), second);
+  assert.equal(controller.controllerForTurn("other-thread", target.turnId), undefined);
+  assert.deepEqual(controller.activeTurnFor(second), { kind: "allowed", target });
+  assert.deepEqual(controller.activeTurnFor({
+    ...second,
+    event: event({ message: { ...second.event.message, providerIdentity: "other-participant" } })
+  }), { kind: "forbidden" });
+
+  controller.setReady(false, 1_051);
+  assert.equal(controller.controllerForTurn(target.threadId, target.turnId), second);
+  assert.deepEqual(controller.release("archive-2", 1_052).ready, []);
+  assert.deepEqual(controller.snapshotForChannelAccount("qq-primary"), { active: 0, queued: 0 });
+  assert.equal(controller.controllerForTurn(target.threadId, target.turnId), undefined);
+  assert.throws(() => controller.markTurnStarted("archive-2", target), /work is not active/);
 });
 
 test("steers only after the exact admitted work reports its native Turn", () => {

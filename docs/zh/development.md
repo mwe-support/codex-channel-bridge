@@ -110,6 +110,23 @@ plan/confirm；Channel message 不能成为隐藏管理 API。
 
 ## 平台验证优先级
 
+### 跨设备同步验收候选
+
+使用专用远程分支上的已提交候选作为传输单位，记录完整 Commit 和 Tree ID。
+这是验收检查点，不是发布，也不授权覆盖其他主机的工作。由一个协调任务发布候选，
+避免多台主机同时推送竞争的分支末端。
+
+接收端 fetch 前先保护 staged、unstaged 和 untracked 内容，记录已有 stash 的完整
+对象 ID；不得丢弃 WIP，也不得盲目把它重放到验收目录。拉取后核对指定 SHA，
+在独立、干净的 worktree 中安装其自身依赖并验收。跨 Windows/POSIX 比对字节时，
+区分 Git Blob 内容与检出换行符；验收 worktree 使用 `core.autocrlf=false`、
+`core.eol=lf`，或明确报告规范化 Git Blob 哈希。不改原目录的全局 Git 设置。
+
+平台契约必须针对该固定候选。如果 Windows 需要修正，向协调任务返回最小 diff 与
+证据，发布新的已审查候选，再按新 SHA 拉取复验。原本地改动需按实际内容判断为
+已进入上游、仍有独有价值或待决，不按文件名猜测；在判断被审阅前保留原 WIP。
+凭据和运行数据不得进入提交、补丁或跨主机传输。跨设备验收结论应对应同一最终提交。
+
 按以下顺序实现并验收平台行为：
 
 1. 在本地开发机器上验证原生 macOS。
@@ -139,7 +156,11 @@ Production Dependency 与固定的 Codex CLI。详见
 | --- | --- | --- |
 | `0.149.1` | `9b3de71a5a2ffc980b792a18aa8f8dec3f85f48829560222a0264fe494b679a9` | 已测试 |
 
-Source of Truth Manifest 是 `protocol/codex/0.149.1/manifest.json`。Bridge 从实际配置的 Executable 重新生成 Schema。低于最低版本或缺少所需稳定 Method 时失败关闭。更新但兼容的 Schema 可以运行，但报告为 `unverified`。
+上表与 `protocol/codex/0.149.1/manifest.json` 是历史验收记录，不是运行版本白名单。
+Bridge 从实际配置的可执行文件重新生成 Schema，并验证初始化及模型发现；不按版本
+下限或摘要差异拒绝启动。必要能力缺失时失败关闭，可选能力缺失只禁用相应功能，
+并识别从实验接口晋升到稳定接口的方法。未验收组合允许通过必要探测后运行，但
+报告为 `unverified`。宿主契约测试不再硬性断言固定版本或要求可选方法存在。
 
 运行真实、不会创建 Thread 的 Contract Test：
 

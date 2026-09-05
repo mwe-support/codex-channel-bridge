@@ -16,20 +16,13 @@ plugin lifecycle as architecture.
 
 ## Repository Lineage
 
-This project must have a new Git history with no inherited Hermes commits,
-branches, tags, remotes, CI, or release metadata. Until the repository cutover
-is complete, never stage, commit, publish, or push from the linked exploratory
-worktree. Read `docs/repository-cutover.md` before repository bootstrap, the
-initial commit, or any operation that changes the current `.git` link.
-
-The initial repository may retain only this project's authoritative design and
-research files plus a newly written README, Apache-2.0 LICENSE, NOTICE,
-`.gitignore`, and new implementation. Exclude inherited `plugins/`, `deploy/`,
-`mcp/`, scripts, and Hermes operations or architecture documents. Consult those
-files only in the original Hermes repository. Any later source reuse requires a
-file-by-file license check and attribution in NOTICE; prior presence in this
-worktree is not reuse authorization. Initialize branch `main` and leave remotes
-empty until the user provides the new repository destination.
+Preserve this project's independent Git history and release metadata. The
+completed bootstrap procedure is historical guidance in
+`docs/repository-cutover.md`; read it before reproducing the cutover or changing
+the repository's `.git` association. Existing remotes belong to this standalone
+project. Consult inherited Hermes code only in its original repository. Source
+reuse requires a file-by-file license check and NOTICE attribution; historical
+presence in an exploratory worktree does not authorize reuse.
 
 ## Codex-Native First
 
@@ -51,19 +44,19 @@ Before designing or implementing any behavior:
 Do not recreate Codex Thread history, Turn lifecycle, context compaction,
 Reviewer policy, sandbox/permission policy, model selection, skills, tools,
 MCP configuration, or account behavior in the Bridge. A compatibility shim is
-acceptable only for a pinned Codex version, with a removal condition and a
-contract test against that version's generated schema.
+acceptable only for an explicitly detected protocol difference, with a removal
+condition and a contract test against the affected executable's generated schema.
 
-Declare a minimum supported Codex CLI version and maintain an explicit tested
-version matrix. At Profile-worker startup, initialize App Server and probe the
-actual protocol capabilities required by that Profile; never infer support from
-the version string alone. A missing or incompatible stable capability required
-for correctness keeps the affected Profile unavailable and fails closed.
-Missing experimental capabilities disable only their dependent enhancements,
-emit a clear degraded-capability status, and must not be emulated in the
-Bridge. A version above the tested matrix may run only when stable capability
-probes pass, and must be reported as unverified rather than silently treated as
-supported.
+Determine Codex compatibility from the configured executable's generated
+protocol schema and live initialization/capability probes, not a fixed CLI
+version, version floor or whole-schema hash match. Record actual versions and
+schema digests as acceptance evidence; tested snapshots are not an allowlist.
+A missing or incompatible stable capability required for correctness keeps the
+affected Profile unavailable and fails closed. Missing optional capabilities
+disable only their enhancements and are reported, never emulated. Discover
+optional methods on both stable and experimental surfaces so promotion to stable
+does not disable a feature. An untested version may run when required probes pass
+but remains visibly unverified until its behavioral acceptance is recorded.
 
 The Bridge, its native installers, and its running services must never install,
 upgrade, downgrade, or otherwise mutate the host's Codex CLI. A host
@@ -71,8 +64,10 @@ administrator supplies the Codex executable, explicitly or through the service
 environment, and owns every native Codex upgrade. If it is absent or
 incompatible, keep the affected Profile unavailable and report an actionable
 diagnostic without running package managers or download scripts. Linux Docker
-images may include an explicitly pinned, tested Codex CLI at image build time;
-the running container must not self-update it.
+images may include a builder-selected explicit Codex package version for a
+reproducible image. Require that build input instead of hard-coding a supported
+CLI version; probe the resulting executable. The running container must not
+self-update it.
 
 Official native installers may install or upgrade only Codex Channel Bridge.
 They must select an immutable Bridge release, verify its published checksum,
@@ -323,20 +318,32 @@ default; a busy group must not consume a private conversation's only slot.
 An administrator may explicitly set a Profile-wide cap. Preserve native
 same-Thread steer/queue behavior, account admission rate and disk protection;
 unlimited Thread admission is not CPU, memory or Workspace conflict isolation.
-Each Profile has one bounded FIFO for explicit
-queue mode, a maximum queue age, and a simple per-Channel-Account admission
-rate. Steer mode does not create an ordinary-message queue. Queueing is allowed
+Each Profile has one bounded queue for explicit queue mode, a maximum queue
+age, and a simple per-Channel-Account admission rate. Preserve FIFO order within
+each Thread Binding. When capacity is available, start the oldest eligible
+entry, skipping entries whose Thread is active; a busy Thread must not strand
+capacity usable by an independent Thread. Steer mode does not create an
+ordinary-message queue. Queueing is allowed
 only while the Profile is ready; it is not an outage backlog. When the FIFO is
 full, reject the newest input with an explicit `busy` response. Expire stale
 entries without execution and report expiry to the Channel; their Message
 Archive records remain historical evidence only.
 
-Use fixed work-class priority—Approval and user-input responses, committed
-outbox delivery, active-Turn control, then new Turns—and a simple round-robin
-scan across Profiles. Do not build a general scheduler, broker, hierarchical
-quota system, or distributed queue in the first release. Keep provider retry
-and rate-limit backoff inside each adapter using provider hints plus bounded
-jitter, so one Channel or Profile cannot block another.
+Profiles execute independently; no central per-work round-robin scheduler is
+required. Approval and user-input responses and active-Turn control must remain
+serviceable while ordinary work is queued or a provider send is waiting.
+Different Channel Accounts must make independent delivery progress, including
+when one account fills a batch or its send never settles. Preserve segment order
+within a Logical Result, bounded claims, durable leases and receipt correlation.
+Adapters interpret provider rejection, ambiguity and retry hints; the Outbox
+persists retry times and applies bounded backoff and jitter. Verify these
+boundaries with blocked-send, later-arrival, ordering and restart tests instead
+of adding a general scheduler, broker or distributed queue.
+
+Active work's Channel context, Turn target, controller lookup and account
+counts must agree from queue promotion through drain and release. Co-locate
+state that shares a lifecycle; retain separate indexes only when justified by
+measured access needs, with regression coverage for every lifecycle transition.
 
 Configure a deployment disk-safety floor and retain existing per-attachment and
 per-Profile media limits. Under storage pressure, reject new Codex work and stop
@@ -423,10 +430,14 @@ to Codex. Append a body-free Audit Record containing actor, scope, count, and a
 digest of the deleted set.
 
 Use one WAL-mode SQLite database per Profile with FTS5 as a required capability.
-The first release's Local Hybrid Retrieval combines exact, BM25, substring,
-fuzzy, structured, and recency signals locally; it does not require embeddings,
-a vector extension, or an external Embedding Provider. Run synchronous storage
-and retrieval work outside the Channel event loop.
+Keep retrieval Profile-local without external content disclosure, and run
+synchronous storage and retrieval outside the Channel event loop. Read ADR 0028
+before changing retrieval: it records the current signals and their limits.
+Evaluate changes against a fixed labeled set covering exact matches, Chinese
+substrings, misspellings, historical records, structured scope and no-match
+queries. Preserve approved behavior unless the user accepts a measured tradeoff;
+report recall/ranking, latency, resource cost and candidate-window limits. A
+faster implementation or a shorter algorithm list alone is not sufficient.
 
 Bound media mirroring by configured per-attachment and per-Profile limits,
 stream and hash bytes, derive storage paths from content hashes, and enforce URL
@@ -514,7 +525,11 @@ and lifecycle tests on the named target and retain the exact command result. A
 missing host dependency is an environment gap, not authorization for the Bridge
 or an agent to install or upgrade Codex.
 
-At each development stage that changes the runnable QQ-to-Codex path, deploy
+Isolated ablation research may use synthetic data in a fixed-commit source
+snapshot without connecting to live services. Record the baseline, single changed
+factor, invariant tests, quality/cost measurements and counterexamples. Such
+research does not establish deployment acceptance or authorize a behavior change.
+At each integration stage that changes the runnable QQ-to-Codex path, deploy
 the actual Bridge on the local native macOS machine and complete an end-to-end
 acceptance run using the host's configured QQ credentials and the QQ desktop
 client signed in to the associated test account. Exercise real inbound and
@@ -607,8 +622,9 @@ GitHub Releases as immutable; corrections use a new version.
 - Record hard-to-reverse boundary decisions in `docs/adr/`.
 - Update the nearest operator and adapter documentation with every behavior or
   configuration change before release.
-- Validate protocol handling against the generated schema for the pinned Codex
-  version, plus Channel contract tests, Profile-isolation tests, concurrent-chat
+- Validate protocol handling against the actual configured Codex executable's
+  generated schema and retained regression snapshots, plus Channel contract
+  tests, Profile-isolation tests, concurrent-chat
   tests, Approval Request round trips, restart recovery, and duplicate-delivery
   regressions relevant to the change.
 - Never publish or release with undocumented behavior, unverified rollback, or

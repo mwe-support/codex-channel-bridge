@@ -209,9 +209,8 @@ export class ProfileWorker extends EventEmitter {
   #serverRequestRouter?: CodexServerRequestRouter;
   #turnCoordinator?: TurnCoordinator;
   #conversationTurnCoordinator?: ConversationTurnCoordinator;
-  #deliveryOutbox?: DeliveryOutbox;
+  readonly #deliveryOutboxes = new Map<string, { readonly outbox: DeliveryOutbox; timer?: NodeJS.Timeout }>();
   #mediaArchive?: MediaArchive;
-  #outboxTimer?: NodeJS.Timeout;
   #store?: ProfileStoreRuntime;
   #answerStreams?: ChannelAnswerStreams;
   #inboundPipeline?: InboundPipeline;
@@ -371,7 +370,7 @@ export class ProfileWorker extends EventEmitter {
         codexHome: this.#config.codexHome,
         workspace: this.#config.workspace,
         bridgeVersion: BRIDGE_VERSION,
-        experimentalApi: probe.experimentalMethods.includes("thread/settings/update"),
+        experimentalApi: probe.optionalMethods.includes("thread/settings/update"),
         ...(this.#config.childExitTimeoutMs !== undefined
           ? { childExitTimeoutMs: this.#config.childExitTimeoutMs }
           : {})
@@ -1230,7 +1229,7 @@ export class ProfileWorker extends EventEmitter {
           : `Current Codex Thread reasoning effort: ${current.reasoningEffort ?? "Codex default (unspecified)"}`);
       return;
     }
-    if (!this.#probe?.experimentalMethods.includes("thread/settings/update")) {
+    if (!this.#probe?.optionalMethods.includes("thread/settings/update")) {
       this.emit("channelCommandUnsupported", {
         archiveRecordId: work.archiveRecordId,
         commandKind: command.kind
@@ -1380,7 +1379,7 @@ export class ProfileWorker extends EventEmitter {
         approvalToken: approval.approvalToken,
         logicalResultId: committed.logicalResult.logicalResultId
       });
-      void this.#deliveryOutbox?.deliverReady();
+      void this.#deliveryOutboxes.get(approval.context.channelAccountId)?.outbox.deliverReady();
     } catch (error) {
       await this.#serverRequestRouter?.cancelUndeliverable(approval.approvalToken);
       await this.#store?.settleApprovalRequest({
@@ -1513,50 +1512,53 @@ export class ProfileWorker extends EventEmitter {
 
   #startDeliveryOutbox(): void {
     const store = this.#store;
-    if (!store || this.#deliveryOutbox) return;
+    if (!store || this.#deliveryOutboxes.size > 0) return;
     this.#answerStreams = new ChannelAnswerStreams(store);
-    this.#deliveryOutbox = new DeliveryOutbox({
-      readOutputFile: (file) => readOutputFile(join(this.#config.stateDirectory, "outbound-files"), file),
-      finishAnswer: (lease, adapter) => this.#answerStreams!.finish(lease, adapter),
-      store,
-      resolveAdapter: (lease) => {
-        const account = this.#config.channelAccounts?.[lease.channelAccountId];
-        if (
-          !account?.enabled ||
-          account.provider !== lease.provider ||
-          account.epochId !== lease.channelAccountEpochId
-        ) {
-          return undefined;
+    for (const channelAccountId of Object.keys(this.#config.channelAccounts ?? {})) {
+      const outbox = new DeliveryOutbox({
+        channelAccountId,
+        readOutputFile: (file) => readOutputFile(join(this.#config.stateDirectory, "outbound-files"), file),
+        finishAnswer: (lease, adapter) => this.#answerStreams!.finish(lease, adapter),
+        store,
+        resolveAdapter: (lease) => {
+          const account = this.#config.channelAccounts?.[lease.channelAccountId];
+          if (
+            !account?.enabled ||
+            account.provider !== lease.provider ||
+            account.epochId !== lease.channelAccountEpochId
+          ) {
+            return undefined;
+          }
+          return this.#channelAdapters.get(lease.channelAccountId);
         }
-        return this.#channelAdapters.get(lease.channelAccountId);
-      }
-    });
-    this.#scheduleOutboxSweep(0);
+      });
+      this.#deliveryOutboxes.set(channelAccountId, { outbox });
+      this.#scheduleOutboxSweep(channelAccountId, 0);
+    }
   }
 
-  #scheduleOutboxSweep(delayMs: number): void {
-    if (!this.#deliveryOutbox || this.#outboxTimer) return;
-    this.#outboxTimer = setTimeout(() => {
-      this.#outboxTimer = undefined;
-      const outbox = this.#deliveryOutbox;
-      if (!outbox) return;
-      void outbox.deliverReady().then(
-        () => this.#scheduleOutboxSweep(OUTBOX_SWEEP_INTERVAL_MS),
+  #scheduleOutboxSweep(channelAccountId: string, delayMs: number): void {
+    const state = this.#deliveryOutboxes.get(channelAccountId);
+    if (!state || state.timer) return;
+    state.timer = setTimeout(() => {
+      state.timer = undefined;
+      if (this.#deliveryOutboxes.get(channelAccountId) !== state) return;
+      void state.outbox.deliverReady().then(
+        () => this.#scheduleOutboxSweep(channelAccountId, OUTBOX_SWEEP_INTERVAL_MS),
         () => {
           this.#transition("unavailable", "profile_store_unavailable");
           void this.#stopChannelAdapters();
         }
       );
     }, delayMs);
-    this.#outboxTimer.unref();
+    state.timer.unref();
   }
 
   async #stopDeliveryOutbox(): Promise<void> {
-    if (this.#outboxTimer) clearTimeout(this.#outboxTimer);
-    this.#outboxTimer = undefined;
-    const outbox = this.#deliveryOutbox;
-    this.#deliveryOutbox = undefined;
-    await outbox?.stop();
+    const states = [...this.#deliveryOutboxes.values()];
+    this.#deliveryOutboxes.clear();
+    for (const state of states) clearTimeout(state.timer);
+    await Promise.all(states.map((state) => state.outbox.stop()));
   }
 
   #transition(

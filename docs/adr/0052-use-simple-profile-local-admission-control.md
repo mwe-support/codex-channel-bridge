@@ -1,5 +1,21 @@
 # Use simple Profile-local Admission Control
 
+Next amendment, accepted 2026-09-05: keep one bounded queue with FIFO within
+each Thread Binding. Start the oldest eligible entry, skipping work blocked by
+its active Thread, so independent work can use free capacity. Retain queue age,
+capacity, initiator checks, account rates, no outage backlog and bounded drain.
+Co-locate active Channel context and Turn target; verify consistent controller
+lookup and account counts through promotion, drain and release.
+
+Profiles execute independently without a central work scheduler. Reuse the
+Outbox with independent claims and sends per Channel Account. Account-scoped
+claims must not reclaim another account's live leases. Preserve Logical Result
+segment order and durable retries. Adapters interpret provider errors/hints;
+Outbox persists retry times with bounded backoff. Verify blocked sends, batches
+filled by one account, later arrivals, ordering, restart and drain. This
+supersedes the original global FIFO, cross-Profile round-robin and retry-location
+wording below, without introducing an external broker or general scheduler.
+
 `0.2.0-rc.1` amendment, accepted 2026-09-04 (FR-003): independent Threads have no default
 Bridge concurrency cap. `maximumActiveTurns: null` selects unlimited admission;
 an explicit finite cap remains operator-controlled. This supersedes the mandatory

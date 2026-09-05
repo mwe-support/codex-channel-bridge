@@ -41,6 +41,44 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-008 | Channel Account 管理员与全局设置命令 | deferred（延期） | unassigned |
 | FR-009 | QQ 与 WhatsApp 原生审批可靠性 | done（已完成） | `0.2.0-rc.1` |
 | FR-010 | 自动输出文件投递到原会话 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
+| FR-011 | 各 Channel Account 独立投递 | done（已完成） | Next / unassigned |
+| FR-012 | 按实际能力判断 Codex 兼容性 | done（已完成） | Next / unassigned |
+
+## FR-011 — 各 Channel Account 独立投递
+
+- 更新：2026-09-05。状态：`done`；版本：Next / unassigned。
+- 用户授权落实消融结论、修订 AGENTS.md，并使用两个凭据通过真实 QQ 客户端进行
+  多 Profile 验收。归属 Bridge 调度：复用 Outbox，按账户独立领取/发送，保留租约、
+  回执与 Logical Result 分段顺序，不引入中央调度器或新 Schema。
+- 验收：阻塞或占满批次的账户不能阻止另一账户当前及后续投递；按账户回收过期租约
+  不影响其他账户；既有重试/重启/排空契约通过。真实 QQ 覆盖两个 Profile、重叠执行、
+  中断隔离、队列晋升，以及平台与客户端最终投递。
+- 准入修正继续归 FR-003：同 Thread FIFO、最早可执行项扫描、总容量/TTL 与活动状态
+  一致性。检索信号保留，等待单独的实测取舍决策。
+- 已实现并通过 macOS/原生 Linux 的 252 项单元测试、发布/平台检查及原生契约，
+  Docker 原生契约通过。16 条带标记的真实 QQ 输入均进入终态，最终投递 accepted；
+  队首跳过、晋升审批、跨 Profile 审批拒绝、中断隔离均实测通过。主配置/原绑定已恢复，
+  次 Profile 停用并保留数据。Windows 本轮未重跑，不作其验收声明；尚未提交或发布。
+- [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
+
+## FR-012 — 按实际能力判断 Codex 兼容性
+
+- 更新：2026-09-05。状态：`done`；版本：Next / unassigned。
+- 用户明确要求不固定 Codex CLI 版本，以适应宿主频繁更新。Codex 仍由管理员提供，
+  Bridge 不修改其安装。
+- 取消版本下限与宿主测试中的固定版本/摘要断言。探测生成的方法和真实初始化/模型
+  发现；必要能力缺失只使对应 Profile 失败关闭，可选能力缺失只禁用对应功能。
+  识别可选方法晋升到稳定接口；未验收组合仍标记 unverified。
+- Docker 显式接收构建版本，不预设支持版本；保留历史验收快照，不改写旧证据。
+- 验收：旧/新/预发布版本号不阻止能力完整的 Schema；缺少必要方法失败关闭；
+  可选方法缺失/晋升行为正确；用当前宿主可执行文件运行原生契约和真实 QQ 多 Profile
+  回归，不安装或升级宿主 Codex。
+- 已取消版本门槛和固定版本/摘要契约断言，保留能力失败关闭与历史验证标记。
+  macOS、原生 Linux、Linux Docker 均使用实际 Codex 0.153.4 通过原生契约；
+  真实 QQ 多 Profile 回归通过。其他版本的标签行为由合成 Schema 回归验证，
+  不宣称已实测所有 CLI 版本。Windows 本轮未重跑；未修改宿主安装、提交或发布。
+- [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
+
 
 ## FR-009 — QQ 与 WhatsApp 原生审批可靠性
 
@@ -220,7 +258,16 @@ blocked/deferred，在实现前解释该边界。
 
 ## FR-003 — 不同会话默认不受并发上限限制
 
-- 更新：2026-09-04。状态：`awaiting-acceptance`；版本：`0.2.0-rc.1`。
+- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：`0.2.0-rc.1`。
+- 后续修正，Next / unassigned：用户已授权审计 A4 的活动状态整理。
+  队列晋升回归在修正前失败（账户活动计数为 0，预期为 1），将 Channel 上下文与
+  Turn 目标合并存储、登记晋升工作后通过；同时覆盖控制者查找、参与者校验、
+  排空期间保留关联与释放清理。A4 初始修正保持 FIFO 和准入上限不变；随后按 ADR 0052 的 Next 修订允许跨 Thread 跳过忙项。此修正不属于既有
+  不可变发布；`npm run check` 通过 250 项单元、4 项发布工具和 4 项平台静态测试，
+  `npm run docs:test` 通过 2 项工具测试，`git diff --check` 通过。
+  后续真实 QQ 晋升/审批、队首跳过与中断隔离已通过；主配置和原绑定恢复，其他 FR-003
+  既有验收项保持原状态。见[本轮证据](acceptance/capability-and-admission-20260905.md)。
+  本轮已部署候选代码，尚未提交或发布。
 - 需求：群聊和私聊不能仅因为共享 Profile 就互相阻塞；Bridge 默认不限制并发 Turn 数。
 - 归属：仅调整 Bridge 准入。Codex 拥有各 Thread/Turn；
   不为每个会话新增进程、Gateway、调度系统或复制历史。

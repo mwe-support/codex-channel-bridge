@@ -57,7 +57,7 @@ Compare the result with the value in the downloaded `.sha256` file.
 ## 2. Supply prerequisites
 
 - Node.js 22 or newer and npm 10 or newer.
-- Codex CLI `0.149.1`, installed by the host administrator.
+- Administrator-installed Codex CLI with the required App Server capabilities; no fixed CLI version is required.
 - One absolute Workspace, Codex home, and Bridge state directory per Profile.
 - QQ credentials through Secret References, or a Profile-local WhatsApp auth
   directory created by the host-local pairing flow.

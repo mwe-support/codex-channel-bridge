@@ -37,11 +37,16 @@ so a stale worker cannot overwrite a newer attempt. An expired lease returns to
 `retry_wait` with an `ambiguous` attempt outcome because a crash may have
 happened before or after the Provider accepted the send.
 
-## Profile-local delivery sweep
+## Account-scoped delivery sweeps
 
-Each Profile owns one non-overlapping `DeliveryOutbox` sweep. The baseline
-claims at most eight records, uses a 30-second lease, and schedules another
-sweep after 500 milliseconds. It resolves an Adapter only when the configured
+In Next, each configured Channel Account has an independent non-overlapping
+`DeliveryOutbox` sweep inside its Profile. Each claims at most eight records,
+uses a 30-second lease and schedules the next sweep after 500 milliseconds.
+Claims and expired-lease recovery are scoped to that account, so a blocked or
+full batch cannot strand sibling delivery or reclaim its in-flight leases.
+Logical Result segments still wait for their predecessors to be accepted.
+Shutdown stops all account sweeps before closing Profile storage; existing
+bounded drain/worker-exit deadlines remain authoritative. An Adapter resolves only when the configured
 Provider, Channel Account, and Channel Account Epoch all match the persisted
 record. A missing or stale Adapter binding is `deferred`; it is not represented
 as a Provider rejection.

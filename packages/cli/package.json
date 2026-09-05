@@ -11,6 +11,7 @@
     "@codex-channel-bridge/codex-app-server": "0.2.0-rc.1",
     "@codex-channel-bridge/config": "0.2.0-rc.1",
     "@codex-channel-bridge/control-plane": "0.2.0-rc.1",
+    "@codex-channel-bridge/core": "0.2.0-rc.1",
     "@codex-channel-bridge/platform": "0.2.0-rc.1",
     "@codex-channel-bridge/profile-worker": "0.2.0-rc.1",
     "@codex-channel-bridge/supervisor": "0.2.0-rc.1",

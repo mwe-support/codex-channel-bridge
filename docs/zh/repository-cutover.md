@@ -2,7 +2,7 @@
 
 状态：已于 2026-08-26 完成。
 
-此目录现已成为 `main` 上的独立仓库，且没有 Remote。它从 Legacy Commit `0060ee641de85708114f7daf305bcf7700d7de90` 对应的 Detached Exploratory Worktree 中切出；旧 Remote 和 History 均未保留。本清单继续作为切换记录，也作为审计或重现该边界的操作步骤。
+切换完成时，此目录成为 `main` 上的独立仓库，初始没有 Remote；之后可由用户指定独立仓库的 Remote。它从 Legacy Commit `0060ee641de85708114f7daf305bcf7700d7de90` 对应的 Detached Exploratory Worktree 中切出；旧 Remote 和 History 均未保留。本清单继续作为切换记录，也作为审计或重现该边界的操作步骤。
 
 ## 保留内容
 

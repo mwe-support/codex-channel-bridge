@@ -21,8 +21,9 @@ service manager
             -> WhatsApp adapter
 ```
 
-The first release uses local stdio for App Server and owner-only local IPC for
-administration. It opens no TCP, WebSocket, HTTP, or web-administration service.
+App Server uses local stdio; administration uses owner-only local IPC. The
+optional local Dashboard follows ADR 0053: loopback HTTP with operations routed
+through that same IPC interface, without remote administration exposure.
 
 ## Ownership
 

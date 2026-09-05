@@ -20,9 +20,9 @@ Identity `(Profile ID, Codex Thread ID, Codex Turn ID)` 只允许一个 Logical 
 
 每个 Lease 都有随机 Token 和 Expiry。Settlement 必须提供当前 Token，因此旧 Worker 不能覆盖更新的 Attempt。过期 Lease 会回到 `retry_wait`，并把 Attempt Outcome 标为 `ambiguous`，因为 Crash 可能发生在 Provider 接受 Send 之前或之后。
 
-## Profile-local Delivery Sweep
+## 按 Channel Account 独立投递
 
-每个 Profile 拥有一个不会重叠运行的 `DeliveryOutbox` Sweep。Baseline 每次最多认领 8 条记录，Lease 为 30 秒，并在 500 毫秒后安排下一次 Sweep。只有持久记录与当前配置中的 Provider、Channel Account 和 Channel Account Epoch 全部匹配时才会解析出 Adapter。缺失或过期的 Adapter Binding 记为 `deferred`，不能表示成 Provider Rejection。
+Next 中，每个已配置 Channel Account 在其 Profile 内独立运行不重叠的 `DeliveryOutbox` Sweep。每次最多领取 8 条记录，租约为 30 秒，500 毫秒后安排下一轮。领取和过期租约回收均限定到本账户，阻塞或占满的批次不会阻止其他账户投递或回收其正在使用的租约。Logical Result 的分段仍等待前一段 accepted。关闭 Profile 存储前停止全部账户的投递循环，沿用既有有界排空/Worker 退出时限。只有持久记录与当前配置中的 Provider、Channel Account 和 Channel Account Epoch 全部匹配时才会解析出 Adapter。缺失或过期的 Adapter Binding 记为 `deferred`，不能表示成 Provider Rejection。
 
 Accepted Receipt 必须回显 Lease 的 Logical Result ID 和 Segment Index。Receipt 不匹配或出现意外 Exception 时记为 `ambiguous`。Provider 明确拒绝则为终态。Deferred 与 Ambiguous Record 保留相同 Logical Result 和 Outbox Identity，并使用带 Jitter 的有界指数 Retry；Adapter 提供的 Retry Delay 在当前一小时上限内作为最小值。
 
