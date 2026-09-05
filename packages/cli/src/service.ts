@@ -145,10 +145,11 @@ async function planService(name: string, configPath: string, endpoint?: string):
   const runtimePath = [...new Set([dirname(process.execPath), ...Object.values(candidate.configuration.profiles)
     .flatMap(profile => profile.codexExecutable ? [dirname(profile.codexExecutable)] : []),
     ...(process.platform === "win32" ? [join(process.env.SystemRoot ?? "C:\\Windows", "System32"), process.env.SystemRoot ?? "C:\\Windows"] : ["/usr/bin", "/bin", "/usr/sbin", "/sbin"])])].join(delimiter);
+  if (/[\r\n\0]/.test(runtimePath)) throw new Error("Service PATH cannot contain control characters");
   const exitTimeout = Math.ceil((candidate.configuration.supervisor.drainTimeoutMs + 2 * candidate.configuration.supervisor.childExitTimeoutMs + 5000) / 1000);
   const logPath = join(homedir(), ".config", "codex-channel-bridge", "services", `${name}.jsonl`);
   const definition = backend === "windows-scm" ? hash(await readFile(fileURLToPath(new URL("../../platform/windows/ServiceHost.cs", import.meta.url)), "utf8")) : backend === "launchd-user" ? `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>org.${name}</string><key>ProgramArguments</key><array>${args.map(arg => `<string>${xml(arg)}</string>`).join("")}</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(runtimePath)}</string></dict><key>Umask</key><integer>63</integer><key>ThrottleInterval</key><integer>5</integer><key>StandardOutPath</key><string>${xml(logPath)}</string><key>StandardErrorPath</key><string>/dev/null</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ExitTimeOut</key><integer>${exitTimeout}</integer><key>ProcessType</key><string>Background</string></dict></plist>\n` :
-    `[Unit]\nDescription=Codex Channel Bridge (${name})\n[Service]\nType=simple\nUMask=0077\nEnvironment=${systemdQuote(`PATH=${runtimePath}`)}\nExecStart=${args.map(systemdQuote).join(" ")}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nTimeoutStopSec=${exitTimeout}\n[Install]\nWantedBy=default.target\n`;
+    `[Unit]\nDescription=Codex Channel Bridge (${name})\n[Service]\nType=simple\nUMask=0077\nEnvironment=${systemdQuote(`PATH=${runtimePath}`, false)}\nExecStart=${args.map(arg => systemdQuote(arg)).join(" ")}\nRestart=on-failure\nRestartSec=5\nKillMode=mixed\nTimeoutStopSec=${exitTimeout}\n[Install]\nWantedBy=default.target\n`;
   return { name, backend, identity: backend === "windows-scm" ? String((await windowsService("identity")).name) : userInfo().username, node: process.execPath, entry, configPath, endpoint: endpoint ?? null,
     registrationPath, definition, logPath, runtimePath, stopTimeoutMs: exitTimeout * 1000, startup: backend === "windows-scm" ? "automatic at system boot (SCM)" : backend === "launchd-user" ? "at user login" : "at user manager startup; boot requires administrator-enabled linger",
     permissions: backend === "windows-scm" ? "Run from an elevated terminal as this same identity; SCM create access, a service-logon password and Log on as a service right are required" : "current user only; no elevation or change of runtime identity" };
@@ -198,7 +199,11 @@ async function run(executable: string, args: string[]): Promise<void> {
 async function exists(path: string): Promise<boolean> { return !!await lstat(path).catch(() => null); }
 function hash(value: string): string { return createHash("sha256").update(value).digest("hex"); }
 function xml(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-function systemdQuote(value: string): string { return '"' + value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$") + '"'; }
+export function systemdQuote(value: string, expandVariables = true): string {
+  // Environment= keeps dollars literal; ExecStart uses $$ for a literal dollar.
+  const escaped = value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
+  return '"' + (expandVariables ? escaped.replaceAll("$", () => "$$") : escaped) + '"';
+}
 
 async function windowsService(action: string, name?: string, manifest?: string, input?: unknown): Promise<Record<string, unknown>> {
   const helper = fileURLToPath(new URL("../../platform/windows/service.ps1", import.meta.url));
