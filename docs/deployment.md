@@ -10,6 +10,13 @@ production paths and are examples to install only after replacing paths and the
 service identity for the target host. Keep the configuration, state roots,
 Codex homes, Workspaces, and Secret files outside the repository.
 
+The unreleased Next [administration CLI](cli.md) can generate and register the
+current user's LaunchAgent/systemd user unit or the selected Windows identity's
+native SCM adapter. It previews exact identity, paths, PATH and startup policy;
+registration and startup are separate. Its timeout is derived from configured
+drain/child-exit limits, and stop waits for Supervisor exit. The static examples
+below remain operator-managed alternatives with their own recorded limits.
+
 ## Common installation gate
 
 Before registering a service:

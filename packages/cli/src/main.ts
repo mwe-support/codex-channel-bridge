@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
+import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import qrcode from "qrcode-terminal";
 
@@ -19,26 +21,45 @@ import { ProfileWorker } from "@codex-channel-bridge/profile-worker";
 import { Supervisor } from "@codex-channel-bridge/supervisor";
 import { startDashboard } from "./dashboard.js";
 import { runInteractiveSetup } from "./setup.js";
+import { runServiceCommand } from "./service.js";
+import { runModelCommand } from "./model.js";
+import { runSettingsCommand } from "./settings.js";
+import { parseOptions, rejectUnknownOptions, required, readStdin } from "./terminal.js";
 
 const argv = process.argv.slice(2);
 const [area, action, ...args] = argv;
 
 try {
-  if ((area === "--version" || area === "version") && action === undefined) {
+  if (area === undefined || area === "help" || argv.includes("--help")) {
+    const group = area === "help" ? action : area?.startsWith("--") ? undefined : area;
+    const lines = usageText().split("\n");
+    const selected = group ? lines.filter((line) => line.startsWith(`  bridge ${group} `)) : lines;
+    if (selected.length === 0) throw new Error(`Unknown command group: ${group}`);
+    stdout.write(`${group ? "Usage:\n" : ""}${selected.join("\n")}\n`);
+  } else if (await runSettingsCommand(area, action, args) || await runModelCommand(area, action, args) || await runServiceCommand(area, action, args)) {
+    // Domain commands share configuration and control-plane operations.
+  } else if ((area === "--version" || area === "version") && action === undefined) {
     stdout.write(`${BRIDGE_VERSION}\n`);
-  } else if (area === "setup" && (action === "quick" || action === "full")) {
+  } else if (area === "setup" && (action === undefined || action === "quick" || action === "full")) {
     const options = parseOptions(args);
     rejectUnknownOptions(options, ["config"]);
-    await runInteractiveSetup({ mode: action, configPath: options.config });
+    await runInteractiveSetup({ mode: action ?? "quick", configPath: options.config });
   } else if (area === "dashboard") {
     const options = parseOptions(argv.slice(1));
-    rejectUnknownOptions(options, ["endpoint", "port"]);
+    rejectUnknownOptions(options, ["endpoint", "port", "open"]);
     const dashboard = await startDashboard({
       endpoint: options.endpoint,
       port: options.port === undefined ? undefined : boundedInteger(options.port, "--port", 0, 65_535)
     });
     stdout.write(`Dashboard: ${dashboard.url}\n`);
-    try { await waitForStopSignal(); } finally { await dashboard.close(); }
+    try {
+      if (options.open) await new Promise<void>((resolve, reject) => {
+        const executable = process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32.exe" : "xdg-open";
+        execFile(executable, process.platform === "win32" ? ["url.dll,FileProtocolHandler", dashboard.url] : [dashboard.url],
+          { windowsHide: true, timeout: 10_000 }, error => error ? reject(new Error("Browser launch failed; use the printed Dashboard URL")) : resolve());
+      });
+      await waitForStopSignal();
+    } finally { await dashboard.close(); }
   } else if (area === "status") {
     const options = parseOptions(argv.slice(1));
     rejectUnknownOptions(options, ["endpoint"]);
@@ -389,7 +410,14 @@ try {
     stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (area === "supervisor" && action === "run") {
     const options = parseOptions(args);
-    rejectUnknownOptions(options, ["config", "endpoint"]);
+    rejectUnknownOptions(options, ["config", "endpoint", "service-stdin"]);
+    if (options["service-stdin"] !== undefined && options["service-stdin"] !== "yes") throw new Error("--service-stdin must equal yes");
+    const serviceStdin = options["service-stdin"] === "yes";
+    let serviceReady: (() => void) | undefined;
+    const started = serviceStdin ? new Promise<void>(resolve => { serviceReady = resolve; }) : Promise.resolve();
+    const stopped = waitForStopSignal(serviceStdin, serviceReady);
+    // The Windows parent assigns its Job Object before allowing any Profile child to start.
+    if (serviceStdin) await Promise.race([started, stopped.then(() => { throw new Error("Service parent stopped before startup"); })]);
     const candidate = await loadConfiguration(required(options, "config"));
     const supervisor = new Supervisor();
     const controlPlane = new ControlPlaneServer({
@@ -405,10 +433,10 @@ try {
       stdout.write(
         `${JSON.stringify({ event: "supervisor_live", revision: applied.acceptedRevision })}\n`
       );
-      await waitForStopSignal();
+      await stopped;
     } finally {
-      await controlPlane.stop().catch(() => undefined);
       const status = await supervisor.stop();
+      await controlPlane.stop().catch(() => undefined);
       stdout.write(`${JSON.stringify({ event: "supervisor_stopped", liveness: status.liveness })}\n`);
     }
   } else if (area === "codex" && action === "probe") {
@@ -453,6 +481,7 @@ try {
     usage();
   }
 } catch (error) {
+  if (area === "supervisor" && argv.includes("--service-stdin")) stdin.destroy();
   if (error instanceof ConfigurationValidationError) {
     process.stderr.write(`${error.message}\n${error.issues.map((issue) => `- ${issue}`).join("\n")}\n`);
   } else if (error instanceof AdministrationResponseError) {
@@ -461,31 +490,6 @@ try {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   }
   process.exitCode = 1;
-}
-
-function parseOptions(args: readonly string[]): Record<string, string> {
-  const options: Record<string, string> = {};
-  for (let index = 0; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag?.startsWith("--") || value === undefined) usage();
-    const key = flag.slice(2);
-    if (options[key] !== undefined) throw new Error(`Duplicate option --${key}`);
-    options[key] = value;
-  }
-  return options;
-}
-
-function rejectUnknownOptions(options: Record<string, string>, allowed: readonly string[]): void {
-  const allowedSet = new Set(allowed);
-  const unknown = Object.keys(options).filter((key) => !allowedSet.has(key));
-  if (unknown.length > 0) throw new Error(`Unknown option --${unknown[0]}`);
-}
-
-function required(options: Record<string, string>, key: string): string {
-  const value = options[key];
-  if (!value) throw new Error(`Missing required option --${key}`);
-  return value;
 }
 
 function boundedInteger(value: string, name: string, minimum: number, maximum: number): number {
@@ -516,32 +520,55 @@ function auditSelection(options: Record<string, string>): {
   };
 }
 
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-async function waitForStopSignal(): Promise<void> {
+async function waitForStopSignal(serviceStdin = false, onServiceStart?: () => void): Promise<void> {
   await new Promise<void>((resolve) => {
+    const input = serviceStdin ? createInterface({ input: stdin }) : undefined;
+    let stopping = false;
     const stop = (): void => {
+      if (stopping) return;
+      stopping = true;
       process.off("SIGINT", stop);
       process.off("SIGTERM", stop);
+      input?.close();
       resolve();
     };
+    input?.on("line", (line) => { if (line === "start") onServiceStart?.(); else if (line === "stop") stop(); });
+    input?.once("close", stop);
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
   });
 }
 
 function usage(): never {
-  throw new Error(
+  throw new Error(usageText());
+}
+
+function usageText(): string {
+  return (
     [
       "Usage:",
       "  bridge --version",
       "  bridge setup quick [--config /absolute/path/config.yaml]",
       "  bridge setup full [--config /absolute/path/config.yaml]",
-      "  bridge dashboard [--endpoint /absolute/path/control.sock] [--port 0]",
+      "  bridge config get [--config PATH] [--key profiles.primary.admission] [--json]",
+      "  bridge config set --key PATH --value-json JSON [--config PATH] [--confirm EDIT_DIGEST]",
+      "  bridge config edit [--config PATH] [--editor EXECUTABLE]",
+      "  bridge service install --config PATH [--name NAME] [--endpoint PATH] [--confirm DIGEST] [--password-stdin | --password-from-env NAME]",
+      "  bridge service start|stop|restart|status [--name NAME] [--json]",
+      "  bridge service uninstall [--name NAME] [--confirm DIGEST]",
+      "  bridge model list --profile ID [--endpoint PATH] [--json]",
+      "  bridge model get --profile ID --scope defaults|thread [--thread ID] [--endpoint PATH]",
+      "  bridge model set --profile ID --scope defaults|thread [--thread ID] [--model MODEL] [--effort EFFORT] [--confirm DIGEST] [--endpoint PATH]",
+      "  bridge secret set --profile ID --name NAME [--config PATH] [--stdin | --from-env NAME | --from-file PATH]",
+      "  bridge profile set --profile ID --key FIELD --value-json JSON [--config PATH] [--confirm DIGEST]",
+      "  bridge profile enable|disable --profile ID [--config PATH] [--confirm DIGEST]",
+      "  bridge channel set --profile ID --account ID --key FIELD --value-json JSON [--config PATH] [--confirm DIGEST]",
+      "  bridge channel enable|disable --profile ID --account ID [--config PATH] [--confirm DIGEST]",
+      "  bridge profile list [--config PATH] [--profile ID] [--json]",
+      "  bridge profile status [--profile ID] [--endpoint PATH] [--json]",
+      "  bridge channel list [--config PATH] [--profile ID] [--account ID] [--json]",
+      "  bridge channel status [--profile ID] [--account ID] [--endpoint PATH] [--json]",
+      "  bridge dashboard [--endpoint /absolute/path/control.sock] [--port 0] [--open]",
       "  bridge status [--endpoint /absolute/path/control.sock]",
       "  bridge doctor [--profile ID] [--endpoint /absolute/path/control.sock]",
       "  bridge backup prepare --profile ID --manifest /absolute/path/manifest.json [--include-workspace yes|no] [--endpoint PATH]",

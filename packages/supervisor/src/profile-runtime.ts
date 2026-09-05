@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { ProfileConfiguration, SupervisorConfiguration } from "@codex-channel-bridge/config";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 import {
+  type ModelAction,
   type CodexCircuitResetResult,
   isWorkerToSupervisorMessage,
   type SupervisorToWorkerMessage,
@@ -25,6 +26,7 @@ export interface ProfileRuntime {
     onEvent?: (event: WhatsAppChannelAccountEvent) => Promise<void> | void
   ): Promise<WhatsAppChannelAccountResult>;
   resetCodexCircuit(): Promise<CodexCircuitResetResult>;
+  executeModelAction(action: ModelAction): Promise<Record<string, unknown>>;
 }
 
 export class ProfileRuntimeActionError extends Error {
@@ -74,6 +76,12 @@ class ForkedProfileRuntime implements ProfileRuntime {
   }>();
   readonly #pendingCircuitResets = new Map<string, {
     readonly resolve: (result: CodexCircuitResetResult) => void;
+    readonly reject: (error: Error) => void;
+    readonly timer: NodeJS.Timeout;
+  }>();
+
+  readonly #pendingModels = new Map<string, {
+    readonly resolve: (result: Record<string, unknown>) => void;
     readonly reject: (error: Error) => void;
     readonly timer: NodeJS.Timeout;
   }>();
@@ -233,6 +241,25 @@ class ForkedProfileRuntime implements ProfileRuntime {
     });
   }
 
+  public async executeModelAction(action: ModelAction): Promise<Record<string, unknown>> {
+    const child = this.#child;
+    if (!child || this.#expectedExit) throw new ProfileRuntimeActionError("profile_unavailable", "Profile worker is unavailable");
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pendingModels.delete(requestId);
+        reject(new ProfileRuntimeActionError("action_timeout", "Model action timed out; read settings before retrying a write"));
+      }, 30_000);
+      timer.unref();
+      this.#pendingModels.set(requestId, { resolve, reject, timer });
+      void send(child, { type: "model_action", requestId, action }).catch(() => {
+        clearTimeout(timer);
+        this.#pendingModels.delete(requestId);
+        reject(new ProfileRuntimeActionError("profile_unavailable", "Profile worker is unavailable"));
+      });
+    });
+  }
+
   public async resetCodexCircuit(): Promise<CodexCircuitResetResult> {
     const child = this.#child;
     if (!child || this.#expectedExit) {
@@ -259,6 +286,15 @@ class ForkedProfileRuntime implements ProfileRuntime {
   #handleActionMessage(
     message: Exclude<WorkerToSupervisorMessage, { readonly type: "health" | "fatal" }>
   ): void {
+    if (message.type === "model_action_result" || message.type === "model_action_error") {
+      const pending = this.#pendingModels.get(message.requestId);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      this.#pendingModels.delete(message.requestId);
+      if (message.type === "model_action_result") pending.resolve(message.result);
+      else pending.reject(new ProfileRuntimeActionError(message.error.code, message.error.message));
+      return;
+    }
     if (
       message.type === "codex_circuit_reset_result" ||
       message.type === "codex_circuit_reset_error"
@@ -284,6 +320,8 @@ class ForkedProfileRuntime implements ProfileRuntime {
   }
 
   #rejectPendingActions(error: Error): void {
+    for (const pending of this.#pendingModels.values()) { clearTimeout(pending.timer); pending.reject(error); }
+    this.#pendingModels.clear();
     for (const pending of this.#pendingActions.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
@@ -314,7 +352,8 @@ function sameHealth(left: ProfileHealth, right: ProfileHealth): boolean {
     left.readiness === right.readiness &&
     left.reason === right.reason &&
     left.codexVersion === right.codexVersion &&
-    left.codexVerification === right.codexVerification
+    left.codexVerification === right.codexVerification &&
+    JSON.stringify(left.channelAccounts) === JSON.stringify(right.channelAccounts)
   );
 }
 

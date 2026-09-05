@@ -26,7 +26,7 @@ export const REQUIRED_STABLE_METHODS = [
   "model/list"
 ] as const;
 
-export const OPTIONAL_METHODS = ["thread/settings/update"] as const;
+export const OPTIONAL_METHODS = ["thread/settings/update", "config/read", "config/batchWrite"] as const;
 
 export interface ProtocolProbeResult {
   readonly cliVersion: string;

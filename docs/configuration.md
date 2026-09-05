@@ -12,7 +12,7 @@ valid configuration fields, and unknown fields fail validation.
 
 ## Interactive setup
 
-Release `0.2.0-rc.1` provides two interactive entry points:
+Release `0.2.0-rc.1` introduced two interactive entry points; the Next CLI extension is described in [CLI administration](cli.md):
 
 ```sh
 bridge setup quick
@@ -30,9 +30,13 @@ The CLI shows the complete non-secret candidate before writing it, defaults to
 no at the confirmation prompt, refuses to replace an existing configuration,
 creates the Profile state directory with owner-only permissions, and writes the
 new configuration atomically. QQ uses `env:QQ_BOT_APP_ID` and
-`env:QQ_BOT_APP_SECRET` in quick mode; the wizard never asks for or writes a
-credential value. WhatsApp authentication is still created later through the
-host-local pairing command.
+`env:QQ_BOT_APP_SECRET` in quick mode. In Next, setup can write those values only
+through hidden secret entry after configuration confirmation, and can optionally
+register/start the service using the shared CLI implementation. Credentials remain
+outside YAML. WhatsApp authentication is created through the host-local pairing
+command. `config get/set/edit`, scoped `profile/channel set`, and `secret set`
+provide subsequent administration; saved configuration still requires explicit
+`config apply`.
 
 ## Schema
 

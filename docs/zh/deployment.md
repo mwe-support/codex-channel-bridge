@@ -9,6 +9,11 @@ CLI。
 Path，只有在替换目标 Host 的 Path 与 Service Identity 后才能安装。Configuration、
 State Root、Codex Home、Workspace 与 Secret File 必须保存在仓库外。
 
+尚未发布的 Next [管理 CLI](cli.md) 可以生成并注册当前用户的 LaunchAgent/systemd
+user unit，或选定 Windows 身份的原生 SCM 适配器。它预览精确身份、路径、PATH 与启动
+策略，注册和启动分开执行；停止超时由配置的 drain/child-exit 限制推导，并等待 Supervisor
+退出。下方静态示例仍是操作者自行管理的替代方式，保留各自记录的限制。
+
 ## 通用安装门槛
 
 注册 Service 前：

@@ -47,6 +47,7 @@ class Runtime implements ProfileRuntime {
     throw new Error("not used");
   }
 
+  async executeModelAction(): Promise<never> { throw new Error("Model action not configured in test runtime"); }
   async resetCodexCircuit() { return { kind: "reset" as const }; }
 
   health(): ProfileHealth { return { ...this.#health }; }

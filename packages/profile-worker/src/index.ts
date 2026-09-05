@@ -7,3 +7,6 @@ export type {
   WhatsAppChannelAccountEvent,
   WhatsAppChannelAccountResult
 } from "@codex-channel-bridge/whatsapp-adapter";
+
+export { isModelAction } from "./model-administration.js";
+export type { ModelAction } from "./model-administration.js";

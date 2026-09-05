@@ -1,10 +1,11 @@
-import { chmod, link, lstat, mkdir, open, stat, unlink } from "node:fs/promises";
+import { readSecret } from "./terminal.js";
+import { access, chmod, link, lstat, mkdir, open, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, normalize } from "node:path";
+import { delimiter, dirname, isAbsolute, join, normalize } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 
-import { formatConfiguration, parseConfiguration } from "@codex-channel-bridge/config";
+import { formatConfiguration, parseConfiguration, writeProfileSecret } from "@codex-channel-bridge/config";
 import {
   assertWindowsOwnerOnlyPath,
   secureWindowsOwnerOnlyPath
@@ -27,7 +28,7 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<void> 
   if (!isAbsolute(configPath)) throw new Error("--config must be an absolute path");
   if (await lstat(configPath).catch(() => null)) throw new Error(`Configuration already exists: ${configPath}`);
 
-  const prompt = createInterface({ input: stdin, output: stdout });
+  let prompt = createInterface({ input: stdin, output: stdout });
   try {
     stdout.write(`Codex Channel Bridge ${options.mode} setup\n\n`);
     const raw = await collectConfiguration(prompt, options.mode);
@@ -37,6 +38,7 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<void> 
     await requireDirectory(profile.workspace, "Workspace");
     await requireDirectory(profile.codexHome, "Codex home");
 
+    stdout.write(`\nFilesystem changes: create owner-only state directory ${profile.stateDirectory}; create config parent ${dirname(configPath)} if absent.\n`);
     stdout.write(`\nConfiguration preview (${configPath}):\n\n${text}\n`);
     const confirmed = await choice(prompt, "Write this configuration?", ["yes", "no"], "no");
     if (confirmed !== "yes") {
@@ -48,6 +50,30 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<void> 
     await createOwnerOnlyDirectory(dirname(configPath));
     await writeNewFile(configPath, text);
     stdout.write(`Configuration written: ${configPath}\n`);
+    const secretNames = [...new Set(Object.values(profile.channelAccounts).flatMap(account => account.provider === "qq" ? [account.appId, account.appSecret].filter(reference => reference.startsWith("env:")).map(reference => reference.slice(4)) : []))];
+    if (secretNames.length && await choice(prompt, "Enter QQ secrets now (hidden input)", ["yes", "no"], "no") === "yes") {
+      prompt.close();
+      try {
+        for (const name of secretNames) {
+          stdout.write(`Value for ${name} will be saved to the Profile secrets file.\n`);
+          await writeProfileSecret(profile.secretsFile, name, await readSecret());
+        }
+      } finally { prompt = createInterface({ input: stdin, output: stdout }); }
+    }
+    if (await choice(prompt, "Register a system service now", ["yes", "no"], "no") === "yes") {
+      prompt.close();
+      try {
+        const { runServiceCommand } = await import("./service.js");
+        const installed = await runServiceCommand("service", "install", ["--config", configPath]);
+        prompt = createInterface({ input: stdin, output: stdout });
+        if (installed === "installed" && await choice(prompt, "Start the registered service now", ["yes", "no"], "no") === "yes") {
+          await runServiceCommand("service", "start", []);
+        }
+      } catch (error) {
+        stdout.write("Configuration is preserved; service setup is incomplete.\n");
+        throw error;
+      } finally { prompt.close(); }
+    }
     stdout.write(`Validate it with: bridge config check --config ${configPath}\n`);
     if (Object.values(profile.channelAccounts).some((account) => account.provider === "whatsapp")) {
       stdout.write("After starting the Supervisor, pair WhatsApp with: bridge whatsapp pair --profile " +
@@ -55,6 +81,7 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<void> 
     }
   } finally {
     prompt.close();
+    stdin.pause();
   }
 }
 
@@ -65,6 +92,7 @@ export async function collectConfiguration(prompt: Prompt, mode: SetupMode): Pro
   const stateDirectory = mode === "full"
     ? await pathAnswer(prompt, "Profile state directory", defaultStateDirectory(profileId))
     : defaultStateDirectory(profileId);
+  const codexExecutable = await pathAnswer(prompt, "Administrator-supplied Codex executable", await codexOnPath() ?? "");
   const providers = await choice(prompt, "Channels", ["qq", "whatsapp", "both"], "qq");
   const channelAccounts: Record<string, unknown> = {};
 
@@ -80,14 +108,14 @@ export async function collectConfiguration(prompt: Prompt, mode: SetupMode): Pro
   const profile: Record<string, unknown> = {
     workspace,
     codexHome,
+    codexExecutable,
     stateDirectory,
     channelAccounts
   };
   if (mode === "full") {
     const secretsFile = await pathAnswer(prompt, "Profile secrets file", join(stateDirectory, "secrets.env"));
-    const codexExecutable = await optionalPathAnswer(prompt, "Codex executable (blank uses PATH)");
+    profile.enabled = await choice(prompt, "Enable Profile", ["yes", "no"], "yes") === "yes";
     profile.secretsFile = secretsFile;
-    if (codexExecutable) profile.codexExecutable = codexExecutable;
     profile.admission = {
       mode: await choice(prompt, "Busy-message behavior", ["steer", "queue"], "steer"),
       maximumActiveTurns: await choice(prompt, "Concurrent Turns", ["unlimited", "limited"], "unlimited") === "unlimited"
@@ -129,7 +157,8 @@ async function collectAccount(
 ): Promise<Record<string, unknown>> {
   const account: Record<string, unknown> = {
     provider,
-    epochId: "initial",
+    epochId: mode === "full" ? await ask(prompt, `${provider} Channel Account epoch ID`, "initial") : "initial",
+    ...(mode === "full" ? { enabled: await choice(prompt, `Enable ${provider} Channel Account`, ["yes", "no"], "yes") === "yes" } : {}),
     groupThreadScope: mode === "full"
       ? await choice(prompt, `${provider} group Thread scope`, ["conversation", "participant"], "conversation")
       : "conversation"
@@ -258,7 +287,7 @@ function expandHome(path: string): string {
     : path;
 }
 
-function defaultConfigPath(): string {
+export function defaultConfigPath(): string {
   const root = process.platform === "win32"
     ? process.env.APPDATA ?? join(homedir(), "AppData", "Roaming")
     : process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
@@ -270,4 +299,13 @@ function defaultStateDirectory(profileId: string): string {
     ? process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local")
     : process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   return join(root, "codex-channel-bridge", "profiles", profileId, "state");
+}
+
+async function codexOnPath(): Promise<string | undefined> {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!isAbsolute(directory)) continue;
+    const path = join(directory, process.platform === "win32" ? "codex.exe" : "codex");
+    if (await access(path, process.platform === "win32" ? 0 : 1).then(() => true, () => false)) return path;
+  }
+  return undefined;
 }

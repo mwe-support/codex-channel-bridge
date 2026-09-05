@@ -20,6 +20,8 @@ process.on("message", (message: unknown) => {
     void stopAndExit();
   } else if (message.type === "whatsapp_action") {
     void handleWhatsAppAction(message);
+  } else if (message.type === "model_action") {
+    void handleModelAction(message);
   } else {
     void handleCodexCircuitReset(message);
   }
@@ -120,10 +122,10 @@ function classifyWhatsAppActionError(error: unknown): Extract<
   }
   const message = error instanceof Error ? error.message : "";
   if (message.includes("not configured")) {
-    return { code: "channel_account_not_found", message: "WhatsApp Channel Account is not configured" };
+    return { code: "channel_account_not_found", message: "Channel Account is not configured" };
   }
   if (message.includes("live work")) {
-    return { code: "channel_account_busy", message: "WhatsApp Channel Account has live work" };
+    return { code: "channel_account_busy", message: "Channel Account has live work" };
   }
   if (message.includes("revocation is uncertain")) {
     return { code: "auth_revoke_uncertain", message: "WhatsApp authentication revocation is uncertain" };
@@ -134,7 +136,7 @@ function classifyWhatsAppActionError(error: unknown): Extract<
   if (message.startsWith("WhatsApp pairing ")) {
     return { code: "action_failed", message };
   }
-  return { code: "action_failed", message: "WhatsApp Channel Account action failed" };
+  return { code: "action_failed", message: "Channel Account action failed" };
 }
 
 async function send(message: WorkerToSupervisorMessage): Promise<void> {
@@ -142,4 +144,18 @@ async function send(message: WorkerToSupervisorMessage): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     process.send!(message, (error) => (error ? reject(error) : resolve()));
   });
+}
+
+async function handleModelAction(message: Extract<import("./worker-ipc.js").SupervisorToWorkerMessage, { type: "model_action" }>): Promise<void> {
+  try {
+    if (!worker || stopping) throw new Error("Profile unavailable");
+    const result = await worker.executeModelAction(message.action);
+    await send({ type: "model_action_result", requestId: message.requestId, result });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "";
+    const safe = /^(Invalid model|Thread is outside|Model is absent|Reasoning effort is unsupported|Unsupported native capability:|Native user configuration layer)/.test(detail);
+    await send({ type: "model_action_error", requestId: message.requestId, error: {
+      code: "model_action_failed", message: safe ? detail : "Native model operation failed; check Profile readiness, authentication and native configuration version, then retry"
+    } }).catch(() => undefined);
+  }
 }

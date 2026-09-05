@@ -75,8 +75,9 @@ preserve configuration and Profile-owned data, and switch versions atomically.
 Treat a missing Node.js or Codex CLI as an actionable prerequisite failure;
 never turn the Bridge installer into a package-manager bootstrapper for Codex.
 
-Channel commands for model and reasoning selection must project into native
-App Server model discovery and Thread settings. Do not hard-code Codex model or
+CLI, Dashboard, and Channel operations for model and reasoning selection must
+project into native App Server discovery and settings with an explicit scope.
+Thread selection must use native Thread settings. Do not hard-code Codex model or
 reasoning-effort catalogs, modify Profile-wide Codex configuration as a Thread
 setting, or persist a competing Bridge-side selection.
 
@@ -196,6 +197,27 @@ explicit safe contract. Changes to Workspace, Codex home, Channel Account, or
 App Server environment require that Profile's bounded drain and restart; do not
 promise universal hot reload.
 
+## Unified Bridge CLI
+
+Treat the `bridge` CLI as a first-class, complete host-local administration
+interface. Cover initialization, configuration, service registration and
+lifecycle, deployment/Profile status, Dashboard launch, Channel Account setup
+and authentication, and native Codex model/reasoning selection. Before adding
+or changing an operator-facing feature, read FR-013 in
+`docs/feature-requirements.md` and its Chinese counterpart. Add its CLI operation,
+help, documentation, and relevant acceptance checks in the same feature slice;
+future settings extend this interface when their behavior is implemented.
+
+Organize explicit commands by domain: `setup`, `config`, `service`, `profile`,
+`channel`, `model`, and the existing maintenance groups; retain `dashboard`,
+`status`, `doctor`, and `supervisor run`. Keep existing commands compatible.
+Interactive prompts and scriptable commands must invoke the same validated
+operations as the Dashboard through the authoritative control plane where
+applicable. Offline setup and OS service registration remain host-local edges.
+Use consistent target selection, `--help`, structured `--json` results where
+appropriate, and actionable nonzero failures. Scripts must not hang on prompts;
+preserve each operation's explicit confirmation and no-echo secret contract.
+
 Provide `bridge setup quick` and `bridge setup full` as interactive, host-local
 configuration entry points. Quick setup asks only for values that cannot be
 derived safely and uses the schema defaults; full setup exposes every supported
@@ -204,6 +226,26 @@ field. Both must generate the same canonical `config.yaml` shape accepted by
 path, preview exact filesystem and service changes, and require confirmation
 before applying them. They are presentation over the existing configuration
 and control-plane interfaces, not a second configuration system.
+
+Offer optional service registration and startup from setup using the same
+implementation as `bridge service install`. Provide service `start`, `stop`,
+`restart`, `status`, and `uninstall`; retain one foreground Supervisor per
+deployment and the existing bounded-drain contract. Preview the service backend,
+runtime identity, exact paths, startup policy, and required permissions before
+registration. Have the user authorize privileged platform operations explicitly;
+preserve the selected identity, Profile paths, and completed configuration if
+elevation is declined. A Windows SCM request must not silently become a login
+task. Uninstall removes registration while preserving Profile data and Codex
+home. Verify service state separately from Supervisor liveness and Profile
+readiness before reporting success.
+
+Expose Channel Account configuration through canonical configuration validation
+and apply, with pairing and secret operations using their existing contracts.
+Model commands discover choices from the selected Profile's App Server and
+identify whether they target one Thread or native defaults in that Profile's
+Codex home. Use capability-verified native operations for that scope; report
+unsupported operations explicitly. Never create a parallel settings store or
+use a Profile default change to implement a Thread setting.
 
 ## Channel Contracts
 

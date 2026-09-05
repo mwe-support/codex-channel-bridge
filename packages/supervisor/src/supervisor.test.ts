@@ -51,6 +51,7 @@ class FakeRuntime implements ProfileRuntime {
     return { kind: "connected" as const };
   }
 
+  async executeModelAction(): Promise<never> { throw new Error("Model action not configured in test runtime"); }
   async resetCodexCircuit() { return { kind: "reset" as const }; }
 
   health(): ProfileHealth {
@@ -313,7 +314,8 @@ test("runs Profile maintenance only behind a stopped migration boundary", async 
       async executeWhatsAppAccountAction(): Promise<never> {
         throw new Error("not configured in this test");
       },
-      async resetCodexCircuit() { return { kind: "reset" as const }; },
+      async executeModelAction(): Promise<never> { throw new Error("Model action not configured in test runtime"); },
+  async resetCodexCircuit() { return { kind: "reset" as const }; },
       health: () => ({ ...current }),
       subscribe(listener) {
         listeners.add(listener);

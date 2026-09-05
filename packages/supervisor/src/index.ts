@@ -22,3 +22,6 @@ export type {
 } from "@codex-channel-bridge/profile-worker";
 export { ForkedProfileRuntimeFactory, ProfileRuntimeActionError } from "./profile-runtime.js";
 export type { ProfileRuntime, ProfileRuntimeFactory } from "./profile-runtime.js";
+
+export { isModelAction } from "@codex-channel-bridge/profile-worker";
+export type { ModelAction } from "@codex-channel-bridge/profile-worker";

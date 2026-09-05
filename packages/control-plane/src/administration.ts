@@ -17,6 +17,7 @@ import {
   type ProfileMigrationPlan
 } from "@codex-channel-bridge/profile-store";
 import {
+  isModelAction,
   ProfileRuntimeActionError,
   type Supervisor,
   type WhatsAppChannelAccountEvent
@@ -121,6 +122,17 @@ export class SupervisorAdministration implements AdministrationHandler {
     emitEvent: (event: WhatsAppChannelAccountEvent) => Promise<void> = async () => undefined
   ): Promise<unknown> {
     this.#expirePlans();
+    if (request.method === "model/execute") {
+      const params = asRecord(request.params);
+      if (!params || Object.keys(params).some(key => !["profileId", "action"].includes(key)) || typeof params.profileId !== "string" || !params.profileId || !isModelAction(params.action)) {
+        throw new AdministrationError("invalid_params", "model/execute requires profileId and a valid scoped action");
+      }
+      try { return await this.#supervisor.executeModelAction(params.profileId, params.action); }
+      catch (error) {
+        if (error instanceof ProfileRuntimeActionError) throw new AdministrationError(error.code, error.message);
+        throw new AdministrationError("model_action_failed", "Profile native model operation is unavailable");
+      }
+    }
     if (request.method === "status/get") return this.#supervisor.status();
     if (request.method === "doctor/run") return this.#doctor(request.params);
     if (request.method === "backup/prepare") return this.#prepareBackup(request.params);

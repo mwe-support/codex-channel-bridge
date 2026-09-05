@@ -26,6 +26,7 @@ import type { SupportBundlePlan } from "./support-bundle.js";
 export const CONTROL_PROTOCOL_VERSION = 1 as const;
 
 export type AdministrationMethod =
+  | "model/execute"
   | "status/get"
   | "doctor/run"
   | "backup/prepare"
@@ -124,6 +125,7 @@ export interface ProfilePurgePlanResult extends ProfilePurgePreview {
 }
 
 export interface AdministrationResults {
+  readonly "model/execute": Record<string, unknown>;
   readonly "status/get": SupervisorStatus;
   readonly "doctor/run": OperationsInspection;
   readonly "backup/prepare": BackupPrepareResult;
@@ -162,7 +164,7 @@ export function isAdministrationRequest(value: unknown): value is Administration
     value.version === CONTROL_PROTOCOL_VERSION &&
     typeof value.id === "string" &&
     value.id.length > 0 &&
-    (value.method === "status/get" ||
+    (value.method === "model/execute" || value.method === "status/get" ||
       value.method === "doctor/run" ||
       value.method === "backup/prepare" ||
       value.method === "backup/finish" ||

@@ -76,7 +76,7 @@ export class ChannelIngressController {
     this.#admission = admission;
   }
 
-  public accept(input: ChannelIngressInput): ChannelIngressDecision {
+  public accept(input: ChannelIngressInput, accountReady = true): ChannelIngressDecision {
     const alreadyExpired = this.#takeExpired(
       this.#admission.expire(input.event.message.observedAtMs)
     );
@@ -89,6 +89,9 @@ export class ChannelIngressController {
     }
     const parsed = parseChannelText(input.event.message.text);
     if (parsed.kind === "command") {
+      if (!accountReady && !["help", "status", "approval.respond", "turn.stop"].includes(parsed.command.kind)) {
+        return { disposition: { kind: "rejected", reason: "unavailable" }, expired: alreadyExpired };
+      }
       return {
         disposition: { ...parsed, work: input },
         expired: alreadyExpired
@@ -97,6 +100,8 @@ export class ChannelIngressController {
     if (parsed.kind === "invalid_command") {
       return { disposition: parsed, expired: alreadyExpired };
     }
+
+    if (!accountReady) return { disposition: { kind: "rejected", reason: "unavailable" }, expired: alreadyExpired };
 
     const work =
       parsed.text === input.event.message.text

@@ -5,7 +5,7 @@ import { parseConfiguration } from "@codex-channel-bridge/config";
 import { collectConfiguration } from "./setup.js";
 
 test("quick setup asks only for routing essentials and keeps advanced defaults", async () => {
-  const answers = ["", "", "", "both", "", "open", "", "deny"];
+  const answers = ["", "", "", process.execPath, "both", "", "open", "", "deny"];
   const raw = await collectConfiguration({
     question: async () => answers.shift() ?? ""
   }, "quick");
@@ -19,7 +19,7 @@ test("quick setup asks only for routing essentials and keeps advanced defaults",
 });
 
 test("full setup exposes advanced Profile and Supervisor settings", async () => {
-  const raw = await collectConfiguration({ question: async () => "" }, "full");
+  const raw = await collectConfiguration({ question: async label => label.startsWith("Administrator-supplied") ? process.execPath : "" }, "full");
   const candidate = parseConfiguration(JSON.stringify(raw));
   const profile = candidate.configuration.profiles.primary!;
   assert.equal(profile.admission.queueCapacity, 16);
@@ -30,6 +30,7 @@ test("full setup exposes advanced Profile and Supervisor settings", async () => 
 
 test("full setup can retain an explicit operator concurrency cap", async () => {
   const raw = await collectConfiguration({ question: async (label) =>
+    label.startsWith("Administrator-supplied") ? process.execPath :
     label.startsWith("Concurrent Turns") ? "limited" :
       label.startsWith("Maximum active Turns") ? "2" : ""
   }, "full");

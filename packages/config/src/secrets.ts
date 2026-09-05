@@ -3,9 +3,26 @@ import { lstat, open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
 import { assertWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+import { updateOwnerOnlyFile } from "./atomic-file.js";
 
 const MAX_SECRET_FILE_BYTES = 1024 * 1024;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export async function writeProfileSecret(secretsFile: string, name: string, value: string): Promise<void> {
+  if (!ENVIRONMENT_NAME.test(name)) invalidReference();
+  if (!value || /[\0\r\n]/u.test(value) || Buffer.byteLength(value, "utf8") > MAX_SECRET_FILE_BYTES) malformedFile();
+  try {
+    await updateOwnerOnlyFile(secretsFile, (previous) => {
+      const values = previous === null ? new Map<string, string>() : parseDotenv(previous);
+      values.set(name, value);
+      // The dotenv reader deliberately does not interpret escapes or interpolation.
+      return [...values].map(([key, contents]) => `${key}="${contents}"`).join("\n") + "\n";
+    });
+  } catch (error) {
+    if (error instanceof SecretResolutionError) throw error;
+    throw new SecretResolutionError("insecure_secret_file", "Secret could not be saved securely; check file permissions and writer locks");
+  }
+}
 
 export type SecretResolutionReason =
   | "invalid_secret_reference"

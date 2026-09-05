@@ -4,7 +4,8 @@ export {
   loadConfiguration,
   parseConfiguration
 } from "./config.js";
-export { SecretResolutionError, SecretResolver } from "./secrets.js";
+export { SecretResolutionError, SecretResolver, writeProfileSecret } from "./secrets.js";
+export { planConfigurationEdit, applyConfigurationEdit, type ConfigurationEdit } from "./configuration-edit.js";
 export type {
   SecretResolutionReason,
   SecretResolverOptions

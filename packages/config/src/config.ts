@@ -197,7 +197,7 @@ export function formatConfiguration(raw: unknown): string {
   return text;
 }
 
-async function validateProfileDirectories(configuration: BridgeConfiguration): Promise<void> {
+export async function validateProfileDirectories(configuration: BridgeConfiguration): Promise<void> {
   const issues: string[] = [];
   await Promise.all(
     Object.values(configuration.profiles).map(async (profile) => {

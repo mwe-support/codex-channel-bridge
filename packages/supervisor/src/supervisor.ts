@@ -1,3 +1,4 @@
+import type { ModelAction } from "@codex-channel-bridge/profile-worker";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
@@ -180,6 +181,14 @@ export class Supervisor extends EventEmitter {
     const runtime = this.#runtimes.get(profileId);
     if (!runtime) throw new Error("Profile worker is unavailable");
     return runtime.executeWhatsAppAccountAction(channelAccountId, action, onEvent);
+  }
+
+  public executeModelAction(profileId: string, action: ModelAction): Promise<Record<string, unknown>> {
+    if (this.#liveness !== "live") throw new Error("Supervisor is not live");
+    if (!this.#candidate?.configuration.profiles[profileId]?.enabled) throw new Error("Profile is not enabled");
+    const runtime = this.#runtimes.get(profileId);
+    if (!runtime) throw new Error("Profile worker is unavailable");
+    return runtime.executeModelAction(action);
   }
 
   public executeCodexCircuitReset(profileId: string): Promise<CodexCircuitResetResult> {

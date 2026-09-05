@@ -1,3 +1,4 @@
+import { administerModel, type ModelAction } from "./model-administration.js";
 import { EventEmitter } from "node:events";
 import { ChannelAnswerStreams, type AnswerStreamStore } from "./channel-answer-streams.js";
 import { randomUUID } from "node:crypto";
@@ -215,6 +216,7 @@ export class ProfileWorker extends EventEmitter {
   #answerStreams?: ChannelAnswerStreams;
   #inboundPipeline?: InboundPipeline;
   readonly #channelIngress: ChannelIngressController;
+  readonly #channelActions = new Set<string>();
   readonly #channelAdapters = new Map<string, ChannelAdapter>();
   readonly #whatsappAccounts = new Map<string, ManagedWhatsAppChannelAccount>();
   readonly #channelAdapterReadiness = new Map<string, ReturnType<NonNullable<ChannelAdapter["readiness"]>>>();
@@ -576,41 +578,88 @@ export class ProfileWorker extends EventEmitter {
     }
     const configured = this.#config.channelAccounts?.[channelAccountId];
     const account = this.#whatsappAccounts.get(channelAccountId);
-    if (!configured?.enabled || configured.provider !== "whatsapp" || !account) {
-      throw new Error("WhatsApp Channel Account is not configured in this Profile");
+    if (!configured?.enabled || (configured.provider === "whatsapp" && !account)) {
+      throw new Error("Channel Account is not configured in this Profile");
     }
-    await this.#requireChannelAccountQuiescent(channelAccountId);
-    const store = this.#store;
-    if (!store) throw new ProfileUnavailableError(this.health());
-    const correlationId = randomUUID();
-    const auditAction = `whatsapp_${action.kind}`;
-    await store.appendAuditRecord({
-      correlationId,
-      action: auditAction,
-      result: "started",
-      targetReference: channelAccountId,
-      atMs: Date.now()
-    });
+    if (configured.provider === "qq" && action.kind !== "connect" && action.kind !== "disconnect") {
+      throw new Error("QQ credentials must be rotated or revoked in the Tencent console");
+    }
+    if (this.#channelActions.has(channelAccountId)) throw new Error("Channel Account has live work in a lifecycle operation");
+    this.#channelActions.add(channelAccountId);
     try {
-      const result = await account.execute(action, onEvent);
+      await this.#requireChannelAccountQuiescent(channelAccountId);
+      const store = this.#store;
+      if (!store) throw new ProfileUnavailableError(this.health());
+      const correlationId = randomUUID();
+      const auditAction = `${configured.provider}_${action.kind}`;
       await store.appendAuditRecord({
         correlationId,
         action: auditAction,
-        result: result.kind,
+        result: "started",
         targetReference: channelAccountId,
         atMs: Date.now()
       });
-      this.#channelAdapterReadiness.set(channelAccountId, account.readiness());
+      try {
+        const result = configured.provider === "whatsapp"
+          ? await account!.execute(action, onEvent)
+          : await this.#executeQQConnectionAction(channelAccountId, action.kind === "connect");
+        await store.appendAuditRecord({
+          correlationId,
+          action: auditAction,
+          result: result.kind,
+          targetReference: channelAccountId,
+          atMs: Date.now()
+        });
+        if (account) this.#channelAdapterReadiness.set(channelAccountId, account.readiness());
+        this.#refreshChannelAdapterHealth();
+        return result;
+      } catch (error) {
+        await store.appendAuditRecord({
+          correlationId,
+          action: auditAction,
+          result: "failed",
+          targetReference: channelAccountId,
+          atMs: Date.now()
+        });
+        throw error;
+      }
+    } finally { this.#channelActions.delete(channelAccountId); }
+  }
+
+  async #executeQQConnectionAction(channelAccountId: string, connect: boolean): Promise<WhatsAppChannelAccountResult> {
+    const adapter = this.#channelAdapters.get(channelAccountId);
+    if (connect && this.#channelAdapterReadiness.get(channelAccountId) === "ready" && adapter?.readiness?.() === "ready") return { kind: "connected" };
+    try {
+      if (adapter) await withRejectingTimeout(adapter.stop(), CHANNEL_ADAPTER_START_TIMEOUT_MS, "Channel Adapter stop timed out");
+    } catch (error) {
+      this.#channelAdapterReadiness.set(channelAccountId, "degraded");
       this.#refreshChannelAdapterHealth();
+      throw error;
+    }
+    this.#detachChannelAdapter(channelAccountId);
+    if (connect && !await this.#startChannelAdapters(channelAccountId)) {
+      this.#refreshChannelAdapterHealth();
+      throw new Error("QQ Channel Account connection failed");
+    }
+    if (!connect) this.#channelAdapterReadiness.set(channelAccountId, "stopped");
+    this.#refreshChannelAdapterHealth();
+    return { kind: connect ? "connected" : "disconnected" };
+  }
+
+  public async executeModelAction(action: ModelAction): Promise<Record<string, unknown>> {
+    const runtime = this.#runtime;
+    const coordinator = this.#turnCoordinator;
+    if (!runtime || !coordinator || this.#stopping || !["ready", "degraded"].includes(this.#health.readiness)) {
+      throw new ProfileUnavailableError(this.health());
+    }
+    const correlationId = randomUUID();
+    if (action.kind === "set") await this.#store?.appendAuditRecord({ correlationId, action: `model_${action.scope}_set`, result: "started", targetReference: action.threadId ?? this.#config.profileId, atMs: Date.now() });
+    try {
+      const result = await administerModel(runtime, coordinator, this.#probe?.optionalMethods ?? [], this.#config.workspace, action);
+      if (action.kind === "set") await this.#store?.appendAuditRecord({ correlationId, action: `model_${action.scope}_set`, result: result.verified === true ? "succeeded" : "not_verified", targetReference: action.threadId ?? this.#config.profileId, atMs: Date.now() });
       return result;
     } catch (error) {
-      await store.appendAuditRecord({
-        correlationId,
-        action: auditAction,
-        result: "failed",
-        targetReference: channelAccountId,
-        atMs: Date.now()
-      });
+      if (action.kind === "set") await this.#store?.appendAuditRecord({ correlationId, action: `model_${action.scope}_set`, result: "failed", targetReference: action.threadId ?? this.#config.profileId, atMs: Date.now() });
       throw error;
     }
   }
@@ -794,9 +843,9 @@ export class ProfileWorker extends EventEmitter {
     );
   }
 
-  async #startChannelAdapters(): Promise<boolean> {
+  async #startChannelAdapters(onlyAccountId?: string): Promise<boolean> {
     const accounts = Object.values(this.#config.channelAccounts ?? {}).filter(
-      (account) => account.enabled
+      (account) => account.enabled && (!onlyAccountId || account.id === onlyAccountId)
     );
     if (accounts.length === 0) return true;
 
@@ -973,7 +1022,8 @@ export class ProfileWorker extends EventEmitter {
       accessPolicy: account.accessPolicy,
       groupThreadScope: account.groupThreadScope
     };
-    const decision = this.#channelIngress.accept(input);
+    const decision = this.#channelIngress.accept(input,
+      !this.#channelActions.has(channelAccountId) && this.#channelAdapterReadiness.get(channelAccountId) === "ready");
     this.#emitExpiredChannelWork(decision.expired);
     this.emit("channelIngress", { archiveRecordId, disposition: decision.disposition });
     if (decision.disposition.kind === "start") {
@@ -1507,6 +1557,8 @@ export class ProfileWorker extends EventEmitter {
       this.#health.reason === "channel_adapter_unavailable"
     ) {
       this.#transition("ready", null);
+    } else {
+      this.#transition(this.#health.readiness, this.#health.reason);
     }
   }
 

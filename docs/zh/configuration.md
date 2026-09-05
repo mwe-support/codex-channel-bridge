@@ -8,7 +8,7 @@
 
 ## 交互式设置
 
-`0.2.0-rc.1` 提供两种交互式入口：
+`0.2.0-rc.1` 引入了两种交互式入口；Next 扩展参见 [CLI 管理](cli.md)：
 
 ```sh
 bridge setup quick
@@ -23,9 +23,10 @@ Admission、Approval、Media、Supervisor 时序、群 Thread Scope 与默认拒
 
 CLI 会先展示完整且不含 Credential Value 的候选配置，确认默认值为 `no`；它拒绝
 覆盖已有配置，以 Owner-only 权限创建 Profile State Directory，并原子写入新配置。
-QQ 快速设置使用 `env:QQ_BOT_APP_ID` 和 `env:QQ_BOT_APP_SECRET`，向导不会询问或
-写入真实 Credential Value。WhatsApp Authentication 仍由后续 Host-local Pairing
-命令创建。
+QQ 快速设置使用 `env:QQ_BOT_APP_ID` 和 `env:QQ_BOT_APP_SECRET`。Next 中，确认配置后
+可通过隐藏密钥输入写入这些值，并可选择使用共享 CLI 实现注册/启动服务；凭据仍不进入
+YAML。WhatsApp 认证通过本地配对命令创建。后续管理可使用 `config get/set/edit`、
+限定目标的 `profile/channel set` 和 `secret set`；保存配置后仍需显式 `config apply`。
 
 ## Schema
 

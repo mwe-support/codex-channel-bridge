@@ -1,3 +1,4 @@
+import { isModelAction, type ModelAction } from "./model-administration.js";
 import type { ProfileHealth } from "@codex-channel-bridge/core";
 import type {
   WhatsAppChannelAccountAction,
@@ -8,6 +9,7 @@ import type {
 import type { ProfileWorkerConfig } from "./profile-worker.js";
 
 export type SupervisorToWorkerMessage =
+  | { readonly type: "model_action"; readonly requestId: string; readonly action: ModelAction }
   | {
       readonly type: "start";
       readonly config: ProfileWorkerConfig;
@@ -27,6 +29,8 @@ export type SupervisorToWorkerMessage =
     };
 
 export type WorkerToSupervisorMessage =
+  | { readonly type: "model_action_result"; readonly requestId: string; readonly result: Record<string, unknown> }
+  | { readonly type: "model_action_error"; readonly requestId: string; readonly error: { readonly code: string; readonly message: string } }
   | {
       readonly type: "health";
       readonly health: ProfileHealth;
@@ -75,6 +79,7 @@ export type WorkerToSupervisorMessage =
 
 export function isSupervisorToWorkerMessage(value: unknown): value is SupervisorToWorkerMessage {
   if (!isRecord(value)) return false;
+  if (value.type === "model_action") return typeof value.requestId === "string" && value.requestId.length > 0 && isModelAction(value.action);
   if (value.type === "stop") return true;
   if (value.type === "codex_circuit_reset") {
     return typeof value.requestId === "string" && value.requestId.length > 0;
@@ -101,6 +106,8 @@ export function isWorkerToSupervisorMessage(value: unknown): value is WorkerToSu
       typeof value.health.readiness === "string";
   }
   if (typeof value.requestId !== "string" || value.requestId.length === 0) return false;
+  if (value.type === "model_action_result") return isRecord(value.result);
+  if (value.type === "model_action_error") return isRecord(value.error) && typeof value.error.code === "string" && typeof value.error.message === "string";
   if (value.type === "codex_circuit_reset_result") {
     return isRecord(value.result) && value.result.kind === "reset";
   }

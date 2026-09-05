@@ -1770,3 +1770,62 @@ async function eventually(predicate: () => boolean): Promise<void> {
   }
   assert.fail("condition did not become true");
 }
+
+test("QQ connection administration preserves sibling adapters and Codex while respecting pending delivery", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const created = new Map<string, FakeAdapter[]>();
+  const common = { provider: "qq" as const, enabled: true, epochId: "epoch-1", appId: "env:APP_ID", appSecret: "env:APP_SECRET", groupThreadScope: "conversation" as const,
+    accessPolicy: { privateChats: { mode: "deny" as const, allow: [] }, groupChats: { mode: "deny" as const, allow: [] }, groupParticipants: { mode: "deny" as const, allow: [] } } };
+  const worker = new ProfileWorker({ profileId: "profile-a", workspace: "/tmp/workspace", codexHome: "/tmp/codex-home", stateDirectory: "/tmp/bridge-state",
+    channelAccounts: { first: { id: "first", ...common }, second: { id: "second", ...common } } }, {
+    ...dependencies(runtime, store), createQQAdapter: options => {
+      const adapter = new FakeAdapter();
+      created.set(options.channelAccountId, [...(created.get(options.channelAccountId) ?? []), adapter]);
+      return adapter;
+    }
+  });
+  await worker.start();
+  try {
+    assert.deepEqual(await worker.executeWhatsAppAccountAction("first", { kind: "disconnect" }), { kind: "disconnected" });
+    assert.equal(created.get("first")![0]!.stopped, true);
+    assert.equal(created.get("second")![0]!.stopped, false);
+    assert.equal(worker.health().channelAccounts?.find(account => account.channelAccountId === "first")?.readiness, "stopped");
+    assert.deepEqual(await worker.executeWhatsAppAccountAction("first", { kind: "connect" }), { kind: "connected" });
+    assert.equal(worker.health().readiness, "ready");
+    assert.equal(created.get("first")!.length, 2);
+    assert.equal(created.get("second")!.length, 1);
+    store.accountOutboxCounts.set("first", { pending: 1, leased: 0, retryWait: 0, accepted: 0, rejected: 0 });
+    await assert.rejects(worker.executeWhatsAppAccountAction("first", { kind: "disconnect" }), /live work/);
+    assert.equal(created.get("first")![1]!.stopped, false);
+    await assert.rejects(worker.executeWhatsAppAccountAction("first", { kind: "logout" }), /Tencent console/);
+    assert.equal(store.auditRecords.filter(record => record.action === "qq_disconnect").length, 2);
+  } finally { await worker.stop(); }
+});
+
+test("account lifecycle does not admit inputs arriving during quiescence checks or after disconnect", async () => {
+  const runtime = new FakeRuntime();
+  const store = new FakeStore();
+  const adapter = new FakeAdapter();
+  const worker = new ProfileWorker({ profileId: "profile-a", workspace: "/tmp/workspace", codexHome: "/tmp/codex-home", stateDirectory: "/tmp/bridge-state",
+    channelAccounts: { "qq-test": { id: "qq-test", provider: "qq", enabled: true, epochId: "epoch-1", appId: "env:APP_ID", appSecret: "env:APP_SECRET", groupThreadScope: "conversation",
+      accessPolicy: { privateChats: { mode: "open", allow: [] }, groupChats: { mode: "deny", allow: [] }, groupParticipants: { mode: "deny", allow: [] } } } } },
+    { ...dependencies(runtime, store), createQQAdapter: () => adapter });
+  await worker.start();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const originalCounts = store.outboxCountsForChannelAccount.bind(store);
+  store.outboxCountsForChannelAccount = async account => { await gate; return originalCounts(account); };
+  const dispositions: string[] = [];
+  worker.on("channelIngress", event => dispositions.push(event.disposition.kind));
+  try {
+    const disconnect = worker.executeWhatsAppAccountAction("qq-test", { kind: "disconnect" });
+    await adapter.receive(inboundEvent(1, "must not execute during lifecycle"));
+    release();
+    await disconnect;
+    await adapter.receive(inboundEvent(2, "must not execute after disconnect"));
+    assert.deepEqual(dispositions, ["rejected", "rejected"]);
+    assert.equal(store.messages.length, 2);
+    assert.equal(store.transitions.length, 0);
+  } finally { release(); await worker.stop(); }
+});

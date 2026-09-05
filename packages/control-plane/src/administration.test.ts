@@ -59,6 +59,7 @@ class ReadyRuntime implements ProfileRuntime {
     return { kind: "connected" as const };
   }
 
+  async executeModelAction(): Promise<never> { throw new Error("Model action not configured in test runtime"); }
   async resetCodexCircuit() { return { kind: "reset" as const }; }
 
   health(): ProfileHealth {

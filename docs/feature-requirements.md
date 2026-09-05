@@ -48,6 +48,75 @@ behavior. No separate issue database or requirements service is needed.
 | FR-010 | Automatic output-file delivery to the originating conversation | awaiting-acceptance | `0.2.0-rc.1` |
 | FR-011 | Independent delivery per Channel Account | awaiting-acceptance | Next / unassigned |
 | FR-012 | Codex compatibility from actual capabilities | awaiting-acceptance | Next / unassigned |
+| FR-013 | Unified Bridge administration CLI | in-progress | Next / unassigned |
+
+## FR-013 — Unified Bridge administration CLI
+
+- Updated: 2026-09-05. Status: `in-progress`; release: Next / unassigned.
+- User expanded service installation into a complete Bridge CLI for initial
+  setup, service registration/status, Dashboard launch, Channel configuration,
+  model settings, and future administration, and explicitly requested this as
+  an AGENTS.md requirement. The user authorized implementation covering current
+  core functionality and actual terminal-based testing and acceptance.
+- Command families: retain `setup quick/full`, `config`, `profile`, `channel`,
+  `dashboard`, `status`, `doctor`, existing maintenance commands, and foreground
+  `supervisor run`; add `service` lifecycle and `model` discovery/query/selection.
+  Extend existing groups instead of adding a competing settings CLI. Future
+  operator features include their CLI, help, docs and acceptance in the same slice.
+- Interaction: terminal prompts, explicit scriptable commands and Dashboard
+  actions share validated operations and the authoritative control plane where
+  applicable. Offline setup and service registration remain host-local edges.
+  Use consistent targets/help, structured JSON where appropriate, actionable
+  nonzero errors, and no unattended prompts. Existing destructive confirmations
+  and no-echo secret paths remain authoritative.
+- Channel configuration uses canonical configuration/check/apply and the
+  existing authentication lifecycle; it cannot directly rewrite adapter or
+  Profile databases. Model/reasoning choices come from the selected Profile's
+  native App Server. Distinguish a target Thread from native defaults in that
+  Profile's Codex home; capability-check each operation, preserve native state,
+  and report unsupported capabilities without a Bridge-side settings copy.
+- Native evidence: [App Server model discovery and configuration](https://learn.chatgpt.com/docs/app-server#models),
+  existing [Thread model ADR](adr/0023-project-model-commands-into-native-thread-settings.md).
+- Ownership: Bridge CLI/platform packaging registers one Supervisor with the
+  operating-system service manager. Codex installation and upgrades remain
+  administrator-owned; service choice is deployment metadata, not a competing
+  Profile configuration system.
+- Proposed surface: `bridge setup quick/full` delegates its optional service
+  step to the same implementation as `bridge service install`; expose `start`,
+  `stop`, `restart`, `status`, and `uninstall`. Preserve the existing foreground
+  `bridge supervisor run`; do not add a second daemon or gateway runtime.
+- Windows: preview the service identity, verified release/executable paths,
+  config and control endpoint, startup policy, and required permissions. Request
+  administrator authorization only for operations that require it. Registration
+  must not silently run the Supervisor as LocalSystem, reuse the elevated
+  administrator's Codex home, or copy credentials. Permission denial preserves
+  completed setup and reports service registration as incomplete.
+- Boundaries: registration and startup are distinct; status separates service
+  registration/process state, Supervisor liveness, and Profile readiness.
+  Stop/restart use bounded drain. Uninstall removes service registration only,
+  preserving configuration, Profile data, authentication, Workspace and Codex home.
+  A Windows Scheduled Task must not be reported as an SCM service.
+- Acceptance: every requested command family is discoverable and usable from
+  the terminal; interactive and scripted forms produce equivalent authorized
+  results; targets cannot cross Profile boundaries; invalid/stale configuration,
+  secret handling and native-model capability failures preserve their contracts.
+  Dashboard launch preserves its loopback/authentication contract. Existing
+  commands remain compatible. Setup and direct CLI produce the same service definition; repeated
+  install detects existing ownership/configuration and does not overwrite an
+  unrelated service; cancellation and permission denial preserve prior state;
+  real target install/start/status/drain/restart/uninstall and child cleanup pass.
+  Windows file-symlink test prerequisites remain a separate acceptance gate.
+- Current evidence: setup only writes canonical configuration; installers select
+  verified Bridge releases; platform packaging has static service examples and
+  Windows IPC/ACL helpers, but no `bridge service` command. Dashboard launch and
+  several Channel/maintenance commands exist; native Thread model operations
+  exist in the worker, but lack a unified host-local model CLI. AGENTS.md now
+  records this first-class CLI contract. No runtime or system settings changed.
+- Remaining work: implement the missing command/control-plane surfaces and
+  shared interactive operations, then run real platform lifecycle and applicable
+  Channel acceptance. Decide Windows service identity/provisioning and elevation
+  UX during that slice; a separate user-login mode is still only a proposal.
+  See [upstream comparison](research/service-installation-cli-20260905.md).
 
 ## FR-011 — Independent delivery per Channel Account
 

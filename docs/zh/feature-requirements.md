@@ -43,6 +43,53 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-010 | 自动输出文件投递到原会话 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
 | FR-011 | 各 Channel Account 独立投递 | awaiting-acceptance（待验收） | Next / unassigned |
 | FR-012 | 按实际能力判断 Codex 兼容性 | awaiting-acceptance（待验收） | Next / unassigned |
+| FR-013 | 统一 Bridge 管理 CLI | in-progress（开发中） | Next / unassigned |
+
+## FR-013 — 统一 Bridge 管理 CLI
+
+- 更新：2026-09-05。状态：`in-progress`；版本：Next / unassigned。
+- 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
+  启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
+  用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
+- 命令分组：保留 `setup quick/full`、`config`、`profile`、`channel`、`dashboard`、
+  `status`、`doctor`、既有维护命令与前台 `supervisor run`；增加 `service` 生命周期
+  和 `model` 发现/查询/选择。扩展现有分组，不另建设置 CLI。未来管理功能在同一开发
+  阶段同步提供 CLI、帮助、文档和验收。
+- 交互：终端提示、显式脚本命令及 Dashboard 操作共用经过校验的操作，并在适用时通过
+  权威控制面执行。离线初始化及服务注册仍是宿主本地操作。统一目标选择和帮助，适当
+  提供 JSON 输出，以非零退出码报告可操作错误，无人值守执行不等待交互输入。
+  既有破坏性确认及无回显凭据契约仍然有效。
+- Channel 配置通过规范配置/校验/应用及既有认证生命周期完成，不直接改写适配器或
+  Profile 数据库。模型和思考强度来自选定 Profile 的原生 App Server；明确区分目标
+  Thread 和该 Profile Codex home 中的原生默认值。逐项验证能力，保留原生状态；
+  不支持时明确报告，不建立 Bridge 设置副本。
+- 原生证据：[App Server 模型发现及配置](https://learn.chatgpt.com/docs/app-server#models)、
+  既有 [Thread 模型 ADR](adr/0023-project-model-commands-into-native-thread-settings.md)。
+- 归属：Bridge CLI/平台打包向操作系统服务管理器注册一个 Supervisor。Codex 的
+  安装与升级仍由管理员负责；服务选择属于部署元数据，不另建 Profile 配置系统。
+- 建议入口：`bridge setup quick/full` 的可选服务步骤与 `bridge service install`
+  共用实现；提供 `start`、`stop`、`restart`、`status`、`uninstall`。保留现有前台
+  `bridge supervisor run`，不新增第二个守护进程或 gateway 运行时。
+- Windows：预览服务身份、已验证的发行版/可执行文件路径、配置和控制端点、启动策略
+  及所需权限。只对确实需要权限的操作请求管理员授权。注册不得静默把 Supervisor
+  改为 LocalSystem、改用提权管理员的 Codex home 或复制凭据。拒绝授权时保留已完成
+  的配置，并明确报告服务尚未注册。
+- 边界：注册与启动分开；状态区分服务注册/进程状态、Supervisor 存活与 Profile
+  就绪。停止/重启遵守有界排空；卸载只删除服务注册，保留配置、Profile 数据、认证、
+  Workspace 与 Codex home。Windows 计划任务不得报告为 SCM 系统服务。
+- 验收：所有请求的命令分组可发现、可在终端使用；交互式和脚本式入口产生等价的授权
+  结果，操作目标不越过 Profile 边界；无效/过期配置、凭据处理和原生模型能力缺失遵守
+  各自契约。Dashboard 启动保留回环绑定及认证契约，既有命令保持兼容。
+  向导和直接 CLI 生成相同服务定义；重复安装识别已有归属/配置，不覆盖无关
+  服务；取消和权限不足保留原状态；在真实目标机通过安装、启动、状态、排空、重启、
+  卸载与子进程清理验收。Windows 文件符号链接测试的前置条件仍是独立验收项。
+- 当前证据：setup 仅写入规范配置；安装器选择校验后的 Bridge 发行版；平台打包包含
+  静态服务示例及 Windows IPC/ACL 辅助程序，但还没有 `bridge service` 命令。
+  已有 Dashboard 启动与部分 Channel/维护命令；worker 已有原生 Thread 模型操作，
+  尚缺统一宿主本地模型 CLI。AGENTS.md 已明确一等 CLI 要求，未修改运行时代码或系统设置。
+- 后续：实现缺少的命令/控制面接口与共享交互操作，再完成真实平台生命周期和相关
+  Channel 验收。Windows 服务身份/配置和提权交互在对应阶段确定；独立的用户登录
+  启动模式仍只是建议。参见[上游对照研究](research/service-installation-cli-20260905.md)。
 
 ## FR-011 — 各 Channel Account 独立投递
 
