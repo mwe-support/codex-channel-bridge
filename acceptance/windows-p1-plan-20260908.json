@@ -89,14 +89,15 @@
     "password_collected": false,
     "file_symlink_executed_in_elevated_context": false,
     "native_scm_lifecycle_completed": false,
-    "reason_code": "service_logon_right_not_verified"
+    "reason_code": "awaiting_existing_window_command",
+    "right_add_user_authorized": true
   },
   "operator_next_step": {
-    "status": "blocked_at_service_logon_prerequisite",
-    "action": "Use the already-open administrator window; ask an administrator to verify the same account's SeServiceLogonRight and absence of effective SeDenyServiceLogonRight. No rights have been granted by this task.",
+    "status": "awaiting_existing_window_command",
+    "action": "Continue in the existing verified administrator window using the prepared authorization-scoped helper. Verify real file symlink, grant only the current account service-logon right if absent, then run the reviewed SCM acceptance. Remove only the newly added right after verified uninstall and unchanged dependencies and rights.",
     "do_not_open_another_window_or_run": true,
     "password_input_needed_now": false,
-    "copyable_read_only_command": "$context = Get-Content -LiteralPath (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/context.json') -Raw | ConvertFrom-Json\n& $context.scriptPath -Mode Plan -BridgeRoot $context.bridgeRoot -NodeExecutable $context.node -CodexExecutable $context.codex",
-    "command_effect": "Display the original reviewed plan only; no service operation and no password prompt."
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-authorized.ps1')",
+    "command_effect": "Authorized single-account right change and reviewed isolated service lifecycle; password remains exclusively in the local CLI hidden terminal prompt."
   }
 }
