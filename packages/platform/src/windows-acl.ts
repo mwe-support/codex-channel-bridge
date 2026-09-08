@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { windowsPowerShellEnvironment } from "./windows-powershell.js";
 
 export type SecurePathKind = "file" | "directory";
 
@@ -39,7 +40,7 @@ function run(action: "secure" | "verify", path: string, kind: SecurePathKind, re
         kind,
         ...(recursive ? ["-Recursive"] : [])
       ],
-      { stdio: ["ignore", "ignore", "pipe"], timeout: 30_000, windowsHide: true }
+      { env: windowsPowerShellEnvironment(), stdio: ["ignore", "ignore", "pipe"], timeout: 30_000, windowsHide: true }
     );
   } catch {
     throw new Error("Windows path ACL is not owner-only");

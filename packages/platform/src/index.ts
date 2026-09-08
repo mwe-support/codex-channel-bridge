@@ -3,3 +3,4 @@ export {
   secureWindowsOwnerOnlyPath,
   type SecurePathKind
 } from "./windows-acl.js";
+export { windowsPowerShellEnvironment } from "./windows-powershell.js";

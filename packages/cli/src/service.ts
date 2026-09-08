@@ -1,4 +1,4 @@
-import { assertWindowsOwnerOnlyPath, secureWindowsOwnerOnlyPath } from "@codex-channel-bridge/platform";
+import { assertWindowsOwnerOnlyPath, secureWindowsOwnerOnlyPath, windowsPowerShellEnvironment } from "@codex-channel-bridge/platform";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, unlink, writeFile } from "node:fs/promises";
@@ -219,7 +219,7 @@ async function windowsService(action: string, name?: string, manifest?: string, 
     if (!systemRoot) { reject(new Error("Windows SystemRoot is unavailable")); return; }
     const child = execFile(join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, "-Action", action,
       ...(name ? ["-Name", name] : []), ...(manifest ? ["-Manifest", manifest] : [])],
-      { windowsHide: true, timeout: 3_700_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      { env: windowsPowerShellEnvironment(), windowsHide: true, timeout: 3_700_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
           const reason = windowsServiceErrorReason(stderr);
           reject(new Error(`Windows SCM ${action} failed (${reason}); inspect the reported stage, native code, privileges and selected identity`, { cause: reason }));

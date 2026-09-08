@@ -136,6 +136,10 @@ Supervisor 的 stdin drain 信号；达到配置超时后由 Job Object 限制�
 已知校验原因保留原名称。先用这些字段定位失败操作，再决定是否重试密码；
 不会输出原始异常、输入、凭据或 manifest 内容。
 
+原生 Windows PowerShell 辅助进程使用自身的默认模块搜索路径，不继承 PowerShell 7
+父进程的 `PSModulePath`。这仅作用于服务、ACL 和控制管道辅助子进程，不改变宿主或
+Profile 的 Codex 环境。
+
 状态分别报告注册、服务进程、Supervisor 存活与 Profile 就绪情况；Supervisor 存活但某个
 Profile 不可用时会如实显示。Stop/restart 等待 Supervisor 退出；卸载保留配置、Profile
 数据、认证、Workspace、Codex home 及已保留的运行日志。日志轮转由平台采集端负责。

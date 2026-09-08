@@ -64,6 +64,12 @@ behavior. No separate issue database or requirements service is needed.
   failure was still opaque. Unexpected SCM failures now report only a fixed
   operation stage and a numeric Win32, HRESULT or process exit code; the CLI
   rejects other stderr content. Native installation retry remains required.
+- The next native report isolated credential conversion failure to inherited
+  PowerShell 7 module paths, before service logon was attempted. All three native
+  Windows PowerShell helper launch sites now omit `PSModulePath` case-insensitively
+  from a child-only environment copy. Parent and Codex environments are unchanged;
+  native credential/module and SCM reruns remain pending. See the
+  [native diagnosis](https://github.com/mwe-support/codex-channel-bridge/blob/14ae5b90c73017d8f0a523a753760689bccfee4e/acceptance/windows-p1-df5377ff-20260908.json).
 - User expanded service installation into a complete Bridge CLI for initial
   setup, service registration/status, Dashboard launch, Channel configuration,
   model settings, and future administration, and explicitly requested this as

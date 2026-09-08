@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { windowsPowerShellEnvironment } from "@codex-channel-bridge/platform";
 
 import type { AdministrationResponse } from "./protocol.js";
 
@@ -53,7 +54,7 @@ export class WindowsPipeHost {
         "-PipeName",
         pipeName
       ],
-      { stdio: "pipe", windowsHide: true }
+      { env: windowsPowerShellEnvironment(), stdio: "pipe", windowsHide: true }
     );
     this.#child = child;
     child.stdout.setEncoding("utf8");

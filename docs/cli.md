@@ -162,6 +162,11 @@ Unexpected SCM failures report a fixed stage (`manifest`, `compile`, `adapter_ac
 Use these fields to locate the failed operation before retrying a password;
 raw exceptions, input, credentials and manifest contents are not emitted.
 
+Native Windows PowerShell helpers rebuild their default module search path instead
+of inheriting `PSModulePath` from a PowerShell 7 parent. This applies only to the
+service, ACL and control-pipe helper children; it does not change the host or
+Profile's Codex environment.
+
 Status separates registration, service process state, Supervisor liveness, and
 Profile readiness. A live Supervisor with an unavailable Profile is reported as
 such. Stop/restart wait for Supervisor exit; uninstall preserves configuration,

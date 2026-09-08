@@ -57,6 +57,11 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   通过且无跳过。后续安装仍返回无法定位的通用错误。现在意外 SCM 失败只报告固定
   操作阶段和 Win32、HRESULT 或进程退出码的数值；CLI 拒绝其他 stderr 内容。
   原生安装仍需重试。
+- 后续原生报告将凭据转换失败定位到继承的 PowerShell 7 模块路径，尚未尝试服务
+  登录。三个原生 Windows PowerShell 辅助进程启动点现在都从子进程环境副本中
+  忽略大小写地移除 `PSModulePath`，父进程及 Codex 环境保持不变；原生合成凭据/
+  模块回归与 SCM 重试待完成。详见
+  [原生诊断记录](https://github.com/mwe-support/codex-channel-bridge/blob/14ae5b90c73017d8f0a523a753760689bccfee4e/acceptance/windows-p1-df5377ff-20260908.json)。
 - 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
   启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
   用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
