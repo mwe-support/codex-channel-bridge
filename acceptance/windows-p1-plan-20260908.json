@@ -60,6 +60,7 @@
     "configuration_workspace_codex_home_state_and_log_preserved": true,
     "failure_retains_state_for_explicit_reviewed_cleanup": true
   },
+  "validation_phase": "preparation",
   "validation": {
     "powershell_parser_errors": 0,
     "configuration_schema_validated": true,
@@ -70,5 +71,32 @@
     "privileges_granted": false,
     "uac_triggered": false,
     "native_scm_lifecycle_claimed": false
+  },
+  "operator_execution": {
+    "authorization_received": true,
+    "administrator_window_opened": true,
+    "same_reviewed_identity_verified": true,
+    "elevated_token_verified": true,
+    "scm_create_service_error": 0,
+    "service_logon_allow_observed": false,
+    "service_logon_deny_observed": false,
+    "service_logon_sid_queries": 10,
+    "service_logon_unreadable_queries": 0,
+    "service_logon_right_confirmed": false,
+    "reviewed_run_started": false,
+    "service_registered": false,
+    "password_prompt_active": false,
+    "password_collected": false,
+    "file_symlink_executed_in_elevated_context": false,
+    "native_scm_lifecycle_completed": false,
+    "reason_code": "service_logon_right_not_verified"
+  },
+  "operator_next_step": {
+    "status": "blocked_at_service_logon_prerequisite",
+    "action": "Use the already-open administrator window; ask an administrator to verify the same account's SeServiceLogonRight and absence of effective SeDenyServiceLogonRight. No rights have been granted by this task.",
+    "do_not_open_another_window_or_run": true,
+    "password_input_needed_now": false,
+    "copyable_read_only_command": "$context = Get-Content -LiteralPath (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/context.json') -Raw | ConvertFrom-Json\n& $context.scriptPath -Mode Plan -BridgeRoot $context.bridgeRoot -NodeExecutable $context.node -CodexExecutable $context.codex",
+    "command_effect": "Display the original reviewed plan only; no service operation and no password prompt."
   }
 }
