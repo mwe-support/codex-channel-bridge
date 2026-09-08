@@ -42,7 +42,7 @@
     "right_reverted": false,
     "uninstall": false,
     "stop": false,
-    "status": "awaiting_local_hidden_tty",
+    "status": "failed_at_install_generic_native_error",
     "install": false,
     "restart_ready": false,
     "service_logon_right_added_by_original_attempt": true,
@@ -52,7 +52,28 @@
   "operator": {
     "current_administrator_window": true,
     "service_name": "codex-channel-bridge-p1-20260908",
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-b75a6fb5.ps1') -ResumeInstall",
     "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt"
+  },
+  "second_install_failure": {
+    "runtime_commit": "b75a6fb54d50c0f5c48fe6045b7b262ca672aa8e",
+    "phase": "install",
+    "reason": "windows_service_operation_failed",
+    "hidden_password_prompt_reached": true,
+    "password_captured": false,
+    "service_registered": false,
+    "adapter_exists": false,
+    "manifest_exists": false,
+    "standalone_service_host_compile_passed": true,
+    "account_enabled": true,
+    "account_locked_out": false,
+    "account_password_expired": false,
+    "password_correctness": "unverified",
+    "system_or_security_matching_events": 0,
+    "event_query_window_minutes": 45,
+    "original_grant_retained": true,
+    "data_preserved": true,
+    "required_diagnostic": "Allowlisted native operation stage and numeric error code; never serialize raw exception, credentials, input or manifest",
+    "cli_error_parser": "Currently accepts only lowercase letters and underscores; adjust narrowly if numeric codes are added",
+    "production_source_unchanged": true
   }
 }
