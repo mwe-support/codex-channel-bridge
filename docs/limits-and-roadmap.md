@@ -42,9 +42,11 @@ New feature requests and their acceptance progress are tracked in the
 [Feature requirements](feature-requirements.md) ledger, separately from release
 availability.
 
-- Release-packaged native Windows Service installation plus strict state,
-  secret, and Baileys ACL enforcement on the designated host. A one-time WinSW
-  lifecycle acceptance and strict control-pipe ACL acceptance have passed.
+- Unattended native Windows service work continues separately on
+  `codex/windows-unattended`. Login-before-start alternatives do not meet the
+  user's requirement. Current readiness and lifecycle acceptance remain open;
+  historical WinSW and control-pipe evidence retain their original scope.
+  See [Windows execution options](research/windows-execution-options-20260909.md).
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
 

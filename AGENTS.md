@@ -556,6 +556,14 @@ Native macOS, native Linux, native Windows, and Linux Docker are first-class
 targets. Core domain behavior and acceptance tests must remain equivalent; put
 service-manager and filesystem differences behind platform-specific edges.
 
+From 2026-09-09, continue unattended native Windows implementation and acceptance
+on `codex/windows-unattended`; let unrelated macOS/Linux/Docker work proceed on
+the mainline. Windows must run before login and after logoff, so an interactive
+launcher is not a completed substitute. Preserve the existing Windows code and
+evidence, and keep Windows delivery claims gated on its own acceptance. Before
+changing that backend, read `docs/research/windows-execution-options-20260909.md`
+for the provisioning alternatives and the recorded branch scope.
+
 Prioritize implementation and acceptance in the environments that can be
 verified now: native macOS first, then native Linux and Linux Docker. Validate
 native macOS on the local development machine. Validate both Linux targets on

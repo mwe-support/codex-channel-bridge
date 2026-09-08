@@ -53,6 +53,12 @@ behavior. No separate issue database or requirements service is needed.
 ## FR-013 — Unified Bridge administration CLI
 
 - Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
+- Scope decision, 2026-09-09: Windows must operate before login and after
+  logoff. Subsequent unattended Windows work is deferred to
+  `codex/windows-unattended`, allowing unrelated macOS/Linux/Docker mainline
+  work to proceed. Existing Windows code and evidence remain; its readiness
+  and delivery claims are still gated on Windows acceptance. See the
+  [execution-options research](research/windows-execution-options-20260909.md).
 - Windows SCM follow-up (2026-09-09): explicit ACL success exit codes and
   native PowerShell child module-path isolation passed real Windows regression;
   the b40f69dd candidate passed 17 CLI/environment/platform/control checks.
@@ -63,8 +69,11 @@ behavior. No separate issue database or requirements service is needed.
 - Native service ownership now expands local account shorthand and compares
   resolved SIDs instead of raw account names. The shared resolver is available
   to the acceptance harness and its dependency audit. Unknown identities still
-  fail closed. Native SID regression and continuation from the existing stopped
-  registration remain pending; no repeat installation is implied.
+  fail closed. Native SID regression passed; the continuation started the
+  existing service, but Supervisor/Profile readiness was not established.
+  The [latest read-only check](https://github.com/mwe-support/codex-channel-bridge/blob/63d27f269cd355a90d72d6af386572fdcf4aec45/acceptance/windows-backend-readonly-20260909.json)
+  reports Running and denies ordinary-token start/stop (Win32 5). Further
+  lifecycle and permission changes are paused while Windows work is separated.
 - User expanded service installation into a complete Bridge CLI for initial
   setup, service registration/status, Dashboard launch, Channel configuration,
   model settings, and future administration, and explicitly requested this as

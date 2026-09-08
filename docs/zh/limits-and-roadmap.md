@@ -36,9 +36,10 @@ title: 限制与路线图
 新增功能需求与验收进度记录在[功能需求清单](feature-requirements.md)中，
 与已发布版本的可用性分开维护。
 
-- 在指定 Windows Host 上完成随 Release 提供的 Windows Service 安装，以及严格
-  State、Secret 与 Baileys ACL Enforcement；一次性 WinSW Lifecycle 与严格
-  Control-pipe ACL 验收已经通过。
+- 无人值守原生 Windows 服务工作独立在 `codex/windows-unattended` 继续。
+  需要先登录的替代方式不满足用户要求；当前就绪与生命周期验收仍未完成。
+  历史 WinSW 和控制管道证据保留原范围。详见
+  [Windows 运行方案](research/windows-execution-options-20260909.md)。
 - 对[发布状态](release-status.md)中列出的 Provider 和 Linux 边界执行精确 tag 复验。
 
 搜索分析、自动翻译、Dynamic Adapter Plugin Runtime、外部 Vector Backend 或

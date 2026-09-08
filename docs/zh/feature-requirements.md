@@ -48,6 +48,10 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 ## FR-013 — 统一 Bridge 管理 CLI
 
 - 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
+- 2026-09-09 范围决定：Windows 必须在登录前及注销后运行。后续无人值守 Windows
+  工作延后到 `codex/windows-unattended`，其他 macOS/Linux/Docker 主线工作继续。
+  保留已有 Windows 代码和证据，其就绪与交付声明仍须通过 Windows 验收。详见
+  [运行方案研究](research/windows-execution-options-20260909.md)。
 - Windows SCM 后续（2026-09-09）：ACL 成功退出码和原生 PowerShell 子进程模块
   路径隔离已通过真实 Windows 回归，b40f69dd 候选的 CLI/环境/平台/控制面共
   17 项检查通过。测试服务已注册并停止，完整生命周期尚未验收。
@@ -55,7 +59,10 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   确认安装后对 SCM 本机账号简写的 SID 转换失败；原授权未改变，也没有拒绝规则。
 - 原生服务归属现在先展开本机账号简写，再比较解析后的 SID，而非原始账号名称。
   共享解析函数可供验收脚本及依赖审计复用；无法解析的身份仍会拒绝操作。
-  原生 SID 回归及从现有停止状态继续的生命周期验收待完成，不意味着重复安装。
+  原生 SID 回归已通过；继续流程已启动现有服务，但 Supervisor/Profile 就绪未确认。
+  [最新只读检查](https://github.com/mwe-support/codex-channel-bridge/blob/63d27f269cd355a90d72d6af386572fdcf4aec45/acceptance/windows-backend-readonly-20260909.json)
+  显示服务 Running，普通令牌启动/停止被拒绝（Win32 5）。Windows 工作分离期间，
+  暂停进一步生命周期与权限变更。
 - 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
   启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
   用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
