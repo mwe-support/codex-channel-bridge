@@ -1,0 +1,58 @@
+{
+  "runtime_commit": "b75a6fb54d50c0f5c48fe6045b7b262ca672aa8e",
+  "platform": "native Windows",
+  "node": "v24.13.0",
+  "codex": "0.153.4",
+  "source_clean": true,
+  "build_exit_code": 0,
+  "old_helper_regression": {
+    "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packages/platform/windows/path-acl.contract.ps1 -Helper <extracted-original-helper>",
+    "reason": "acl_success_exit_code_missing",
+    "exit_code": 1,
+    "source": "git show 3348e3de0990d0be26d192fe22bab05a03deb4c1:packages/platform/windows/path-acl.ps1"
+  },
+  "new_helper_regression": {
+    "null_and_stale_failure_codes": true,
+    "file_and_directory": true,
+    "exit_code": 0,
+    "secure_and_verify": true,
+    "missing_path_rejected": true,
+    "explicit_exit_codes": true,
+    "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packages/platform/windows/path-acl.contract.ps1",
+    "recovers_after_failure": true
+  },
+  "platform_suite": {
+    "pass": 5,
+    "command": "node --test packages/platform/platform.test.mjs",
+    "tests": 5,
+    "fail": 0,
+    "exit_code": 0,
+    "skipped": 0
+  },
+  "retry_preflight": {
+    "original_failure_data_preserved": true,
+    "original_service_right_audit_preserved": true,
+    "only_known_fixture_symlink": true,
+    "original_attempt_marker_and_config_digest_match": true,
+    "read_only_passed": true,
+    "no_service_or_adapter_or_manifest": true,
+    "host_codex_unchanged": true
+  },
+  "lifecycle": {
+    "right_reverted": false,
+    "uninstall": false,
+    "stop": false,
+    "status": "awaiting_local_hidden_tty",
+    "install": false,
+    "restart_ready": false,
+    "service_logon_right_added_by_original_attempt": true,
+    "password_captured": false,
+    "start_ready": false
+  },
+  "operator": {
+    "current_administrator_window": true,
+    "service_name": "codex-channel-bridge-p1-20260908",
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-b75a6fb5.ps1') -ResumeInstall",
+    "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt"
+  }
+}
