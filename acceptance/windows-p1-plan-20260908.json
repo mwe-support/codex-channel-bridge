@@ -28,7 +28,7 @@
     "scm_create_service_error": 5,
     "symbolic_link_privilege_present": false,
     "service_logon_right": {
-      "effective_status": "unconfirmed",
+      "effective_status": "unknown",
       "direct_lookup_win32_error": 2,
       "user_and_token_group_sids_checked": 12,
       "allow_observed": false,
