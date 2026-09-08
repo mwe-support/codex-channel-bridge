@@ -55,7 +55,7 @@
   "lifecycle": {
     "start_ready": false,
     "restart_ready": false,
-    "status": "registered_stopped_readonly_diagnosis",
+    "status": "postinstall_sid_translation_failure_confirmed",
     "password_captured": false,
     "right_reverted": false,
     "uninstall": false,
@@ -66,8 +66,7 @@
   "operator": {
     "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt",
     "service_name": "codex-channel-bridge-p1-20260908",
-    "current_administrator_window": true,
-    "readonly_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/diagnose-b40f69dd-readonly.ps1')"
+    "current_administrator_window": true
   },
   "readonly_failure_diagnosis": {
     "requested_scope": "read-only; no install/start/stop/cleanup/right changes",
@@ -122,9 +121,99 @@
       "captures_only_prior_window_exception_types_hresult_and_known_script_line": true,
       "no_raw_exceptions_or_input": true,
       "prepared": true,
-      "executed": false,
+      "executed": true,
       "compares_original_direct_rights_and_effective_policy": true
     },
-    "service_or_right_mutations_performed": false
+    "service_or_right_mutations_performed": false,
+    "elevated_probe": {
+      "readOnly": true,
+      "sameIdentity": true,
+      "elevated": true,
+      "serviceRegistered": true,
+      "serviceState": "Stopped",
+      "newResolvedDependencies": 0,
+      "unresolvedAccountCount": 1,
+      "unresolvedAccountIsOnlyTest": true,
+      "directRightsMatchPostGrant": true,
+      "effectiveAllowObserved": true,
+      "effectiveDenyObserved": false,
+      "unreadablePolicyQueries": 0,
+      "priorWindowSafeErrors": [
+        {
+          "script": "continue-install-b40f69dd.ps1",
+          "line": 61,
+          "exceptionTypes": [
+            "System.Management.Automation.MethodInvocationException",
+            "System.Security.Principal.IdentityNotMappedException"
+          ],
+          "hresults": [
+            -2146233087,
+            -2146233087
+          ]
+        },
+        {
+          "script": "windows-p1-plan-b40f69dd.ps1",
+          "line": 293,
+          "exceptionTypes": [
+            "System.Management.Automation.RuntimeException"
+          ],
+          "hresults": [
+            -2146233087
+          ]
+        },
+        {
+          "script": "windows-p1-plan-b40f69dd.ps1",
+          "line": 138,
+          "exceptionTypes": [
+            "System.Management.Automation.MethodInvocationException",
+            "System.Security.Principal.IdentityNotMappedException"
+          ],
+          "hresults": [
+            -2146233087,
+            -2146233087
+          ]
+        },
+        {
+          "script": "continue-install-b40f69dd.ps1",
+          "line": 15,
+          "exceptionTypes": [
+            "Microsoft.PowerShell.Commands.ServiceCommandException"
+          ],
+          "hresults": [
+            -2146233087
+          ]
+        },
+        {
+          "script": "launch.ps1",
+          "line": 56,
+          "exceptionTypes": [
+            "Microsoft.PowerShell.Commands.ServiceCommandException"
+          ],
+          "hresults": [
+            -2146233087
+          ]
+        }
+      ],
+      "serviceOperationsPerformed": false,
+      "rightsChangesPerformed": false
+    },
+    "confirmed_conclusion": {
+      "cli_install_returned_zero_inferred_from_reached_assertion": true,
+      "postinstall_failure_script": "windows-p1-plan-b40f69dd.ps1",
+      "postinstall_failure_line": 138,
+      "exception": "System.Security.Principal.IdentityNotMappedException",
+      "hresult": -2146233087,
+      "native_create_failure": false,
+      "account_normalization_matches_original_sid": true,
+      "retention_registered_service": true,
+      "retention_unresolved_account_count": 1,
+      "retention_unresolved_is_only_test": true,
+      "retention_new_resolved_dependencies": 0,
+      "direct_rights_unchanged": true,
+      "effective_allow": true,
+      "effective_deny": false,
+      "policy_query_failures": 0,
+      "mutations_performed": false
+    }
   }
 }
