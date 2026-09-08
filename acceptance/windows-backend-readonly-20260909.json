@@ -1,0 +1,68 @@
+{
+  "scope": "bounded read-only; implementation choice paused",
+  "service": {
+    "stop_restart_uninstall_not_completed": true,
+    "no_new_service_action_performed": true,
+    "has_process": true,
+    "reference": "codex-channel-bridge-p1-20260908",
+    "current_state": "Running",
+    "earlier_stopped_assumption_is_stale": true,
+    "native_stage_code_not_present": true,
+    "last_continuation_reason": "service_or_profile_readiness_unverified",
+    "last_continuation_phase": "start_ready"
+  },
+  "ordinary_token_access": {
+    "query_config": {
+      "allowed": true,
+      "mask": 1,
+      "win32": 0
+    },
+    "elevated": false,
+    "probe": "OpenService requesting each access mask independently, immediately closing handles",
+    "query_status": {
+      "allowed": true,
+      "mask": 4,
+      "win32": 0
+    },
+    "start": {
+      "allowed": false,
+      "mask": 16,
+      "win32": 5
+    },
+    "actions_executed": false,
+    "stop": {
+      "allowed": false,
+      "mask": 32,
+      "win32": 5
+    }
+  },
+  "task_scheduler": {
+    "com_connection_succeeded": true,
+    "root_folder_readable": true,
+    "root_dacl_readable": true,
+    "service_running": true,
+    "registration_attempted": false,
+    "tasks_or_startup_items_created": false,
+    "checked_policy_keys": [
+      "HKLM/Policies/Microsoft/Windows/Task Scheduler5.0",
+      "HKCU/Policies/Microsoft/Windows/Task Scheduler5.0",
+      "HKLM/Policies/Microsoft/Windows/Task Scheduler",
+      "HKCU/Policies/Microsoft/Windows/Task Scheduler"
+    ],
+    "checked_policy_keys_all_absent": true,
+    "absence_does_not_prove_no_other_policy": true,
+    "registration_permission_proven": false,
+    "existing_tasks_enumerable": true
+  },
+  "historical_foreground_evidence": {
+    "scope": "isolated foreground Supervisor, Profile isolation and stop",
+    "command": "npm run test:supervisor-contract",
+    "log_sha256": "bf3f3a550e69aea9d61e326f6009d169769a81d2b13e22ffb84df345e9113d7f",
+    "observed_at": "2026-09-08T01:56:00.528Z",
+    "does_not_prove_login_autostart": true,
+    "runtime_commit": "3348e3de0990d0be26d192fe22bab05a03deb4c1",
+    "exit_code": 0
+  },
+  "configuration_acl_rights_or_backend_changed": false,
+  "additional_authorization_requested": false
+}

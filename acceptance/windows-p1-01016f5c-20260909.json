@@ -48,14 +48,36 @@
     "uninstall": false,
     "right_reverted": false,
     "start_ready": false,
-    "status": "awaiting_existing_administrator_window",
+    "status": "paused_after_start_readiness_failure",
     "restart_ready": false,
-    "original_added_service_logon_right_retained": true
+    "original_added_service_logon_right_retained": true,
+    "observed_result": {
+      "stage": "continuation_failed",
+      "completed": false,
+      "password_requested": false,
+      "administration_commit": "01016f5c730c3c96e42ed1aa0ac32b1ad78cb729",
+      "service_runtime_commit": "b40f69dd1625a7a790cab361da01ad0599590520",
+      "result": {
+        "cleanupRequired": true,
+        "administrationCommit": "01016f5c730c3c96e42ed1aa0ac32b1ad78cb729",
+        "failedPhase": "start_ready",
+        "completed": false,
+        "nativeFailure": null,
+        "testDataPreserved": true,
+        "serviceRuntimeCommit": "b40f69dd1625a7a790cab361da01ad0599590520",
+        "reason": "service_or_profile_readiness_unverified"
+      },
+      "retentionGuards": {
+        "serviceRegistered": true,
+        "newDependencyCount": 1,
+        "rightsUnchanged": true,
+        "unresolvedAccountCount": 0
+      }
+    }
   },
   "operator": {
     "continues_existing_registration": true,
     "original_failed_results_preserved": true,
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-existing-01016f5c.ps1')",
     "password_requested": false,
     "service_name": "codex-channel-bridge-p1-20260908"
   }
