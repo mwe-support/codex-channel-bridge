@@ -89,7 +89,7 @@
     "password_collected": false,
     "file_symlink_executed_in_elevated_context": true,
     "native_scm_lifecycle_completed": false,
-    "reason_code": "preparation_child_owner_was_administrators",
+    "reason_code": "native_acl_helper_success_exit_code_missing",
     "right_add_user_authorized": true,
     "continuation_loader_fix": {
       "reason": "process_local_type_missing_in_operator_session",
@@ -126,14 +126,35 @@
       "plan_fix": "secure each new directory and JSON before ownership verification",
       "real_files_check_passed": true,
       "elevated_retry_pending": true
+    },
+    "install_failure": {
+      "phase": "install",
+      "error": "unsafe_manifest",
+      "hidden_password_prompt_reached": true,
+      "password_captured": false,
+      "service_registered": false,
+      "adapter_exists": false,
+      "manifest_exists": false,
+      "real_acl_verify_success": true,
+      "last_exit_code_is_null": true,
+      "caller_rejects_success": true,
+      "cause_file": "packages/platform/windows/path-acl.ps1",
+      "caller_file": "packages/platform/windows/service.ps1",
+      "caller_line": 22,
+      "candidate_change": "Append exit 0 after successful verification; preserve catch exit 1",
+      "candidate_success_exit": 0,
+      "candidate_missing_path_exit": 1,
+      "candidate_stale_exit_code_cleared": true,
+      "production_code_changed": false,
+      "runtime_revision": "3348e3de0990d0be26d192fe22bab05a03deb4c1",
+      "new_service_logon_right_still_retained": true
     }
   },
   "operator_next_step": {
-    "status": "awaiting_preparation_retry",
-    "action": "Preserve the verified failed preparation directory, reuse original grant audit, and retry the corrected preparation and isolated SCM lifecycle in the current administrator window.",
+    "status": "runtime_fix_required_before_retry",
+    "action": "Apply the verified ACL helper exit-code fix through the owning development task, supply a new immutable acceptance revision, then prepare a bounded install-phase retry preserving failure data and the original service-right audit.",
     "do_not_open_another_window_or_run": true,
     "password_input_needed_now": false,
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-authorized.ps1') -ResumePreparation",
-    "command_effect": "Authorized single-account right change and reviewed isolated service lifecycle; password remains exclusively in the local CLI hidden terminal prompt."
+    "command_effect": "No runnable retry supplied for the failing immutable runtime."
   }
 }
