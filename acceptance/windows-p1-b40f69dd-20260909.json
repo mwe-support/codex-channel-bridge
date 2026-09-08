@@ -55,7 +55,7 @@
   "lifecycle": {
     "start_ready": false,
     "restart_ready": false,
-    "status": "awaiting_local_hidden_tty",
+    "status": "registered_stopped_readonly_diagnosis",
     "password_captured": false,
     "right_reverted": false,
     "uninstall": false,
@@ -64,9 +64,67 @@
     "stop": false
   },
   "operator": {
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-b40f69dd.ps1') -ResumeInstall",
     "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt",
     "service_name": "codex-channel-bridge-p1-20260908",
-    "current_administrator_window": true
+    "current_administrator_window": true,
+    "readonly_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/diagnose-b40f69dd-readonly.ps1')"
+  },
+  "readonly_failure_diagnosis": {
+    "requested_scope": "read-only; no install/start/stop/cleanup/right changes",
+    "recorded_phase": "install",
+    "precise_native_failure_stage": null,
+    "precise_native_failure_kind": null,
+    "precise_native_failure_code": null,
+    "native_failure_code_saved": false,
+    "cli_install_exit_code_saved": false,
+    "phase_includes_cli_and_postinstall_assertions": true,
+    "service": {
+      "adapter_present": true,
+      "state": "Stopped",
+      "process_present": false,
+      "status_codes_are_not_install_failure_codes": true,
+      "registered": true,
+      "scm_status_exit_code": 1077,
+      "service_specific_exit_code": 0,
+      "binary_matches_manifest": true,
+      "entry_matches_b40f69dd": true,
+      "manifest_present": true
+    },
+    "ownership_checks": {
+      "account_is_local_shorthand": true,
+      "normalized_local_account_sid_matches_original": true,
+      "marker_name_sid_source_config_path_digest_match": true,
+      "plan_translation_line": 138,
+      "direct_scm_account_sid_translation_failed": true,
+      "postinstall_assertion_line": 263,
+      "metadata_identity_entry_node_endpoint_config_backend_match": true,
+      "no_assertion_changed": true,
+      "production_raw_account_comparison_file": "packages/platform/windows/service.ps1",
+      "native_raw_account_equals_manifest_identity": false,
+      "production_raw_account_comparison_line": 49,
+      "account_reference": "test-service-account",
+      "all_four_acl_checks_passed": true
+    },
+    "right_retention": {
+      "original_guard_short_circuits_on_existing_registration": true,
+      "original_right_still_retained": true,
+      "new_resolved_dependency_count": 0,
+      "unresolved_account_count": 1,
+      "registration_guard_definitely_true": true,
+      "original_detailed_guard_values_not_saved": true,
+      "baseline_unresolved_account_count": 0,
+      "deny_change_not_proven": true,
+      "effective_policy_unreadable_queries": 4,
+      "direct_rights_readable_in_current_context": false,
+      "rights_change_not_proven": true
+    },
+    "pending_readonly_admin_probe": {
+      "captures_only_prior_window_exception_types_hresult_and_known_script_line": true,
+      "no_raw_exceptions_or_input": true,
+      "prepared": true,
+      "executed": false,
+      "compares_original_direct_rights_and_effective_policy": true
+    },
+    "service_or_right_mutations_performed": false
   }
 }
