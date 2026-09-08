@@ -89,6 +89,8 @@ function Assert-OwnerOnly([string]$Path, [string]$Kind) {
 function Write-NewJson([string]$Path, [object]$Value) {
     if (Test-Path -LiteralPath $Path) { throw 'refusing_existing_file' }
     [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 12), [Text.UTF8Encoding]::new($false))
+    & $windowsPowerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $aclHelper -Action secure -Path $Path -Kind file | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'new_file_acl_failed' }
     Assert-OwnerOnly $Path 'file'
 }
 function Invoke-BridgeJson([string[]]$ArgumentList, [int]$TimeoutMs = 120000) {
@@ -234,7 +236,12 @@ try {
     New-Item -ItemType Directory -Path $testRoot | Out-Null
     & $windowsPowerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $aclHelper -Action secure -Path $testRoot -Kind directory | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'isolated_directory_acl_failed' }
-    foreach ($path in @($workspace, $codexHome, $stateDirectory)) { New-Item -ItemType Directory -Path $path | Out-Null; Assert-OwnerOnly $path 'directory' }
+    foreach ($path in @($workspace, $codexHome, $stateDirectory)) {
+        New-Item -ItemType Directory -Path $path | Out-Null
+        & $windowsPowerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $aclHelper -Action secure -Path $path -Kind directory | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'new_directory_acl_failed' }
+        Assert-OwnerOnly $path 'directory'
+    }
     Write-NewJson $configPath $configuration
     Write-NewJson $markerPath @{ serviceName = $serviceName; identitySid = $identity.User.Value; sourceCommit = $runtimeCommit; configPath = $configPath; configDigest = (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash }
     $phase = 'file_symlink'

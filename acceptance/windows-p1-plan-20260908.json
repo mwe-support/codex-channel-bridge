@@ -78,18 +78,18 @@
     "same_reviewed_identity_verified": true,
     "elevated_token_verified": true,
     "scm_create_service_error": 0,
-    "service_logon_allow_observed": false,
+    "service_logon_allow_observed": true,
     "service_logon_deny_observed": false,
     "service_logon_sid_queries": 10,
     "service_logon_unreadable_queries": 0,
-    "service_logon_right_confirmed": false,
-    "reviewed_run_started": false,
+    "service_logon_right_confirmed": true,
+    "reviewed_run_started": true,
     "service_registered": false,
     "password_prompt_active": false,
     "password_collected": false,
     "file_symlink_executed_in_elevated_context": true,
     "native_scm_lifecycle_completed": false,
-    "reason_code": "awaiting_existing_window_command",
+    "reason_code": "preparation_child_owner_was_administrators",
     "right_add_user_authorized": true,
     "continuation_loader_fix": {
       "reason": "process_local_type_missing_in_operator_session",
@@ -113,14 +113,27 @@
       "audit_created_before_fix": false,
       "rights_change_reached": false,
       "service_registered": false
+    },
+    "preparation_failure": {
+      "phase": "prepare",
+      "service_registered": false,
+      "password_prompt_reached": false,
+      "new_service_logon_right_added": true,
+      "right_retained_pending_acceptance": true,
+      "root_owner_correct": true,
+      "child_owner_was_administrators": true,
+      "restricted_dacl_preserved": true,
+      "plan_fix": "secure each new directory and JSON before ownership verification",
+      "real_files_check_passed": true,
+      "elevated_retry_pending": true
     }
   },
   "operator_next_step": {
-    "status": "awaiting_existing_window_command",
-    "action": "Continue in the existing verified administrator window using the prepared authorization-scoped helper. Verify real file symlink, grant only the current account service-logon right if absent, then run the reviewed SCM acceptance. Remove only the newly added right after verified uninstall and unchanged dependencies and rights.",
+    "status": "awaiting_preparation_retry",
+    "action": "Preserve the verified failed preparation directory, reuse original grant audit, and retry the corrected preparation and isolated SCM lifecycle in the current administrator window.",
     "do_not_open_another_window_or_run": true,
     "password_input_needed_now": false,
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-authorized.ps1')",
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-authorized.ps1') -ResumePreparation",
     "command_effect": "Authorized single-account right change and reviewed isolated service lifecycle; password remains exclusively in the local CLI hidden terminal prompt."
   }
 }
