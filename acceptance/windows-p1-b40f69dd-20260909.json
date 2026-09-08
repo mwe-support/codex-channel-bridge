@@ -1,0 +1,72 @@
+{
+  "runtime_commit": "b40f69dd1625a7a790cab361da01ad0599590520",
+  "platform": "native Windows",
+  "node": "v24.13.0",
+  "codex": "0.153.4",
+  "build": {
+    "exit_code": 0,
+    "command": "npm run build"
+  },
+  "cli_environment_suite": {
+    "pass": 6,
+    "exit_code": 0,
+    "skipped": 0,
+    "tests": 6,
+    "command": "node --test packages/platform/dist/windows-powershell.test.js packages/cli/dist/settings.test.js",
+    "fail": 0
+  },
+  "platform_suite": {
+    "pass": 6,
+    "exit_code": 0,
+    "skipped": 0,
+    "tests": 6,
+    "command": "node --test packages/platform/platform.test.mjs",
+    "fail": 0
+  },
+  "control_contract": {
+    "pass": 5,
+    "exit_code": 0,
+    "skipped": 0,
+    "tests": 5,
+    "transport": "real Windows named pipe",
+    "command": "npm run test:control-contract",
+    "fail": 0
+  },
+  "actual_inherited_path_probe": {
+    "official_child_environment_helper_passed": true,
+    "command": "node test-credential-module-path-b40f69dd.mjs <built-platform-windows-powershell.js>",
+    "real_password_used": false,
+    "credential_constructed": true,
+    "service_registered": false,
+    "exit_code": 0,
+    "actual_powershell7_inherited_path_reproduced_failure": true,
+    "windows_logon_attempted": false
+  },
+  "retry_preflight": {
+    "host_codex_unchanged": true,
+    "original_service_right_audit_preserved": true,
+    "marker_and_config_digest_match": true,
+    "previous_runtime": "df5377ff7f2285bb50324d5118f53ab22cd220ac",
+    "only_known_fixture_symlink": true,
+    "no_service_or_adapter_or_manifest": true,
+    "previous_install_failure_preserved": true,
+    "read_only_passed": true
+  },
+  "lifecycle": {
+    "start_ready": false,
+    "restart_ready": false,
+    "status": "awaiting_local_hidden_tty",
+    "password_captured": false,
+    "right_reverted": false,
+    "uninstall": false,
+    "service_logon_right_added_by_original_attempt": true,
+    "install": false,
+    "stop": false
+  },
+  "operator": {
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-b40f69dd.ps1') -ResumeInstall",
+    "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt",
+    "service_name": "codex-channel-bridge-p1-20260908",
+    "current_administrator_window": true
+  }
+}
