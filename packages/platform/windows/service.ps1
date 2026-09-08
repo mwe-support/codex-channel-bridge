@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $stage = $Action
 $nativeExitCode = $null
 try {
+  . (Join-Path $PSScriptRoot 'account-sid.ps1')
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   if ($Action -eq 'identity') { @{name=$identity.Name; sid=$identity.User.Value; elevated=(New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress; exit 0 }
   if ($Name -notmatch '^[a-z][a-z0-9-]{0,63}$') { throw 'invalid_name' }
@@ -46,7 +47,8 @@ try {
   if ($null -eq $service) { throw 'service_not_registered' }
   $registered = Get-CimInstance Win32_Service -Filter ("Name='" + $Name + "'")
   $plan = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($registered.PathName.Trim('"') -ne $plan.registrationPath -or $registered.StartName -ne $plan.identity) { throw 'service_registration_changed' }
+  if ($registered.PathName.Trim('"') -ne $plan.registrationPath -or
+      (Resolve-ServiceAccountSid $registered.StartName) -ne (Resolve-ServiceAccountSid $plan.identity)) { throw 'service_registration_changed' }
   if ($Action -eq 'start') { Start-Service -Name $Name }
   if ($Action -eq 'stop') { Stop-Service -Name $Name }
   if ($Action -eq 'uninstall') {

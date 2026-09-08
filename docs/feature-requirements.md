@@ -53,23 +53,18 @@ behavior. No separate issue database or requirements service is needed.
 ## FR-013 — Unified Bridge administration CLI
 
 - Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
-- Windows SCM follow-up: the shared ACL helper now explicitly exits zero after
-  successful verification, preventing false `unsafe_manifest` / `unsafe_adapter`
-  errors from null or stale PowerShell exit codes. A native Windows regression
-  covers secure/verify, file/directory, stale status and rejected paths. The
-  [real installation failure](https://github.com/mwe-support/codex-channel-bridge/blob/817bd7466d748805133e7571478ff905372fc830/acceptance/windows-p1-plan-20260908.json)
-  is reproduced; the fixed revision still requires native SCM lifecycle acceptance.
-- The ACL fix passed native Windows regression (old helper fails; new helper
-  passes; five platform checks pass without skips). A subsequent installation
-  failure was still opaque. Unexpected SCM failures now report only a fixed
-  operation stage and a numeric Win32, HRESULT or process exit code; the CLI
-  rejects other stderr content. Native installation retry remains required.
-- The next native report isolated credential conversion failure to inherited
-  PowerShell 7 module paths, before service logon was attempted. All three native
-  Windows PowerShell helper launch sites now omit `PSModulePath` case-insensitively
-  from a child-only environment copy. Parent and Codex environments are unchanged;
-  native credential/module and SCM reruns remain pending. See the
-  [native diagnosis](https://github.com/mwe-support/codex-channel-bridge/blob/14ae5b90c73017d8f0a523a753760689bccfee4e/acceptance/windows-p1-df5377ff-20260908.json).
+- Windows SCM follow-up (2026-09-09): explicit ACL success exit codes and
+  native PowerShell child module-path isolation passed real Windows regression;
+  the b40f69dd candidate passed 17 CLI/environment/platform/control checks.
+  The test service is registered and stopped, but lifecycle acceptance remains
+  incomplete. The [latest diagnosis](https://github.com/mwe-support/codex-channel-bridge/blob/1f15b4706f7cf9095d04a4a812e42602444dbfec/acceptance/windows-p1-b40f69dd-20260909.json)
+  confirms post-install SID translation failed on SCM's local account shorthand;
+  the original permission grant is unchanged and no deny rule is present.
+- Native service ownership now expands local account shorthand and compares
+  resolved SIDs instead of raw account names. The shared resolver is available
+  to the acceptance harness and its dependency audit. Unknown identities still
+  fail closed. Native SID regression and continuation from the existing stopped
+  registration remain pending; no repeat installation is implied.
 - User expanded service installation into a complete Bridge CLI for initial
   setup, service registration/status, Dashboard launch, Channel configuration,
   model settings, and future administration, and explicitly requested this as

@@ -48,20 +48,14 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 ## FR-013 — 统一 Bridge 管理 CLI
 
 - 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
-- Windows SCM 后续修复：共享 ACL 辅助脚本校验成功后显式返回零，避免 PowerShell
-  退出码为空或残留旧值时误报 `unsafe_manifest` / `unsafe_adapter`。新增原生 Windows
-  回归检查覆盖 secure/verify、文件/目录、残留状态和被拒绝的路径。
-  [真实安装失败](https://github.com/mwe-support/codex-channel-bridge/blob/817bd7466d748805133e7571478ff905372fc830/acceptance/windows-p1-plan-20260908.json)
-  已复现；修复后的提交仍需完成原生 SCM 生命周期验收。
-- ACL 修复已通过原生 Windows 回归：旧脚本失败、新脚本通过，5 项平台检查全部
-  通过且无跳过。后续安装仍返回无法定位的通用错误。现在意外 SCM 失败只报告固定
-  操作阶段和 Win32、HRESULT 或进程退出码的数值；CLI 拒绝其他 stderr 内容。
-  原生安装仍需重试。
-- 后续原生报告将凭据转换失败定位到继承的 PowerShell 7 模块路径，尚未尝试服务
-  登录。三个原生 Windows PowerShell 辅助进程启动点现在都从子进程环境副本中
-  忽略大小写地移除 `PSModulePath`，父进程及 Codex 环境保持不变；原生合成凭据/
-  模块回归与 SCM 重试待完成。详见
-  [原生诊断记录](https://github.com/mwe-support/codex-channel-bridge/blob/14ae5b90c73017d8f0a523a753760689bccfee4e/acceptance/windows-p1-df5377ff-20260908.json)。
+- Windows SCM 后续（2026-09-09）：ACL 成功退出码和原生 PowerShell 子进程模块
+  路径隔离已通过真实 Windows 回归，b40f69dd 候选的 CLI/环境/平台/控制面共
+  17 项检查通过。测试服务已注册并停止，完整生命周期尚未验收。
+  [最新诊断](https://github.com/mwe-support/codex-channel-bridge/blob/1f15b4706f7cf9095d04a4a812e42602444dbfec/acceptance/windows-p1-b40f69dd-20260909.json)
+  确认安装后对 SCM 本机账号简写的 SID 转换失败；原授权未改变，也没有拒绝规则。
+- 原生服务归属现在先展开本机账号简写，再比较解析后的 SID，而非原始账号名称。
+  共享解析函数可供验收脚本及依赖审计复用；无法解析的身份仍会拒绝操作。
+  原生 SID 回归及从现有停止状态继续的生命周期验收待完成，不意味着重复安装。
 - 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
   启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
   用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。

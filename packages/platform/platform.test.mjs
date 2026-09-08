@@ -8,6 +8,16 @@ import test from "node:test";
 const root = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFile(join(root, path), "utf8");
 
+test("native Windows service identities compare local shorthand by SID", { skip: process.platform !== "win32" }, context => {
+  const powershell = join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe");
+  const result = JSON.parse(execFileSync(powershell, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-File", join(root, "windows/account-sid.contract.ps1")
+  ], { encoding: "utf8", timeout: 30_000, windowsHide: true }));
+  if (!result.localAccountFixture) { context.skip("A local Windows account is required for the shorthand fixture"); return; }
+  assert.deepEqual(result, { localAccountFixture: true, equivalentSid: true, differentSidPreserved: true, unknownAccountRejected: true });
+});
+
 test("native Windows ACL helper reports explicit script exit codes", { skip: process.platform !== "win32" }, () => {
   const powershell = join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe");
   const output = execFileSync(powershell, [

@@ -140,6 +140,10 @@ Supervisor 的 stdin drain 信号；达到配置超时后由 Job Object 限制�
 父进程的 `PSModulePath`。这仅作用于服务、ACL 和控制管道辅助子进程，不改变宿主或
 Profile 的 Codex 环境。
 
+服务归属检查将账号名称解析为 Windows SID。SCM 的本机简写 `.\user` 会先使用
+原生机器名展开，可能与 `MACHINE\user` 对应同一主体；无法解析的账号会拒绝操作，
+其他主体的 SID 不能通过归属检查。
+
 状态分别报告注册、服务进程、Supervisor 存活与 Profile 就绪情况；Supervisor 存活但某个
 Profile 不可用时会如实显示。Stop/restart 等待 Supervisor 退出；卸载保留配置、Profile
 数据、认证、Workspace、Codex home 及已保留的运行日志。日志轮转由平台采集端负责。

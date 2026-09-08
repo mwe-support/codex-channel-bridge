@@ -167,6 +167,11 @@ of inheriting `PSModulePath` from a PowerShell 7 parent. This applies only to th
 service, ACL and control-pipe helper children; it does not change the host or
 Profile's Codex environment.
 
+Service ownership checks resolve account names to Windows SIDs. SCM's local
+`.\user` form is expanded with the native machine name before resolution; it
+may identify the same principal as `MACHINE\user`. Unmapped accounts fail closed,
+and another principal's SID cannot satisfy the ownership check.
+
 Status separates registration, service process state, Supervisor liveness, and
 Profile readiness. A live Supervisor with an unavailable Profile is reported as
 such. Stop/restart wait for Supervisor exit; uninstall preserves configuration,
