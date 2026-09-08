@@ -1,0 +1,64 @@
+{
+  "runtime_commit": "df5377ff7f2285bb50324d5118f53ab22cd220ac",
+  "platform": "native Windows",
+  "node": "v24.13.0",
+  "codex": "0.153.4",
+  "source_clean": true,
+  "build": {
+    "command": "npm run build",
+    "exit_code": 0
+  },
+  "cli_suite": {
+    "fail": 0,
+    "exit_code": 0,
+    "pass": 4,
+    "tests": 4,
+    "command": "node --test packages/cli/dist/settings.test.js",
+    "skipped": 0
+  },
+  "platform_suite": {
+    "tests": 6,
+    "pass": 6,
+    "exit_code": 0,
+    "input_leaked": false,
+    "fail": 0,
+    "native_acl_contract_passed": true,
+    "skipped": 0,
+    "command": "node --test packages/platform/platform.test.mjs",
+    "synthetic_invalid_name_reason": "windows_service_operation_failed_status_hresult_-2146233087",
+    "native_diagnostic_contract_passed": true
+  },
+  "read_only_service_status": {
+    "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packages/platform/windows/service.ps1 -Action status -Name codex-channel-bridge-p1-20260908",
+    "registered": false,
+    "running": false,
+    "exit_code": 0
+  },
+  "retry_preflight": {
+    "previous_install_failure_preserved": true,
+    "read_only_passed": true,
+    "previous_runtime": "b75a6fb54d50c0f5c48fe6045b7b262ca672aa8e",
+    "marker_and_config_digest_match": true,
+    "no_service_or_adapter_or_manifest": true,
+    "host_codex_unchanged": true,
+    "only_known_fixture_symlink": true,
+    "original_service_right_audit_preserved": true
+  },
+  "lifecycle": {
+    "install": false,
+    "password_captured": false,
+    "restart_ready": false,
+    "start_ready": false,
+    "right_reverted": false,
+    "service_logon_right_added_by_original_attempt": true,
+    "status": "awaiting_local_hidden_tty",
+    "stop": false,
+    "uninstall": false
+  },
+  "operator": {
+    "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt",
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-df5377ff.ps1') -ResumeInstall",
+    "current_administrator_window": true,
+    "service_name": "codex-channel-bridge-p1-20260908"
+  }
+}
