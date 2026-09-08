@@ -1,0 +1,62 @@
+{
+  "administration_commit": "01016f5c730c3c96e42ed1aa0ac32b1ad78cb729",
+  "service_runtime_commit": "b40f69dd1625a7a790cab361da01ad0599590520",
+  "platform": "native Windows",
+  "build_exit_code": 0,
+  "cli_environment_suite": {
+    "pass": 6,
+    "fail": 0,
+    "skipped": 0,
+    "tests": 6,
+    "command": "node --test packages/platform/dist/windows-powershell.test.js packages/cli/dist/settings.test.js",
+    "exit_code": 0
+  },
+  "platform_suite": {
+    "pass": 7,
+    "fail": 0,
+    "local_account_sid_fixture_used": true,
+    "skipped": 0,
+    "tests": 7,
+    "command": "node --test packages/platform/platform.test.mjs",
+    "exit_code": 0
+  },
+  "control_contract": {
+    "pass": 5,
+    "transport": "real Windows named pipe",
+    "fail": 0,
+    "skipped": 0,
+    "tests": 5,
+    "command": "npm run test:control-contract",
+    "exit_code": 0
+  },
+  "registration_preflight": {
+    "original_runtime_source_unchanged": true,
+    "existing_registration_verified": true,
+    "dependency_audit_reuses_same_helper": true,
+    "manifest_marker_binary_unchanged": true,
+    "original_binary_manifest_marker_config_digests_saved": true,
+    "resolved_test_dependencies": 1,
+    "requires_password": false,
+    "installs_service": false,
+    "unresolved_accounts": 0,
+    "administration_diff_only_account_helper_contract_platform_test_and_service_check": true,
+    "plan_reuses_native_sid_helper": true,
+    "state": "Stopped"
+  },
+  "lifecycle": {
+    "stop": false,
+    "uninstall": false,
+    "right_reverted": false,
+    "start_ready": false,
+    "status": "awaiting_existing_administrator_window",
+    "restart_ready": false,
+    "original_added_service_logon_right_retained": true
+  },
+  "operator": {
+    "continues_existing_registration": true,
+    "original_failed_results_preserved": true,
+    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-existing-01016f5c.ps1')",
+    "password_requested": false,
+    "service_name": "codex-channel-bridge-p1-20260908"
+  }
+}
