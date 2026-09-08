@@ -1,0 +1,74 @@
+{
+  "service_name": "codex-channel-bridge-p1-20260908",
+  "source_runtime_commit": "3348e3de0990d0be26d192fe22bab05a03deb4c1",
+  "preparation_only": true,
+  "default_mode": "Plan",
+  "requires_separate_execution_authorization": true,
+  "runtime_resolution": {
+    "bridge_root": "parent of PSScriptRoot or explicit BridgeRoot",
+    "node_and_codex": "existing executable parameters or application discovery",
+    "test_data": "operating-system temporary directory plus service_name",
+    "service_metadata_and_log": "current user home plus the existing Bridge service layout"
+  },
+  "execution_requirements": {
+    "existing_powershell_minimum": "7.0",
+    "built_reviewed_bridge": true,
+    "same_reviewed_identity_sid": true,
+    "already_elevated_local_terminal": true,
+    "full_service_name_confirmation": true,
+    "fresh_isolated_test_scope": true,
+    "scm_create_start_query_stop_delete_rights": true,
+    "real_file_symlink_permission": true,
+    "service_logon_right_and_absence_of_effective_deny_confirmed": true,
+    "unredirected_terminal_for_password": true
+  },
+  "current_readonly_observations": {
+    "elevated": false,
+    "test_service_already_exists": false,
+    "scm_create_service_error": 5,
+    "symbolic_link_privilege_present": false,
+    "service_logon_right": {
+      "effective_status": "unconfirmed",
+      "direct_lookup_win32_error": 2,
+      "user_and_token_group_sids_checked": 12,
+      "allow_observed": false,
+      "deny_observed": false,
+      "unreadable_sid_queries": 2,
+      "service_logon_attempted": false
+    }
+  },
+  "planned_steps": [
+    "review_resolved_paths_identity_and_prerequisites",
+    "create_fresh_owner_only_configuration_and_no_channel_profile",
+    "verify_real_file_symbolic_link",
+    "preview_and_install_without_starting",
+    "start_and_verify_service_supervisor_profile_readiness",
+    "stop_and_verify_original_process_tree_exit",
+    "restart_and_verify_readiness",
+    "uninstall_only_owned_test_registration",
+    "verify_process_exit_and_preserve_test_data_and_log"
+  ],
+  "password_handling": {
+    "input": "existing_bridge_cli_hidden_terminal_prompt",
+    "script_password_parameter": false,
+    "password_in_arguments_logs_or_report": false
+  },
+  "cleanup": {
+    "requires_matching_ownership_marker_metadata_identity_and_native_registration": true,
+    "other_services_targeted": false,
+    "recursive_directory_deletion": false,
+    "configuration_workspace_codex_home_state_and_log_preserved": true,
+    "failure_retains_state_for_explicit_reviewed_cleanup": true
+  },
+  "validation": {
+    "powershell_parser_errors": 0,
+    "configuration_schema_validated": true,
+    "plan_mode_exit_code": 0,
+    "plan_created_test_data_or_service": false,
+    "run_executed": false,
+    "cleanup_executed": false,
+    "privileges_granted": false,
+    "uac_triggered": false,
+    "native_scm_lifecycle_claimed": false
+  }
+}
