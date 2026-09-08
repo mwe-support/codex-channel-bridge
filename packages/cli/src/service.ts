@@ -73,7 +73,8 @@ export async function runServiceCommand(area: string | undefined, action: string
       }
     } catch (error) {
       if (plan.backend === "windows-scm" && (await windowsService("status", name)).registered === true) {
-        throw new Error("Windows service registration is incomplete; its registration and configuration are preserved for inspection");
+        const reason = windowsServiceErrorReason(error instanceof Error && typeof error.cause === "string" ? error.cause : "");
+        throw new Error(`Windows service registration is incomplete (${reason}); its registration and configuration are preserved for inspection`);
       }
       if (plan.backend === "systemd-user") await run("systemctl", ["--user", "disable", `${name}.service`]).catch(() => undefined);
       await unlink(plan.registrationPath).catch(() => undefined);
@@ -205,6 +206,12 @@ export function systemdQuote(value: string, expandVariables = true): string {
   return '"' + (expandVariables ? escaped.replaceAll("$", () => "$$") : escaped) + '"';
 }
 
+export function windowsServiceErrorReason(stderr: string): string {
+  const reason = stderr.trim();
+  if (/^(?:administrator_required|selected_identity_mismatch|service_already_registered|service_not_registered|service_registration_changed|service_password_required|service_must_be_stopped|service_adapter_already_exists|unsafe_manifest|unsafe_adapter|windows_service_operation_failed)$/.test(reason)) return reason;
+  return /^windows_service_operation_failed_(?:identity|install|start|stop|status|uninstall|manifest|compile|adapter_acl|credential|create|recovery)_(?:win32|hresult|exit)_-?\d{1,10}$/.test(reason) ? reason : "native_service_error";
+}
+
 async function windowsService(action: string, name?: string, manifest?: string, input?: unknown): Promise<Record<string, unknown>> {
   const helper = fileURLToPath(new URL("../../platform/windows/service.ps1", import.meta.url));
   return new Promise((resolve, reject) => {
@@ -213,7 +220,11 @@ async function windowsService(action: string, name?: string, manifest?: string, 
     const child = execFile(join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, "-Action", action,
       ...(name ? ["-Name", name] : []), ...(manifest ? ["-Manifest", manifest] : [])],
       { windowsHide: true, timeout: 3_700_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) { reject(new Error(`Windows SCM ${action} failed (${/^[a-z_]+\s*$/.test(stderr) ? stderr.trim() : "native_service_error"}); inspect privileges, selected identity and service-logon prerequisites`)); return; }
+        if (error) {
+          const reason = windowsServiceErrorReason(stderr);
+          reject(new Error(`Windows SCM ${action} failed (${reason}); inspect the reported stage, native code, privileges and selected identity`, { cause: reason }));
+          return;
+        }
         try { resolve(JSON.parse(stdout)); } catch { reject(new Error("Windows service helper returned an invalid result")); }
       });
     child.stdin?.on("error", () => undefined);

@@ -53,16 +53,21 @@ behavior. No separate issue database or requirements service is needed.
 ## FR-013 — Unified Bridge administration CLI
 
 - Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
-- User expanded service installation into a complete Bridge CLI for initial
-  setup, service registration/status, Dashboard launch, Channel configuration,
-  model settings, and future administration, and explicitly requested this as
-  an AGENTS.md requirement. The user authorized implementation covering current
 - Windows SCM follow-up: the shared ACL helper now explicitly exits zero after
   successful verification, preventing false `unsafe_manifest` / `unsafe_adapter`
   errors from null or stale PowerShell exit codes. A native Windows regression
   covers secure/verify, file/directory, stale status and rejected paths. The
   [real installation failure](https://github.com/mwe-support/codex-channel-bridge/blob/817bd7466d748805133e7571478ff905372fc830/acceptance/windows-p1-plan-20260908.json)
   is reproduced; the fixed revision still requires native SCM lifecycle acceptance.
+- The ACL fix passed native Windows regression (old helper fails; new helper
+  passes; five platform checks pass without skips). A subsequent installation
+  failure was still opaque. Unexpected SCM failures now report only a fixed
+  operation stage and a numeric Win32, HRESULT or process exit code; the CLI
+  rejects other stderr content. Native installation retry remains required.
+- User expanded service installation into a complete Bridge CLI for initial
+  setup, service registration/status, Dashboard launch, Channel configuration,
+  model settings, and future administration, and explicitly requested this as
+  an AGENTS.md requirement. The user authorized implementation covering current
   core functionality and actual terminal-based testing and acceptance.
 - Command families: retain `setup quick/full`, `config`, `profile`, `channel`,
   `dashboard`, `status`, `doctor`, existing maintenance commands, and foreground

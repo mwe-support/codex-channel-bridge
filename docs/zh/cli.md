@@ -131,6 +131,11 @@ Windows 使用随项目提供的 PowerShell/.NET SCM 适配器，不是计划任
 参数。提权被拒绝时保留配置，提示操作者在适当终端执行同一命令。适配器把停止请求转换为
 Supervisor 的 stdin drain 信号；达到配置超时后由 Job Object 限制后代进程清理。
 
+意外 SCM 失败会报告固定阶段（`manifest`、`compile`、`adapter_acl`、`credential`、
+`create`、`recovery` 或服务动作）及 `win32`、`hresult` 或 `exit` 数值错误码。
+已知校验原因保留原名称。先用这些字段定位失败操作，再决定是否重试密码；
+不会输出原始异常、输入、凭据或 manifest 内容。
+
 状态分别报告注册、服务进程、Supervisor 存活与 Profile 就绪情况；Supervisor 存活但某个
 Profile 不可用时会如实显示。Stop/restart 等待 Supervisor 退出；卸载保留配置、Profile
 数据、认证、Workspace、Codex home 及已保留的运行日志。日志轮转由平台采集端负责。

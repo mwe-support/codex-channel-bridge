@@ -48,14 +48,18 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 ## FR-013 — 统一 Bridge 管理 CLI
 
 - 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
-- 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
-  启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
-  用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
 - Windows SCM 后续修复：共享 ACL 辅助脚本校验成功后显式返回零，避免 PowerShell
   退出码为空或残留旧值时误报 `unsafe_manifest` / `unsafe_adapter`。新增原生 Windows
   回归检查覆盖 secure/verify、文件/目录、残留状态和被拒绝的路径。
   [真实安装失败](https://github.com/mwe-support/codex-channel-bridge/blob/817bd7466d748805133e7571478ff905372fc830/acceptance/windows-p1-plan-20260908.json)
   已复现；修复后的提交仍需完成原生 SCM 生命周期验收。
+- ACL 修复已通过原生 Windows 回归：旧脚本失败、新脚本通过，5 项平台检查全部
+  通过且无跳过。后续安装仍返回无法定位的通用错误。现在意外 SCM 失败只报告固定
+  操作阶段和 Win32、HRESULT 或进程退出码的数值；CLI 拒绝其他 stderr 内容。
+  原生安装仍需重试。
+- 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
+  启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
+  用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
 - 命令分组：保留 `setup quick/full`、`config`、`profile`、`channel`、`dashboard`、
   `status`、`doctor`、既有维护命令与前台 `supervisor run`；增加 `service` 生命周期
   和 `model` 发现/查询/选择。扩展现有分组，不另建设置 CLI。未来管理功能在同一开发

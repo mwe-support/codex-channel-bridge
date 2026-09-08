@@ -17,6 +17,20 @@ test("native Windows ACL helper reports explicit script exit codes", { skip: pro
   assert.deepEqual(JSON.parse(output), { explicitExitCodes: true, serviceRegistered: false });
 });
 
+test("native Windows service errors expose a stage and numeric code without input", { skip: process.platform !== "win32" }, () => {
+  const powershell = join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe");
+  assert.throws(() => execFileSync(powershell, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-File", join(root, "windows/service.ps1"), "-Action", "status", "-Name", "invalid:synthetic-private-value"
+  ], { encoding: "utf8", timeout: 30_000, windowsHide: true }), error => {
+    assert.equal(error.status, 1);
+    assert.equal(error.stdout, "");
+    assert.match(error.stderr, /^windows_service_operation_failed_status_hresult_-?\d{1,10}\r?\n$/);
+    assert.doesNotMatch(error.stderr, /synthetic-private-value/);
+    return true;
+  });
+});
+
 test("platform services run one foreground Supervisor with bounded stop semantics", async () => {
   const [launchd, systemd] = await Promise.all([
     read("macos/org.codex-channel-bridge.supervisor.plist"),

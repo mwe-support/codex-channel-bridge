@@ -156,6 +156,12 @@ configuration and asks the operator to rerun the same command in the proper
 terminal. The adapter translates stop to the Supervisor's stdin drain signal;
 a Job Object bounds descendant cleanup after the configured timeout.
 
+Unexpected SCM failures report a fixed stage (`manifest`, `compile`, `adapter_acl`,
+`credential`, `create`, `recovery`, or the service action) and a numeric `win32`,
+`hresult`, or `exit` code. Known validation reasons retain their existing names.
+Use these fields to locate the failed operation before retrying a password;
+raw exceptions, input, credentials and manifest contents are not emitted.
+
 Status separates registration, service process state, Supervisor liveness, and
 Profile readiness. A live Supervisor with an unavailable Profile is reported as
 such. Stop/restart wait for Supervisor exit; uninstall preserves configuration,

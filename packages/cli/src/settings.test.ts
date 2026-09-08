@@ -1,4 +1,4 @@
-import { systemdQuote } from "./service.js";
+import { systemdQuote, windowsServiceErrorReason } from "./service.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -82,4 +82,16 @@ test("service words preserve literal path symbols under the two systemd expansio
   assert.equal(systemdQuote('/tools $%/node'), '"/tools $$%%/node"');
   assert.equal(systemdQuote('PATH=/tools $%/bin', false), '"PATH=/tools $%%/bin"');
   assert.equal(systemdQuote('/tools "quoted"/node'), String.raw`"/tools \"quoted\"/node"`);
+});
+
+test("Windows service diagnostics accept only known reasons and bounded stage codes", () => {
+  for (const reason of ["unsafe_manifest", "windows_service_operation_failed", "windows_service_operation_failed_create_win32_1057",
+    "windows_service_operation_failed_compile_hresult_-2146233087", "windows_service_operation_failed_recovery_exit_5"]) {
+    assert.equal(windowsServiceErrorReason(reason + "\r\n"), reason);
+  }
+  for (const unsafe of ["secret", "windows_service_operation_failed_secret_win32_5",
+    "windows_service_operation_failed_create_win32_123456789012", "unsafe_manifest\nprivate_input",
+    "windows_service_operation_failed_create_win32_5\nprivate_input", "C:\\private\\file", "{\"password\":\"synthetic\"}"]) {
+    assert.equal(windowsServiceErrorReason(unsafe), "native_service_error");
+  }
 });
