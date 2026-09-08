@@ -87,7 +87,7 @@
     "service_registered": false,
     "password_prompt_active": false,
     "password_collected": false,
-    "file_symlink_executed_in_elevated_context": false,
+    "file_symlink_executed_in_elevated_context": true,
     "native_scm_lifecycle_completed": false,
     "reason_code": "awaiting_existing_window_command",
     "right_add_user_authorized": true,
@@ -98,6 +98,21 @@
       "reviewed_script_unchanged": true,
       "rights_changed_by_fix": false,
       "service_operations_by_fix": false
+    },
+    "real_file_symlink_result": {
+      "exit_code": 0,
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "verified": true
+    },
+    "dependency_audit_fix": {
+      "reason": "powershell_automatic_matches_variable_overwrote_service_inventory",
+      "regression_failed_before_fix": true,
+      "regression_passed_after_fix": true,
+      "audit_created_before_fix": false,
+      "rights_change_reached": false,
+      "service_registered": false
     }
   },
   "operator_next_step": {
