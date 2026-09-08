@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,15 @@ import test from "node:test";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFile(join(root, path), "utf8");
+
+test("native Windows ACL helper reports explicit script exit codes", { skip: process.platform !== "win32" }, () => {
+  const powershell = join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe");
+  const output = execFileSync(powershell, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-File", join(root, "windows/path-acl.contract.ps1")
+  ], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+  assert.deepEqual(JSON.parse(output), { explicitExitCodes: true, serviceRegistered: false });
+});
 
 test("platform services run one foreground Supervisor with bounded stop semantics", async () => {
   const [launchd, systemd] = await Promise.all([

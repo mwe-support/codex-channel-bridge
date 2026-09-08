@@ -96,3 +96,4 @@ try {
   [Console]::Error.WriteLine("windows_path_acl_failed")
   exit 1
 }
+exit 0
