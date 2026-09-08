@@ -48,11 +48,11 @@ behavior. No separate issue database or requirements service is needed.
 | FR-010 | Automatic output-file delivery to the originating conversation | awaiting-acceptance | `0.2.0-rc.1` |
 | FR-011 | Independent delivery per Channel Account | awaiting-acceptance | Next / unassigned |
 | FR-012 | Codex compatibility from actual capabilities | awaiting-acceptance | Next / unassigned |
-| FR-013 | Unified Bridge administration CLI | in-progress | Next / unassigned |
+| FR-013 | Unified Bridge administration CLI | awaiting-acceptance | Next / unassigned |
 
 ## FR-013 — Unified Bridge administration CLI
 
-- Updated: 2026-09-05. Status: `in-progress`; release: Next / unassigned.
+- Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
 - User expanded service installation into a complete Bridge CLI for initial
   setup, service registration/status, Dashboard launch, Channel configuration,
   model settings, and future administration, and explicitly requested this as
@@ -106,17 +106,21 @@ behavior. No separate issue database or requirements service is needed.
   unrelated service; cancellation and permission denial preserve prior state;
   real target install/start/status/drain/restart/uninstall and child cleanup pass.
   Windows file-symlink test prerequisites remain a separate acceptance gate.
-- Current evidence: setup only writes canonical configuration; installers select
-  verified Bridge releases; platform packaging has static service examples and
-  Windows IPC/ACL helpers, but no `bridge service` command. Dashboard launch and
-  several Channel/maintenance commands exist; native Thread model operations
-  exist in the worker, but lack a unified host-local model CLI. AGENTS.md now
-  records this first-class CLI contract. No runtime or system settings changed.
-- Remaining work: implement the missing command/control-plane surfaces and
-  shared interactive operations, then run real platform lifecycle and applicable
-  Channel acceptance. Decide Windows service identity/provisioning and elevation
-  UX during that slice; a separate user-login mode is still only a proposal.
-  See [upstream comparison](research/service-installation-cli-20260905.md).
+- Current implementation: `config get/set/edit`, scoped Profile/Channel settings,
+  hidden secret input, native model/default settings, service lifecycle and optional
+  setup integration are implemented on `codex/unified-bridge-cli` (base `3348e3d`).
+  CLI and native model mutations reuse the validated configuration/control-plane
+  boundaries. See [CLI administration](cli.md).
+- Acceptance resumed on 2026-09-08. macOS service/configuration/Dashboard and QQ
+  model checks passed; Linux unit/PTY/native contracts and real systemd lifecycle
+  passed, and Docker CLI/lifecycle passed. Windows ordinary-user CLI and adapter
+  compilation checks passed on the earlier candidate; final Windows reporting and
+  privileged SCM/file-symlink gates remain separate.
+- Remaining work: finish Windows result reconciliation and the privileged service gates,
+  and record the complete platform evidence before marking FR-013 done. No release
+  tag has been assigned. See [upstream comparison](research/service-installation-cli-20260905.md).
+
+- [Completed checks and explicit remaining gates](acceptance/cli-20260908.md). The latest QQ busy rejection, failure delivery and positive reply after authorized credential reuse passed.
 
 ## FR-011 — Independent delivery per Channel Account
 

@@ -4,6 +4,10 @@
 `bridge <命令组> --help` 查看用法。使用已构建的源码时，把 `bridge` 替换为
 `node packages/cli/dist/main.js`。
 
+选定的 Codex home 需要对应的原生登录。可用
+`CODEX_HOME=/absolute/path/codex-home codex login status` 检查；另一个 home 已登录
+（包括钥匙串登录）不代表当前 Profile 已认证。Bridge 不会自动跨 home 复制凭证。
+
 ## 初始化与配置
 
 ```sh

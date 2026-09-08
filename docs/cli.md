@@ -4,6 +4,11 @@ Status: Next, FR-013; not yet released. Run `bridge --help` or
 `bridge <group> --help`. From a built source checkout, replace `bridge` with
 `node packages/cli/dist/main.js`.
 
+The selected Codex home needs its own native login. Verify with
+`CODEX_HOME=/absolute/path/codex-home codex login status`; another home's login,
+including a Keychain-backed login, does not prove this Profile is authenticated.
+The Bridge does not automatically copy credentials between homes.
+
 ## Setup and configuration
 
 ```sh

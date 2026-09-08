@@ -43,11 +43,11 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-010 | 自动输出文件投递到原会话 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
 | FR-011 | 各 Channel Account 独立投递 | awaiting-acceptance（待验收） | Next / unassigned |
 | FR-012 | 按实际能力判断 Codex 兼容性 | awaiting-acceptance（待验收） | Next / unassigned |
-| FR-013 | 统一 Bridge 管理 CLI | in-progress（开发中） | Next / unassigned |
+| FR-013 | 统一 Bridge 管理 CLI | awaiting-acceptance（待验收） | Next / unassigned |
 
 ## FR-013 — 统一 Bridge 管理 CLI
 
-- 更新：2026-09-05。状态：`in-progress`；版本：Next / unassigned。
+- 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
 - 用户将服务安装扩展为完整 Bridge CLI，涵盖初始化、服务注册/状态、Dashboard
   启动、Channel 配置、模型设置及未来管理功能，并明确要求写入 AGENTS.md。
   用户已授权开发覆盖当前核心功能的 CLI，并要求通过真实终端测试与验收。
@@ -83,13 +83,18 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   向导和直接 CLI 生成相同服务定义；重复安装识别已有归属/配置，不覆盖无关
   服务；取消和权限不足保留原状态；在真实目标机通过安装、启动、状态、排空、重启、
   卸载与子进程清理验收。Windows 文件符号链接测试的前置条件仍是独立验收项。
-- 当前证据：setup 仅写入规范配置；安装器选择校验后的 Bridge 发行版；平台打包包含
-  静态服务示例及 Windows IPC/ACL 辅助程序，但还没有 `bridge service` 命令。
-  已有 Dashboard 启动与部分 Channel/维护命令；worker 已有原生 Thread 模型操作，
-  尚缺统一宿主本地模型 CLI。AGENTS.md 已明确一等 CLI 要求，未修改运行时代码或系统设置。
-- 后续：实现缺少的命令/控制面接口与共享交互操作，再完成真实平台生命周期和相关
-  Channel 验收。Windows 服务身份/配置和提权交互在对应阶段确定；独立的用户登录
-  启动模式仍只是建议。参见[上游对照研究](research/service-installation-cli-20260905.md)。
+- 当前实现：`config get/set/edit`、限定目标的 Profile/Channel 设置、隐藏密钥输入、
+  原生模型/默认值设置、服务生命周期及 setup 可选集成均已在
+  `codex/unified-bridge-cli` 实现（基础候选 `3348e3d`）。CLI 和原生模型修改复用
+  规范配置与控制面边界，见 [CLI 管理](cli.md)。
+- 2026-09-08 恢复验收。macOS 服务、配置、Dashboard 与 QQ 模型检查通过；Linux
+  单元/PTY/原生契约及真实 systemd 生命周期通过，Docker CLI/生命周期通过。
+  Windows 较早候选的普通用户 CLI 与服务适配器编译检查通过；最终报告核对以及
+  提权 SCM、文件符号链接门槛仍是独立事项。
+- 后续：完成 Windows 结果核对及提权服务门槛，补齐平台证据后才能将 FR-013 标记
+  完成；尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
+
+- [已完成检查及明确的待验收项](acceptance/cli-20260908.md)。最新 QQ 忙碌拒绝、失败回传及授权复用凭证后的正向回复均已验证。
 
 ## FR-011 — 各 Channel Account 独立投递
 
