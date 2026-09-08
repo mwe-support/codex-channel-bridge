@@ -51,14 +51,46 @@
     "start_ready": false,
     "right_reverted": false,
     "service_logon_right_added_by_original_attempt": true,
-    "status": "awaiting_local_hidden_tty",
+    "status": "failed_credential_module_resolution",
     "stop": false,
     "uninstall": false
   },
   "operator": {
     "password_input": "Only at the existing Bridge CLI Secret (input hidden) prompt",
-    "copyable_command": "& (Join-Path $env:TEMP 'codex-p1-operator-e1cbba575caf4146aa19c71ee94e1697/continue-install-df5377ff.ps1') -ResumeInstall",
     "current_administrator_window": true,
     "service_name": "codex-channel-bridge-p1-20260908"
+  },
+  "credential_failure": {
+    "phase": "install",
+    "stage": "credential",
+    "kind": "hresult",
+    "code": -2146233087,
+    "safe_reason": "windows_service_operation_failed_credential_hresult_-2146233087",
+    "source_commit": "df5377ff7f2285bb50324d5118f53ab22cd220ac",
+    "service_registered": false,
+    "manifest_exists": false,
+    "adapter_exists": false,
+    "password_captured": false,
+    "windows_create_service_not_reached": true,
+    "synthetic_reproduction": {
+      "logon_attempted": false,
+      "real_password_used": false,
+      "credential_created_after_fix": true,
+      "source_stage_extracted_from": "packages/platform/windows/service.ps1",
+      "child_env_without_psmodulepath_passed": true,
+      "exit_code": 0,
+      "module": "Microsoft.PowerShell.Security",
+      "inherited_powershell7_module_path": true,
+      "exception_type": "System.Management.Automation.CommandNotFoundException",
+      "module_import_error": "Duplicate TypeData members on System.Security.AccessControl.ObjectSecurity",
+      "module_resolves_outside_native_pshome": true,
+      "failed_command": "ConvertTo-SecureString",
+      "command": "node test-credential-module-path.mjs",
+      "original_stage_failed": true
+    },
+    "recommended_fix": "At native Windows PowerShell child launch, omit inherited PSModulePath from the child environment (case-insensitive name); let Windows PowerShell construct its native default. Do not alter host environment or policy. Add a synthetic credential conversion regression covering inherited PowerShell 7 module paths.",
+    "production_code_changed": false,
+    "original_service_right_still_retained": true,
+    "old_attempts_preserved": true
   }
 }
