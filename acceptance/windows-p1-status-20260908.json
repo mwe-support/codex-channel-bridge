@@ -1,0 +1,41 @@
+{
+  "candidate_commit": "be9e4c00b531227fb49fb5db20f2dab9453e755b",
+  "tested_runtime_commit": "3348e3de0990d0be26d192fe22bab05a03deb4c1",
+  "full_check": {
+    "source_commit": "b642054c632d28e8745d7c7f38cb2b5c27a42b44",
+    "pass": 252,
+    "fail": 1,
+    "skip": 4
+  },
+  "incremental_checks": {
+    "service_tests": {
+      "pass": 2,
+      "fail": 0,
+      "skip": 0
+    },
+    "control_contract": {
+      "pass": 5,
+      "fail": 0,
+      "skip": 0
+    },
+    "cli_expected_outcomes": {
+      "pass": 10,
+      "fail": 0,
+      "skip": 0
+    },
+    "file_symlink_check": {
+      "pass": 0,
+      "fail": 1,
+      "skip": 0
+    }
+  },
+  "scm_permission_available": false,
+  "file_symlink_permission_available": false,
+  "current_native_scm_lifecycle_tested": false,
+  "remaining_reason_codes": [
+    "file_symlink_EPERM",
+    "SCM_CREATE_SERVICE_ACCESS_DENIED",
+    "native_SCM_lifecycle_unverified"
+  ],
+  "handoff_failure_reason_code": "target_thread_not_found_on_requested_host"
+}
