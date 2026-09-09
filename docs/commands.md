@@ -52,3 +52,7 @@ In the default `steer` admission mode, a second admitted ordinary message for
 the same active binding uses native `turn/steer` with the exact expected Turn.
 It does not create a new Turn or a general queue. See [Admission](admission.md),
 [Thread Binding](thread-binding.md), and [Approval routing](approval-routing.md).
+
+`/attach` compares existing filesystem directory identity, so a configured path
+alias and Codex's canonical path can identify the same Workspace. It does not
+rewrite native history or accept a different physical directory.

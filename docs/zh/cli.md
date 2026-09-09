@@ -170,3 +170,6 @@ Dashboard 仍仅监听 loopback，使用本次启动专属的浏览器 capabilit
 Unix 终端验收：`python3 scripts/cli-interactive.contract.py`。
 Windows 原生适配器编译与参数验收：
 `powershell -File packages/platform/windows/service-compile.contract.ps1`。
+
+Thread 范围校验与 `/attach` 会识别指向同一物理 Workspace 的既有路径别名，
+拒绝其他目录或无法解析的目录，不改写原生或配置路径。

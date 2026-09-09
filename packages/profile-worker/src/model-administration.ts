@@ -1,3 +1,5 @@
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { ManagedCodexRpcRuntime } from "@codex-channel-bridge/codex-app-server";
 import type { TurnCoordinator } from "./turn-coordinator.js";
 
@@ -37,7 +39,9 @@ export async function administerModel(
     if (action.scope === "thread") {
       const result = await runtime.request<{ thread: { id: string; cwd: string; model?: string | null; reasoningEffort?: string | null } }>(
         "thread/read", { threadId: action.threadId, includeTurns: false });
-      if (result.thread.id !== action.threadId || result.thread.cwd !== workspace) throw new Error("Thread is outside this Profile Workspace");
+      if (result.thread.id !== action.threadId || !await matchesProfileWorkspace(result.thread.cwd, workspace)) {
+        throw new Error("Thread is outside this Profile Workspace");
+      }
       return { scope: "thread", threadId: action.threadId, model: result.thread.model ?? null, effort: result.thread.reasoningEffort ?? null };
     }
     requireMethod(methods, "config/read");
@@ -71,6 +75,15 @@ export async function administerModel(
   return { ...observed, requested: settings, status: result.status, verified: matches(observed, settings),
     appliesTo: "native defaults for future Threads; existing Threads retain their settings" };
 }
+/** Compare directory identity without changing native or configured path spellings. */
+export async function matchesProfileWorkspace(cwd: string, workspace: string): Promise<boolean> {
+  if (typeof cwd !== "string" || !isAbsolute(cwd) || !isAbsolute(workspace)) return false;
+  try {
+    const [actual, configured] = await Promise.all([realpath(cwd), realpath(workspace)]);
+    return actual === configured && (await stat(actual)).isDirectory();
+  } catch { return false; }
+}
+
 function requireMethod(methods: readonly string[], method: string): void {
   if (!methods.includes(method)) throw new Error(`Unsupported native capability: ${method}`);
 }

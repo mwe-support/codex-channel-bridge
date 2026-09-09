@@ -138,6 +138,10 @@ provider-boundary scenarios are still open.
   unrelated service; cancellation and permission denial preserve prior state;
   real target install/start/status/drain/restart/uninstall and child cleanup pass.
   Windows file-symlink test prerequisites remain a separate acceptance gate.
+- Closeout found a literal-path mismatch after persistent-storage relocation:
+  Codex returned the canonical Workspace while configuration retained its alias.
+  Thread model administration and Channel attach now share directory-identity
+  checks, preserving both path spellings and rejecting other/missing directories.
 - Current implementation: `config get/set/edit`, scoped Profile/Channel settings,
   hidden secret input, native model/default settings, service lifecycle and optional
   setup integration are implemented on `codex/unified-bridge-cli` (base `3348e3d`).

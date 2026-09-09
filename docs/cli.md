@@ -112,7 +112,9 @@ Confirm a displayed selection interactively or repeat it with `--confirm DIGEST`
 The running Profile's App Server supplies the catalog. Thread queries use native
 `thread/read` without resuming; updates use capability-verified
 `thread/settings/update` and apply to subsequent Turns. The target must belong
-to that Profile's Workspace. Default settings use native `config/read` and
+to that Profile's Workspace. Scope checks recognize existing path aliases that
+resolve to that same directory; another or unresolved directory is rejected.
+Native and configured path spellings are not rewritten. Default settings use native `config/read` and
 `config/batchWrite` with the active user-layer version. They affect native future
 Thread defaults; they do not change existing Threads.
 

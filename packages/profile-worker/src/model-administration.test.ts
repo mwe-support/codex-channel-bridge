@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ManagedCodexRpcRuntime } from "@codex-channel-bridge/codex-app-server";
 import { administerModel, isModelAction } from "./model-administration.js";
 import { TurnCoordinator } from "./turn-coordinator.js";
 import { CodexEventRouter } from "./codex-event-router.js";
 
-test("native model administration respects scope, discovery, capability, version and output boundaries", async () => {
+test("native model administration respects scope, discovery, capability, version and output boundaries", async (context) => {
+  const workspace = await mkdtemp(join(tmpdir(), "bridge-model-scope-"));
+  context.after(() => rm(workspace, { recursive: true, force: true }));
   const calls: { method: string; params: any }[] = [];
   let model = "native-a";
   let effort = "medium";
-  let cwd = "/workspace";
+  let cwd = workspace;
   const runtime = Object.assign(new EventEmitter(), {
     async request<T>(method: string, params: any): Promise<T> {
       calls.push({ method, params });
@@ -23,9 +28,9 @@ test("native model administration respects scope, discovery, capability, version
       throw new Error(method);
     }
   }) as unknown as ManagedCodexRpcRuntime;
-  const coordinator = new TurnCoordinator({ runtime, workspace: "/workspace", eventRouter: new CodexEventRouter() });
+  const coordinator = new TurnCoordinator({ runtime, workspace, eventRouter: new CodexEventRouter() });
   const methods = ["thread/settings/update", "config/read", "config/batchWrite"];
-  const act = (action: Parameters<typeof administerModel>[4], capabilities = methods) => administerModel(runtime, coordinator, capabilities, "/workspace", action);
+  const act = (action: Parameters<typeof administerModel>[4], capabilities = methods) => administerModel(runtime, coordinator, capabilities, workspace, action);
   assert.equal(isModelAction({ kind: "get", scope: "defaults", threadId: "other" }), false);
   assert.equal(isModelAction({ kind: "list", model: "invented" }), false);
   assert.deepEqual(await act({ kind: "get", scope: "thread", threadId: "one" }), { scope: "thread", threadId: "one", model, effort });
@@ -33,7 +38,7 @@ test("native model administration respects scope, discovery, capability, version
   cwd = "/other";
   await assert.rejects(act({ kind: "set", scope: "thread", threadId: "one", effort: "high" }), /outside/);
   assert.equal(calls.some(call => call.method === "thread/settings/update"), false);
-  cwd = "/workspace";
+  cwd = workspace;
   await assert.rejects(act({ kind: "set", scope: "thread", threadId: "one", effort: "high" }, []), /Unsupported/);
   await assert.rejects(act({ kind: "set", scope: "defaults", model: "invented" }), /absent/);
   await assert.rejects(act({ kind: "set", scope: "defaults", effort: "invented" }), /unsupported/);
@@ -44,4 +49,30 @@ test("native model administration respects scope, discovery, capability, version
   const write = calls.find(call => call.method === "config/batchWrite")!.params;
   assert.deepEqual(write, { edits: [{ keyPath: "model_reasoning_effort", value: "medium", mergeStrategy: "replace" }], expectedVersion: "native-version", reloadUserConfig: false });
   assert.doesNotMatch(JSON.stringify(defaults), /private|config.toml|secret/);
+});
+
+test("Thread scope accepts an existing Workspace alias but rejects another directory", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-model-workspace-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const workspace = join(root, "real", "workspace"), alias = join(root, "alias");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(join(root, "other"));
+  await symlink(join(root, "real"), alias, "junction");
+  let cwd = workspace;
+  const calls: string[] = [];
+  const runtime = Object.assign(new EventEmitter(), {
+    async request<T>(method: string): Promise<T> {
+      calls.push(method);
+      assert.equal(method, "thread/read");
+      return { thread: { id: "one", cwd, model: "native-a", reasoningEffort: "medium" } } as T;
+    }
+  }) as unknown as ManagedCodexRpcRuntime;
+  const configured = join(alias, "workspace");
+  const coordinator = new TurnCoordinator({ runtime, workspace: configured, eventRouter: new CodexEventRouter() });
+  const read = () => administerModel(runtime, coordinator, [], configured, { kind: "get", scope: "thread", threadId: "one" });
+  assert.equal((await read()).model, "native-a");
+  for (cwd of [join(root, "other"), join(root, "missing"), "relative-workspace"]) {
+    await assert.rejects(read(), /outside/);
+  }
+  assert.deepEqual(calls, Array(4).fill("thread/read"));
 });

@@ -1,9 +1,9 @@
-import { administerModel, type ModelAction } from "./model-administration.js";
+import { administerModel, matchesProfileWorkspace, type ModelAction } from "./model-administration.js";
 import { EventEmitter } from "node:events";
 import { ChannelAnswerStreams, type AnswerStreamStore } from "./channel-answer-streams.js";
 import { randomUUID } from "node:crypto";
 import { statfs } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import {
   CodexAppServerProcess,
@@ -1248,7 +1248,7 @@ export class ProfileWorker extends EventEmitter {
 
     if (command.kind === "thread.attach") {
       const settings = await coordinator.readThreadSettings(command.threadId);
-      if (resolve(settings.cwd) !== resolve(this.#config.workspace)) {
+      if (!await matchesProfileWorkspace(settings.cwd, this.#config.workspace)) {
         throw new Error("The Codex Thread belongs to a different Workspace");
       }
       const replaced = await store.replaceThreadBinding({
