@@ -31,9 +31,9 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 
 | 编号 | 需求 | 状态 | 发布版本 |
 | --- | --- | --- | --- |
-| FR-001 | WhatsApp 等待提示与完整回复 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
+| FR-001 | WhatsApp 等待提示与完整回复 | done（已完成） | `0.2.0-rc.1` |
 | FR-002 | Channel Conversation 在宿主机 Codex App 中可见 | discussing（待讨论） | unassigned |
-| FR-003 | 不同会话默认不受并发上限限制 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
+| FR-003 | 不同会话默认不受并发上限限制 | done（已完成） | `0.2.0-rc.1` |
 | FR-004 | Dashboard 配置、Profile 日志与重启控制 | accepted（已接受） | Next / unassigned |
 | FR-005 | Dashboard 会话管理 | accepted（已接受） | Next / unassigned |
 | FR-006 | QQ 私聊原生流式回复 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
@@ -50,8 +50,11 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 
 [2026-09-09 主线验收](acceptance/mainline-20260909.md)记录最新 macOS/Linux/Docker
 检查、服务生命周期、真实跨渠道中断、QQ 超长回复及 Linux/Docker QQ 私聊附件
-下载摘要核对。目标宿主 WhatsApp 私聊/群聊下载及持久认证复用也已通过；QQ 群聊
-附件和剩余提供商边界场景仍未完成。
+下载摘要核对。目标宿主 WhatsApp 私聊/群聊下载及持久认证复用也已通过。
+[边界补充验收](acceptance/mainline-closeout-20260909.md)新增 QQ 群聊下载、三种
+运行方式的同账号 WhatsApp 独立中断、真实进程丢失恢复及隔离回滚/组装演练。
+QQ 群聊延迟投递被主动发言权限阻塞；真实 C2C 过期/限流拒绝及其他未观察到的
+提供商/视觉门槛仍保留。
 
 ## FR-013 — 统一 Bridge 管理 CLI
 
@@ -117,8 +120,9 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   单元/PTY/原生契约及真实 systemd 生命周期通过，Docker CLI/生命周期通过。
   Windows 较早候选的普通用户 CLI 与服务适配器编译检查通过；最终报告核对以及
   提权 SCM、文件符号链接门槛仍是独立事项。
-- 后续：补齐适用主线证据；Windows 服务验收保留在独立分支，通过后才作出 Windows
-  交付声明。尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
+- 最终快照在 macOS/Linux/Docker 各通过 263 项单元测试；真实 Workspace 别名
+  Thread 查询现已通过，见[边界证据](acceptance/mainline-closeout-20260909.md)。
+  Windows 服务验收保留在独立分支，通过后才作出 Windows 交付声明。尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
 
 - [已完成检查及明确的待验收项](acceptance/cli-20260908.md)。最新 QQ 忙碌拒绝、失败回传及授权复用凭证后的正向回复均已验证。
 
@@ -201,8 +205,11 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   TLS 所需的系统 CA 证书包。参见[主线验收](acceptance/mainline-20260909.md)。
 - 原生 Linux 与 Docker 的目标宿主 WhatsApp 私聊/群聊附件下载已通过，包含群聊
   原生审批、重启及运行方式切换时的认证复用；成功配对次数始终为 1。
-- 剩余：Linux/Docker QQ 群聊附件、独立开发分支的 Windows 验收，以及适用的
-  发布/回滚门槛。本次不发布版本。参见
+- Linux/Docker QQ 群聊附件下载也已通过，18/19 字节文件的原件、快照、Outbox
+  与下载摘要一致。macOS/Linux/Docker 隔离 schema-11 回滚通过，范围及候选差异
+  记录在[边界补充验收](acceptance/mainline-closeout-20260909.md)。
+- 剩余：独立开发分支的 Windows 验收，以及最终正式候选的准确标签验收/发布。
+  本次不发布版本。参见
   [早期验收证据](acceptance/automatic-output-files.md)与[使用说明及准确限制](output-files.md)。
 
 ## FR-008 — Channel Account 管理员与全局设置命令
@@ -253,7 +260,7 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 
 ## FR-001 — WhatsApp 等待提示与完整回复
 
-- 更新：2026-09-04。状态：`awaiting-acceptance`；版本：`0.2.0-rc.1`。
+- 更新：2026-09-09。状态：`done`；版本：`0.2.0-rc.1`。
 - 调整后的需求：Codex 思考或调用工具时显示等待提示，Turn 结束后再发送完整文本。
   本需求取代先前模拟流式方案及尚未发布的 `streamingPreview` 配置。
 - 此回退仅针对 WhatsApp 模拟文本流式，不取消 QQ 私聊原生流式（FR-006）。
@@ -296,8 +303,11 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 后续部署包含 FR-003 的无限制准入，当前配置版本见下方对应条目。
   FR-003 部署之前，等待提示构建的五次真实 Turn（四次私聊、一次群聊）均完成，最终投递 accepted 且
   都是首次尝试；群聊 Turn 耗时 544,788 毫秒。这些回执不能证明提示可见或已收起。
-- 下一步：观察用户真实 WhatsApp 私聊/群聊的等待提示与完整回复，再完成 QQ 门槛。
-  服务就绪不等于视觉验收通过；尚未提交或发布。
+- 2026-09-09 验收通过：Mac 真实私聊/群聊在仅执行工具的等待期间显示输入气泡，
+  后续观察仍可见，完整结果到达后收起。另一次私聊中断也收起气泡并收到中断通知。
+  三次终态投递均获接受且有回执。结合已有生命周期回归及真实 QQ 共享链路检查，
+  候选 `9ea63a0` 已完成本需求列明的功能验收；不代表准确发布标签复验，也不承诺
+  所有 WhatsApp 客户端显示方式一致。见[边界证据](acceptance/mainline-closeout-20260909.md)。
 
 ## FR-002 — Channel Conversation 在宿主机 Codex App 中可见
 
@@ -343,7 +353,7 @@ blocked/deferred，在实现前解释该边界。
 
 ## FR-003 — 不同会话默认不受并发上限限制
 
-- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：`0.2.0-rc.1`。
+- 更新：2026-09-09。状态：`done`；版本：`0.2.0-rc.1`。
 - 后续修正，Next / unassigned：用户已授权审计 A4 的活动状态整理。
   队列晋升回归在修正前失败（账户活动计数为 0，预期为 1），将 Channel 上下文与
   Turn 目标合并存储、登记晋升工作后通过；同时覆盖控制者查找、参与者校验、
@@ -353,6 +363,9 @@ blocked/deferred，在实现前解释该边界。
   后续真实 QQ 晋升/审批、队首跳过与中断隔离已通过；主配置和原绑定恢复，其他 FR-003
   既有验收项保持原状态。见[本轮证据](acceptance/capability-and-admission-20260905.md)。
   本轮已部署候选代码，尚未提交或发布。
+- 2026-09-09 后续：原生 macOS、原生 Linux 和 Docker 的同账号 WhatsApp 私聊/
+  群聊独立中断均通过；私聊中断后群聊继续，最终完成且接收端收到完整回复。
+  这关闭该场景，输入提示可见/收起仍单独保留。见[边界证据](acceptance/mainline-closeout-20260909.md)。
 - 需求：群聊和私聊不能仅因为共享 Profile 就互相阻塞；Bridge 默认不限制并发 Turn 数。
 - 归属：仅调整 Bridge 准入。Codex 拥有各 Thread/Turn；
   不为每个会话新增进程、Gateway、调度系统或复制历史。
@@ -377,7 +390,8 @@ blocked/deferred，在实现前解释该边界。
 - 2026-09-04 本机真实并发已验证：私聊与群聊使用两个不同 Thread，
   重叠执行 23,085 毫秒并分别完成；两个最终 Outbox 记录均首次尝试 accepted。
   这证明并发执行，不证明提示可见或中断隔离。
-- 下一步：独立中断、提示可见/收起与共享链路 QQ 验收。尚未提交或发布。
+- 独立中断现已通过上述 2026-09-09 边界补充验收。提示可见/收起属于 FR-001，
+  不从本项结果推断。Next 更改不会补入已经发布的不可变标签。
 
 ## FR-004 — Dashboard 配置、Profile 日志与重启控制
 
@@ -457,4 +471,8 @@ blocked/deferred，在实现前解释该边界。
 
 - 2026-09-09 收口验收在真实 App Server 崩溃后复现恢复通知缺陷：把序列化归档
   去重键误当成回复锚点。共享存储现已取回 QQ/WhatsApp 原消息 ID，并保留 QQ
-  流式帧与回复序号的统一分配。回归通过，正在复验修复后的真实崩溃恢复及其余发布门槛。
+  流式帧与回复序号的统一分配。回归及修复后的 Mac App Server、Linux 发送中
+  worker 崩溃测试均通过：一条不确定输入、通知获接受且客户端可见、不自动重放、
+  显式继续成功；worker 重启后原生 Thread 设置保留。
+  [边界证据](acceptance/mainline-closeout-20260909.md)将其与尚未观察的 C2C
+  过期/限流拒绝及 QQ 群主动发言权限阻塞分开。

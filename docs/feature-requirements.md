@@ -36,9 +36,9 @@ behavior. No separate issue database or requirements service is needed.
 
 | ID | Requirement | Status | Release |
 | --- | --- | --- | --- |
-| FR-001 | WhatsApp waiting indicator and complete replies | awaiting-acceptance | `0.2.0-rc.1` |
+| FR-001 | WhatsApp waiting indicator and complete replies | done | `0.2.0-rc.1` |
 | FR-002 | Channel Conversations visible in the host Codex App | discussing | unassigned |
-| FR-003 | Independent conversations without a default concurrency cap | awaiting-acceptance | `0.2.0-rc.1` |
+| FR-003 | Independent conversations without a default concurrency cap | done | `0.2.0-rc.1` |
 | FR-004 | Dashboard configuration, Profile logs and restart controls | accepted | Next / unassigned |
 | FR-005 | Dashboard conversation management | accepted | Next / unassigned |
 | FR-006 | QQ private-chat native streaming | awaiting-acceptance | `0.2.0-rc.1` |
@@ -58,8 +58,11 @@ The [2026-09-09 mainline acceptance](acceptance/mainline-20260909.md) records
 refreshed macOS/Linux/Docker checks, service lifecycle, real cross-Channel
 interruption, oversized QQ delivery and Linux/Docker private QQ attachment
 downloads with matching digests. Target-host WhatsApp private/group downloads
-and persistent authentication reuse now also pass. QQ group-file and remaining
-provider-boundary scenarios are still open.
+and persistent authentication reuse now also pass. The [boundary follow-up](acceptance/mainline-closeout-20260909.md)
+adds QQ group downloads, same-account WhatsApp interruption on all three runtimes,
+real process-loss recovery and isolated rollback/assembly rehearsals. QQ late
+group delivery is blocked by proactive permission; real C2C expiry/rate-limit
+rejection and other unobserved provider/visual gates remain open.
 
 ## FR-013 — Unified Bridge administration CLI
 
@@ -152,8 +155,9 @@ provider-boundary scenarios are still open.
   passed, and Docker CLI/lifecycle passed. Windows ordinary-user CLI and adapter
   compilation checks passed on the earlier candidate; final Windows reporting and
   privileged SCM/file-symlink gates remain separate.
-- Remaining work: record the complete applicable mainline evidence and retain
-  Windows service acceptance in its separate branch before making Windows claims. No release
+- The final snapshot passed 263 unit tests on macOS/Linux/Docker; the real
+  aliased-Workspace Thread query now passes. See the [boundary evidence](acceptance/mainline-closeout-20260909.md).
+  Windows service acceptance remains in its separate branch before making Windows claims. No release
   tag has been assigned. See [upstream comparison](research/service-installation-cli-20260905.md).
 
 - [Completed checks and explicit remaining gates](acceptance/cli-20260908.md). The latest QQ busy rejection, failure delivery and positive reply after authorized credential reuse passed.
@@ -263,9 +267,12 @@ provider-boundary scenarios are still open.
 - Target-host WhatsApp private/group attachment downloads now pass on native
   Linux and Docker, including group native approval and authentication reuse
   across restart/runtime switching. The successful pairing count remains one.
-- Remaining: QQ group-file scenarios on Linux/Docker, Windows on its independent
-  development branch, and applicable release/rollback
-  gates. This does not publish a release. See
+- QQ group-file downloads now also pass on Linux/Docker, with matching 18/19-byte
+  source/snapshot/Outbox/download digests. Isolated schema-11 rollback passed on
+  macOS/Linux/Docker; scope and candidate differences are recorded in the
+  [boundary follow-up](acceptance/mainline-closeout-20260909.md).
+- Remaining: Windows on its independent development branch and exact final-release
+  acceptance/publication. This does not publish a release. See
   [earlier acceptance evidence](acceptance/automatic-output-files.md) and
   [usage and exact limits](output-files.md).
 
@@ -334,7 +341,7 @@ provider-boundary scenarios are still open.
 
 ## FR-001 — WhatsApp waiting indicator and complete replies
 
-- Updated: 2026-09-04. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Updated: 2026-09-09. Status: `done`; release: `0.2.0-rc.1`.
 - Revised request: show a visible waiting indication while Codex thinks or uses
   tools; send the complete text only after the Turn ends. This supersedes the
   earlier simulated-streaming request and its unreleased `streamingPreview`
@@ -387,9 +394,14 @@ provider-boundary scenarios are still open.
   configuration revision below. Before FR-003 deployment, five typing-build real Turns (four private, one
   group) completed with accepted, first-attempt final deliveries; the group Turn
   lasted 544,788 ms. These receipts do not verify typing visibility or cleanup.
-- Next: observe the user's real WhatsApp private/group waiting and complete-reply
-  tests, then finish the QQ gate. Deployment readiness is not visual acceptance.
-  No commit or release yet.
+- Accepted on 2026-09-09: actual Mac private/group input bubbles appeared during
+  tool-only waits, remained visible at later observations, and disappeared after
+  completed final replies. A separate private interruption cleared the bubble
+  and delivered the interruption notice. All three terminal deliveries were
+  accepted with receipts. Together with the existing lifecycle regressions and
+  real QQ shared-path checks, this closes the recorded feature acceptance on
+  candidate `9ea63a0`; it does not claim exact-tag revalidation or universal
+  WhatsApp client presentation. See [boundary evidence](acceptance/mainline-closeout-20260909.md).
 
 ## FR-002 — Channel Conversations visible in the host Codex App
 
@@ -443,7 +455,7 @@ requirement blocked/deferred and explain the boundary before implementation.
 
 ## FR-003 — Independent conversations without a default concurrency cap
 
-- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Updated: 2026-09-09. Status: `done`; release: `0.2.0-rc.1`.
 - Follow-up, Next / unassigned: the user authorized audit A4's active-state
   cleanup. The queued-work regression failed before the fix (account active
   count 0 instead of 1) and passes after co-locating Channel context and Turn
@@ -456,6 +468,11 @@ requirement blocked/deferred and explain the boundary before implementation.
   and original binding are restored. Other existing FR-003 gates retain their status.
   See [this run's evidence](acceptance/capability-and-admission-20260905.md).
   Candidate code is deployed locally, not committed or released.
+- Follow-up on 2026-09-09: same-account WhatsApp private/group interruption passed
+  on native macOS, native Linux and Docker. In each case the group remained
+  active after private interruption, then completed with a received final reply.
+  This closes that scenario; typing visibility/cleanup remains separate. See
+  [boundary evidence](acceptance/mainline-closeout-20260909.md).
 - Request: group/private conversations must not block each other merely because
   they share a Profile; no default Bridge concurrent-Turn limit.
 - Ownership: Bridge admission only. Codex owns each Thread/Turn; no new process,
@@ -489,8 +506,9 @@ requirement blocked/deferred and explain the boundary before implementation.
   distinct Threads, overlapped for 23,085 ms and completed independently; both
   final outbox records were accepted on attempt 1. This proves concurrent
   execution, not typing visibility or interruption isolation.
-- Next: independent interruption, typing visibility/cleanup and QQ shared-path
-  acceptance. Not committed/released.
+- Independent interruption now passes in the 2026-09-09 boundary follow-up above.
+  Typing visibility/cleanup belongs to FR-001 and is not inferred from this result.
+  Next changes are not added to the immutable published tag.
 
 ## FR-004 — Dashboard configuration, Profile logs and restart controls
 
@@ -587,7 +605,12 @@ requirement blocked/deferred and explain the boundary before implementation.
   App Server crash: the serialized Archive dedupe key was used as the reply
   anchor. The shared store now recovers the original QQ/WhatsApp wire message ID
   and preserves QQ stream/reply sequence allocation. Regression passed; real
-  corrected crash recovery and the remaining release gates are being rechecked.
+  corrected Mac App Server and Linux in-flight worker crash tests now pass:
+  one uncertain input, accepted client-visible notification, no automatic replay,
+  and successful deliberate continuation. Native Thread settings survived the
+  worker restart. [Boundary evidence](acceptance/mainline-closeout-20260909.md)
+  separates this from unobserved C2C expiry/rate-limit rejection and the QQ group
+  proactive-permission block.
 - Local deployment: after verified backup and operator confirmation, explicit
   schema 9→10 migration completed; QQ and WhatsApp are ready and Dashboard is retained.
   The first live attempt exposed an incorrect zero remaining-length guard. Its

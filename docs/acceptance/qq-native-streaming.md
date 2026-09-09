@@ -57,3 +57,12 @@ The attempted group/private overlap ended too soon to establish simultaneous act
 Turns; it proves two successful routes, not concurrent acceptance. WhatsApp is
 connected, but no new WhatsApp client interaction was performed for this fix.
 Mocked boundary tests do not replace these outstanding real-provider checks.
+
+## Boundary follow-up — 2026-09-09
+
+[Mainline boundary acceptance](mainline-closeout-20260909.md) records corrected
+real App Server/worker crash recovery, an actual unacknowledged frame window,
+accepted uncertainty notifications and deliberate continuation. It also records
+group-anchor expiry followed by proactive permission rejection. These cases
+supersede only their matching earlier gaps; real C2C expiry/rate-limit rejection
+and other unobserved connection/stream cases remain open.

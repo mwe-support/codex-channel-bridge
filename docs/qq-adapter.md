@@ -176,3 +176,11 @@ On 2026-08-27, the updated durable-sequence C2C contract reached Gateway
 `ready` but received no new C2C event during its 300-second window. It sent no
 message and ended with `live_contract_timeout`. This is an incomplete external
 interaction, not evidence that the raw-send path passed or failed.
+
+## Late group delivery observation — 2026-09-09
+
+The test group returned expired-anchor code `40034005`, followed by proactive
+permission denial `40034105`. Group administrators must permit proactive bot
+messages for this fallback to succeed. A completed Codex Turn with a rejected
+Outbox record is not delivered. See [boundary acceptance](acceptance/mainline-closeout-20260909.md)
+for the actual probe scope and outstanding successful-delivery retest.

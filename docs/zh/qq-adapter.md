@@ -147,3 +147,10 @@ Delivery、Resume、Rate Limit 与 Duplicate/Reconciliation Behavior 仍未验�
 
 恢复通知会从归档复合去重键中取回 QQ 原消息 ID，再分配回复序号，因此与此前
 已接受的流式帧共用同一序号计数器；不会把序列化归档键作为 `msg_id` 发送。
+
+## 群聊延迟投递观测 — 2026-09-09
+
+测试群返回过期锚点码 `40034005`，随后主动投递以 `40034105` 被权限拒绝。
+该回退成功需要群管理员允许机器人主动发言。Codex Turn 完成但 Outbox 被拒绝，
+不能称为已送达。实际探测范围及尚待成功投递复测见
+[边界验收](acceptance/mainline-closeout-20260909.md)。
