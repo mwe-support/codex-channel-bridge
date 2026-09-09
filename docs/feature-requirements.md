@@ -50,6 +50,15 @@ behavior. No separate issue database or requirements service is needed.
 | FR-012 | Codex compatibility from actual capabilities | awaiting-acceptance | Next / unassigned |
 | FR-013 | Unified Bridge administration CLI | awaiting-acceptance | Next / unassigned |
 
+P0 / P1 closeout was authorized on 2026-09-08. The deployment-storage work and
+remaining cross-platform evidence are tracked in the [execution record](acceptance/p0-p1-20260908.md).
+Individual requirement statuses remain unchanged until their gates pass.
+
+The [2026-09-09 mainline acceptance](acceptance/mainline-20260909.md) records
+refreshed macOS/Linux/Docker checks, service lifecycle, real cross-Channel
+interruption and oversized QQ delivery. Linux/Docker real file delivery and
+the remaining provider-boundary scenarios are still open.
+
 ## FR-013 — Unified Bridge administration CLI
 
 - Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
@@ -137,8 +146,8 @@ behavior. No separate issue database or requirements service is needed.
   passed, and Docker CLI/lifecycle passed. Windows ordinary-user CLI and adapter
   compilation checks passed on the earlier candidate; final Windows reporting and
   privileged SCM/file-symlink gates remain separate.
-- Remaining work: finish Windows result reconciliation and the privileged service gates,
-  and record the complete platform evidence before marking FR-013 done. No release
+- Remaining work: record the complete applicable mainline evidence and retain
+  Windows service acceptance in its separate branch before making Windows claims. No release
   tag has been assigned. See [upstream comparison](research/service-installation-cli-20260905.md).
 
 - [Completed checks and explicit remaining gates](acceptance/cli-20260908.md). The latest QQ busy rejection, failure delivery and positive reply after authorized credential reuse passed.

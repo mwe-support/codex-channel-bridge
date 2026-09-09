@@ -45,6 +45,13 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-012 | 按实际能力判断 Codex 兼容性 | awaiting-acceptance（待验收） | Next / unassigned |
 | FR-013 | 统一 Bridge 管理 CLI | awaiting-acceptance（待验收） | Next / unassigned |
 
+2026-09-08 已授权执行 P0 / P1 收口。部署持久存储与剩余跨平台证据记录在
+[执行记录](acceptance/p0-p1-20260908.md)中；各需求通过自身门槛前保持原状态。
+
+[2026-09-09 主线验收](acceptance/mainline-20260909.md)记录最新 macOS/Linux/Docker
+检查、服务生命周期、真实跨渠道中断及 QQ 超长回复投递。Linux/Docker 真实文件投递
+和剩余提供商边界场景仍未完成。
+
 ## FR-013 — 统一 Bridge 管理 CLI
 
 - 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
@@ -106,8 +113,8 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   单元/PTY/原生契约及真实 systemd 生命周期通过，Docker CLI/生命周期通过。
   Windows 较早候选的普通用户 CLI 与服务适配器编译检查通过；最终报告核对以及
   提权 SCM、文件符号链接门槛仍是独立事项。
-- 后续：完成 Windows 结果核对及提权服务门槛，补齐平台证据后才能将 FR-013 标记
-  完成；尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
+- 后续：补齐适用主线证据；Windows 服务验收保留在独立分支，通过后才作出 Windows
+  交付声明。尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
 
 - [已完成检查及明确的待验收项](acceptance/cli-20260908.md)。最新 QQ 忙碌拒绝、失败回传及授权复用凭证后的正向回复均已验证。
 
