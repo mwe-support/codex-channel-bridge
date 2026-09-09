@@ -660,8 +660,7 @@ export class SqliteProfileStore {
           ON c.archive_record_id = a.record_id WHERE a.profile_id = ? AND a.record_id = ?
           AND a.provider = 'qq' AND a.conversation_kind = 'private'
           AND c.state IN ('accepted', 'started')`).get(this.#profileId, input.archiveRecordId);
-      let anchor: unknown = archive?.provider_event_id;
-      try { anchor = JSON.parse(String(anchor))[0]; } catch { /* Legacy plain event identifier. */ }
+      const anchor = archive && archiveReplyEventId("qq", archive.provider_event_id);
       if (!archive || input.target.conversationKind !== "private" ||
           input.target.conversationKey !== archive.conversation_key ||
           input.target.providerConversationId !== archive.provider_conversation_id ||
@@ -1630,7 +1629,7 @@ export class SqliteProfileStore {
           conversationKey: archive.conversation_key,
           conversationKind: archive.conversation_kind,
           providerConversationId: archive.provider_conversation_id,
-          providerReplyEventId: archive.provider_event_id,
+          providerReplyEventId: archiveReplyEventId(archive.provider, archive.provider_event_id),
           ...(archive.provider === "whatsapp"
             ? {
                 providerReplyParticipantId: archive.provider_identity,
@@ -3283,6 +3282,18 @@ function durableResultDigest(input: DurableResultInput): string {
       : segment.text)
   ]);
   return createHash("sha256").update(canonical).digest("hex");
+}
+
+/** Archive dedupe keys are composite; replies use the original wire message ID. */
+function archiveReplyEventId(provider: ChannelProvider, eventId: string): string {
+  try {
+    const parts: unknown = JSON.parse(eventId);
+    if (Array.isArray(parts) && parts.length === (provider === "qq" ? 2 : 3)) {
+      const replyId: unknown = parts[provider === "qq" ? 0 : 2];
+      if (validExternalId(replyId)) return replyId;
+    }
+  } catch { /* Preserve legacy plain event identifiers. */ }
+  return eventId;
 }
 
 function allocateReplySequences(

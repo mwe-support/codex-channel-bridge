@@ -579,6 +579,11 @@ requirement blocked/deferred and explain the boundary before implementation.
   stream frames, schema-10 delivery metadata, coalescing, durable DONE receipt
   recovery, ordinary Outbox fallback and lossless oversized QQ segmentation.
   See [test evidence](acceptance/qq-native-streaming.md).
+- Closeout on 2026-09-09 reproduced a recovery-notification defect after a real
+  App Server crash: the serialized Archive dedupe key was used as the reply
+  anchor. The shared store now recovers the original QQ/WhatsApp wire message ID
+  and preserves QQ stream/reply sequence allocation. Regression passed; real
+  corrected crash recovery and the remaining release gates are being rechecked.
 - Local deployment: after verified backup and operator confirmation, explicit
   schema 9→10 migration completed; QQ and WhatsApp are ready and Dashboard is retained.
   The first live attempt exposed an incorrect zero remaining-length guard. Its

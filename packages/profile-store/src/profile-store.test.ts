@@ -728,6 +728,38 @@ test("atomically commits restart uncertainty and its durable Channel notificatio
   store.close();
 });
 
+test("restart notifications restore wire reply IDs from composite archive keys", async (context) => {
+  for (const provider of ["qq", "whatsapp"] as const) {
+    for (const conversationKind of ["private", "group"] as const) {
+      const store = SqliteProfileStore.open({ profileId: "alpha", databasePath: await temporaryDatabase(context) });
+      try {
+        const event = message({ provider, conversationKind, channelAccountId: `${provider}-primary`,
+          conversationKey: `${provider}:${conversationKind}:conversation-1`,
+          providerEventId: JSON.stringify(provider === "qq" ? ["wire-message", null]
+            : ["conversation-1", conversationKind === "group" ? "participant-1" : null, "wire-message"]) });
+        const archive = store.commitMessage(event);
+        const binding = store.createThreadBinding({ profileId: "alpha", conversationKey: event.conversationKey,
+          scope: "conversation", codexThreadId: "thread-uncertain", boundAtMs: 1_001 }).binding;
+        const accepted = store.acceptCodexInput({ profileId: "alpha", archiveRecordId: archive.recordId,
+          bindingId: binding.bindingId, codexThreadId: binding.codexThreadId,
+          clientUserMessageId: "client-uncertain", acceptedAtMs: 1_002 }).correlation;
+        if (provider === "qq" && conversationKind === "private") {
+          store.beginAnswerStream({ archiveRecordId: archive.recordId, target: {
+            conversationKey: event.conversationKey, conversationKind, providerConversationId: event.providerConversationId,
+            providerReplyEventId: "wire-message" } });
+        }
+        store.commitCodexInputUncertainty({ correlationId: accepted.correlationId,
+          reasonCode: "turn_result_uncertain", completedAtMs: 2_000, text: "Not replayed automatically." });
+        const [lease] = store.claimOutbox({ nowMs: 2_000, leaseDurationMs: 1_000 });
+        assert.equal(lease?.target.providerReplyEventId, "wire-message");
+        assert.equal(lease?.target.providerConversationId, event.providerConversationId);
+        if (provider === "qq") assert.equal(lease?.providerReplySequence, conversationKind === "private" ? 2 : 1);
+        else assert.equal(lease?.target.providerReplyParticipantId, event.providerIdentity);
+      } finally { store.close(); }
+    }
+  }
+});
+
 test("leases Outbox segments in order and retries ambiguous delivery durably", async (context) => {
   const databasePath = await temporaryDatabase(context);
   const store = SqliteProfileStore.open({ profileId: "alpha", databasePath });

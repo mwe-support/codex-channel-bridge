@@ -50,6 +50,10 @@ because the Web protocol does not provide the Bridge an idempotent send key or
 a definitive reconciliation lookup. Retry therefore retains the documented
 small duplicate window.
 
+Recovery notifications retain the original WhatsApp message ID from the
+Archive's scoped deduplication tuple, together with the stored conversation,
+participant and quote text. The composite tuple is not a wire reply ID.
+
 ## Waiting indicator
 
 Accepted WhatsApp work automatically sends Baileys' native `composing` presence

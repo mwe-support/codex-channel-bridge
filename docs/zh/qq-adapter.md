@@ -142,3 +142,8 @@ Delivery、Resume、Rate Limit 与 Duplicate/Reconciliation Behavior 仍未验�
 2026-08-27，更新后的 Durable-sequence C2C Contract 到达 Gateway `ready`，但在 300 秒
 窗口内没有收到新的 C2C Event，因此没有发送消息，并以 `live_contract_timeout` 结束。
 这是未完成的外部交互，不能作为 Raw-send Path 通过或失败的证据。
+
+## 恢复通知的回复关联
+
+恢复通知会从归档复合去重键中取回 QQ 原消息 ID，再分配回复序号，因此与此前
+已接受的流式帧共用同一序号计数器；不会把序列化归档键作为 `msg_id` 发送。

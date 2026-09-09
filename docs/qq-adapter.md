@@ -134,6 +134,11 @@ successful Codex result. Lost responses still cannot be reconciled through a
 Provider lookup API, and the Bridge does not claim strict exactly-once result
 delivery.
 
+Recovery notifications recover the original QQ message ID from the Archive's
+composite deduplication key before allocating a reply sequence. They therefore
+share the same sequence counter as any already accepted stream frame; the
+serialized Archive key is never sent as `msg_id`.
+
 ## Verification
 
 Unit contracts cover the exact intent and transport, C2C/group provider-fact
