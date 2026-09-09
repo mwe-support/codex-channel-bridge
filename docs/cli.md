@@ -91,6 +91,10 @@ continues to override them. Do not put secrets in shell history or YAML.
 WhatsApp retains `bridge whatsapp pair`, `logout`, and `forget-local`; pairing
 material is shown only in the initiating interactive terminal. Their existing
 quiescence, identity and confirmation contracts remain in force.
+Keep the full `<stateDirectory>/channel-auth/<account-id>` directory on persistent
+storage, including its active marker and rotating keys. Normal startup reuses
+that authentication and does not invoke pairing. Docker must mount the same
+Profile data with the expected ownership; stop/disconnect preserves it.
 
 ## Native models and reasoning
 

@@ -79,6 +79,10 @@ Profile 目录必须存在并通过规范校验。停用保留数据和绑定；
 WhatsApp 保留 `bridge whatsapp pair`、`logout`、`forget-local`；配对材料只在发起操作
 的交互式终端显示。原有静默条件、身份验证和确认约束继续有效。
 
+WhatsApp 的完整 `<stateDirectory>/channel-auth/<account-id>` 目录（包含活动标记和
+滚动更新的密钥）应保存在持久存储中。正常启动直接复用认证，不执行配对。Docker
+应挂载同一份 Profile 数据并保持正确所属用户；停止或断开连接会保留认证。
+
 ## 原生模型与推理强度
 
 ```sh

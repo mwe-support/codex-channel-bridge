@@ -50,7 +50,8 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 
 [2026-09-09 主线验收](acceptance/mainline-20260909.md)记录最新 macOS/Linux/Docker
 检查、服务生命周期、真实跨渠道中断、QQ 超长回复及 Linux/Docker QQ 私聊附件
-下载摘要核对。目标宿主 WhatsApp、群聊附件和剩余提供商边界场景仍未完成。
+下载摘要核对。目标宿主 WhatsApp 私聊/群聊下载及持久认证复用也已通过；QQ 群聊
+附件和剩余提供商边界场景仍未完成。
 
 ## FR-013 — 统一 Bridge 管理 CLI
 
@@ -195,8 +196,10 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 2026-09-09 原生 Linux 与修复后的 Linux Docker 镜像已通过 QQ 私聊真实文件
   创建、原生审批、上传发送及接收端下载摘要核对；精简镜像现已包含原生 Codex
   TLS 所需的系统 CA 证书包。参见[主线验收](acceptance/mainline-20260909.md)。
-- 剩余：Linux/Docker 目标宿主 WhatsApp 与群聊附件场景、独立开发分支的 Windows
-  验收，以及适用的发布/回滚门槛。本次不发布版本。参见
+- 原生 Linux 与 Docker 的目标宿主 WhatsApp 私聊/群聊附件下载已通过，包含群聊
+  原生审批、重启及运行方式切换时的认证复用；成功配对次数始终为 1。
+- 剩余：Linux/Docker QQ 群聊附件、独立开发分支的 Windows 验收，以及适用的
+  发布/回滚门槛。本次不发布版本。参见
   [早期验收证据](acceptance/automatic-output-files.md)与[使用说明及准确限制](output-files.md)。
 
 ## FR-008 — Channel Account 管理员与全局设置命令

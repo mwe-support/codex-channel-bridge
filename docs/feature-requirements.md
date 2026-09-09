@@ -57,7 +57,8 @@ Individual requirement statuses remain unchanged until their gates pass.
 The [2026-09-09 mainline acceptance](acceptance/mainline-20260909.md) records
 refreshed macOS/Linux/Docker checks, service lifecycle, real cross-Channel
 interruption, oversized QQ delivery and Linux/Docker private QQ attachment
-downloads with matching digests. Target-host WhatsApp, group-file and remaining
+downloads with matching digests. Target-host WhatsApp private/group downloads
+and persistent authentication reuse now also pass. QQ group-file and remaining
 provider-boundary scenarios are still open.
 
 ## FR-013 — Unified Bridge administration CLI
@@ -255,8 +256,11 @@ provider-boundary scenarios are still open.
   QQ private-file creation, native approval, upload/send and recipient-download
   digest checks. The Slim image now includes the system CA bundle needed by
   native Codex TLS. See [mainline acceptance](acceptance/mainline-20260909.md).
-- Remaining: target-host WhatsApp and group-file scenarios on Linux/Docker,
-  Windows on its independent development branch, and applicable release/rollback
+- Target-host WhatsApp private/group attachment downloads now pass on native
+  Linux and Docker, including group native approval and authentication reuse
+  across restart/runtime switching. The successful pairing count remains one.
+- Remaining: QQ group-file scenarios on Linux/Docker, Windows on its independent
+  development branch, and applicable release/rollback
   gates. This does not publish a release. See
   [earlier acceptance evidence](acceptance/automatic-output-files.md) and
   [usage and exact limits](output-files.md).
