@@ -41,3 +41,8 @@ QQ 群聊先通过真实成员选择器提及 Bot，再输入命令。提供商�
 Expected Turn 的原生 `turn/steer`，不会创建新 Turn 或通用队列。详见
 [准入](admission.md)、[Thread Binding](thread-binding.md)与
 [审批路由](approval-routing.md)。
+
+在 WhatsApp 群聊中，也应先通过原生成员菜单提及目标账号，再输入命令。适配器
+只移除 Baileys 元数据确认属于当前账号的前置数字提及（手机号或 LID 形式）；
+普通文字、其他成员和非前置提及保持原样。剩余文本仍交给同一核心解析器，保留
+`//` 转义；适配器不解析命令或决定审批。

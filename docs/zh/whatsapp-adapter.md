@@ -99,3 +99,9 @@ Health，使 Supervisor 能看到 `degraded` 和之后恢复为 `ready`，而不
 - Pairing、Single-adapter Replacement、Disconnect、Logout Uncertainty、Forget-local 与 Durable Text Quote 已实现。Repository Acceptance Test 不会配对真实 WhatsApp Account。
 - Media Decryption 与有界 Content-addressed Mirroring 留在 Archive/Media Stage；Send Acceptance 之外的 Receipt 仍属后续工作。
 - 固定 Baileys Declaration Bundle 含有上游 NodeNext Declaration 缺陷。只有该 Package 启用 `skipLibCheck`；其 Public Declaration 使用 Bridge-owned Structural Type，因此例外不会传播到其他 Package。固定 Dependency 发布干净 Declaration 后应移除此例外。
+
+## 群聊命令的前置提及
+
+元数据确认的前置数字自身提及会在文本进入共享命令解析器前归一化，因此原生
+群提及后的 `/approve`、`/stop` 等既有命令遵守同一套核心规则。未经确认或属于
+其他成员的提及保持原样；适配器不解释命令名称或审批决定。

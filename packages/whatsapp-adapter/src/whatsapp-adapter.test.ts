@@ -7,7 +7,7 @@ import type {
   WAMessage
 } from "baileys";
 
-import { ChannelDeliveryError, type ProviderInboundEvent } from "@codex-channel-bridge/core";
+import { ChannelDeliveryError, parseChannelText, type ProviderInboundEvent } from "@codex-channel-bridge/core";
 
 import {
   WhatsAppChannelAdapter,
@@ -265,6 +265,28 @@ test("normalizes private and mentioned group messages with provider-owned identi
     }
   } as WAMessage, ["15550000000:1@s.whatsapp.net", "123456789012345@lid"], 9_000);
   assert.equal(lidMention?.attention, "mention");
+});
+
+test("normalizes only a verified leading self mention before shared command parsing", () => {
+  const ownJids = ["15550000000:1@s.whatsapp.net", "123456789012345@lid"];
+  const normalize = (text: string, mentions: string[], group = true) => normalizeWhatsAppMessage({
+    key: { id: "command", remoteJid: group ? "120363000000000000@g.us" : "15551112222@s.whatsapp.net",
+      participant: "15553334444@s.whatsapp.net" },
+    message: { extendedTextMessage: { text, contextInfo: { mentionedJid: mentions } } }
+  } as WAMessage, ownJids, 9_000)!.message.text!;
+  for (const jid of ["15550000000@s.whatsapp.net", "123456789012345@lid"]) {
+    const prefix = `@${jid.split("@")[0]} `;
+    assert.deepEqual(parseChannelText(normalize(`${prefix}/approve token accept`, [jid])), {
+      kind: "command", command: { kind: "approval.respond", approvalToken: "token", decision: "accept" }
+    });
+    assert.deepEqual(parseChannelText(normalize(`${prefix}//stop`, [jid])), { kind: "ordinary", text: "/stop" });
+    assert.equal(normalize(`${prefix}please help`, [jid]), "please help");
+    assert.equal(normalize(`${prefix}/stop`, []), `${prefix}/stop`);
+    assert.equal(normalize(`${prefix}/stop`, ["15559999999@s.whatsapp.net"]), `${prefix}/stop`);
+    assert.equal(normalize(`${prefix}/stop`, [jid], false), `${prefix}/stop`);
+    assert.equal(normalize(`hello ${prefix}/stop`, [jid]), `hello ${prefix}/stop`);
+    assert.equal(normalize(`@15559999999 ${prefix}/stop`, [jid]), `@15559999999 ${prefix}/stop`);
+  }
 });
 
 test("exposes one-shot Baileys decrypted media as a bounded stream source", async () => {

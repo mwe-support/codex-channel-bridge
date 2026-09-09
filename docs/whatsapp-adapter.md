@@ -34,6 +34,11 @@ WhatsApp JIDs remain provider-owned identities. Device suffixes are normalized;
 group conversation JIDs remain distinct from participant JIDs. Group messages
 are active only when Baileys context identifies a mention of the connected
 account; other group messages are archived as passive observations.
+A metadata-confirmed leading numeric self mention is normalized away before the
+shared command parser receives the text. This lets native group mention plus
+`/approve`, `/stop` and the other existing commands follow the same core rules.
+The adapter preserves unconfirmed and other-user mentions, and never interprets
+command names or approval decisions.
 
 Outbound text uses the existing `ChannelTextDelivery` contract. When an inbound
 text message is the delivery anchor, the Inbound Pipeline carries its provider

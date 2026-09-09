@@ -507,12 +507,18 @@ export function normalizeWhatsAppMessage(
     : remoteJid;
   if (!participant) return null;
   const content = normalizeMessageContent(message.message as WAMessage["message"]);
-  const text = extractText(content);
+  let text = extractText(content);
   const attachment = extractMediaAttachment(message, content, downloadMedia);
   const ownJids = typeof selfJids === "string" ? [selfJids] : selfJids ?? [];
-  const mentioned = extractMentions(content).some((mentionedJid) =>
+  const selfMentions = extractMentions(content).filter((mentionedJid) =>
     ownJids.some((ownJid) => areJidsSameUser(mentionedJid, ownJid))
   );
+  const mentioned = selfMentions.length > 0;
+  const prefix = isGroup && text ? /^@([0-9]+)\s+/u.exec(text) : null;
+  // Normalize provider addressing only; command syntax and escaping stay in the core.
+  if (prefix && selfMentions.some((jid) => normalizeJid(jid).split("@")[0] === prefix[1])) {
+    text = text!.slice(prefix[0].length);
+  }
   return {
     message: {
       provider: "whatsapp",

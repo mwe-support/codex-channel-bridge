@@ -41,6 +41,13 @@ For provider-confirmed addressed group events, the adapter strips leading QQ
 mention markup (including opaque IDs not equal to AppID) before the core parser.
 It does not strip mentions from passive events or from the middle of text.
 
+In WhatsApp groups, also select the account in the native mention picker before
+the command. The adapter removes only a leading numeric mention confirmed by
+Baileys metadata to identify the connected account (phone-number or LID form).
+Literal, other-user and nonleading mentions are preserved. The remaining text
+uses the same core parser, including `//` escaping; the adapter does not parse
+commands or decide approvals.
+
 In the default `steer` admission mode, a second admitted ordinary message for
 the same active binding uses native `turn/steer` with the exact expected Turn.
 It does not create a new Turn or a general queue. See [Admission](admission.md),
