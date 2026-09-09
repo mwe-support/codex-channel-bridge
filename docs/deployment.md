@@ -85,7 +85,10 @@ image for `better-sqlite3`. The runtime uses Bookworm Slim, runs as the existing
 non-root `node` identity. Supply an explicit Codex package version in
 `CODEX_VERSION` for reproducible builds; this is not a Bridge compatibility
 allowlist. Runtime capability probes decide availability. The running container
-performs no package installation or self-update.
+performs no package installation or self-update. The runtime includes the build
+stage's system CA bundle for Codex's native TLS connections and verifies that
+it is nonempty at build time. Node HTTPS success alone does not prove that
+native Codex can establish its authenticated transport.
 
 Mount the configuration read-only and give the container writable, owner-only
 volumes for every configured Profile state directory, Codex home, and

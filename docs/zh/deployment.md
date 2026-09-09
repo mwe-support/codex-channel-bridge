@@ -78,7 +78,9 @@ Build Stage 使用完整 Bookworm Image 提供 `better-sqlite3` 所需 Native Co
 Toolchain。Runtime 使用 Bookworm Slim，以已有的非 Root `node` Identity 运行，并在
 构建者通过 `CODEX_VERSION` 显式提供 Codex 包版本，确保构建可复现；这不是 Bridge
 兼容性白名单。运行时按能力探测决定是否可用。Container 不执行 Package
-Installation 或 Self-update。
+Installation 或 Self-update。运行时包含构建阶段的系统 CA 证书包，供 Codex
+原生 TLS 连接使用，并在构建时验证其非空。仅凭 Node HTTPS 成功，不能证明
+原生 Codex 的认证传输可用。
 
 Configuration 以 Read-only 方式 Mount；每个已配置 Profile State Directory、
 Codex Home 与 Workspace 使用可写、Owner-only Volume。Docker Operator 在同一

@@ -56,8 +56,9 @@ Individual requirement statuses remain unchanged until their gates pass.
 
 The [2026-09-09 mainline acceptance](acceptance/mainline-20260909.md) records
 refreshed macOS/Linux/Docker checks, service lifecycle, real cross-Channel
-interruption and oversized QQ delivery. Linux/Docker real file delivery and
-the remaining provider-boundary scenarios are still open.
+interruption, oversized QQ delivery and Linux/Docker private QQ attachment
+downloads with matching digests. Target-host WhatsApp, group-file and remaining
+provider-boundary scenarios are still open.
 
 ## FR-013 — Unified Bridge administration CLI
 
@@ -250,10 +251,15 @@ the remaining provider-boundary scenarios are still open.
   migration, backup finish and confirmed configuration apply. Automatic file
   delivery is enabled on the macOS test Profile. Upload/send failure and durable
   restart retry are covered by deterministic tests, not live provider fault claims.
-- Remaining: attachment-path acceptance on native Linux, Linux Docker and
-  Windows, plus applicable release/rollback gates. No commit or release has been
-  made for this feature. See [acceptance evidence](acceptance/automatic-output-files.md)
-  and [usage and exact limits](output-files.md).
+- On 2026-09-09, native Linux and the repaired Linux Docker image passed real
+  QQ private-file creation, native approval, upload/send and recipient-download
+  digest checks. The Slim image now includes the system CA bundle needed by
+  native Codex TLS. See [mainline acceptance](acceptance/mainline-20260909.md).
+- Remaining: target-host WhatsApp and group-file scenarios on Linux/Docker,
+  Windows on its independent development branch, and applicable release/rollback
+  gates. This does not publish a release. See
+  [earlier acceptance evidence](acceptance/automatic-output-files.md) and
+  [usage and exact limits](output-files.md).
 
 ## FR-008 — Channel Account administrator and global settings commands
 

@@ -18,6 +18,9 @@ RUN test -n "$CODEX_VERSION" \
 
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
+# Codex's native TLS transport uses system roots, unlike Node's bundled CA set.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN test -s /etc/ssl/certs/ca-certificates.crt
 
 ENV NODE_ENV=production
 STOPSIGNAL SIGTERM
