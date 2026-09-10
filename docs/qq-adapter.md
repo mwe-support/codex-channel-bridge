@@ -183,4 +183,6 @@ The test group returned expired-anchor code `40034005`, followed by proactive
 permission denial `40034105`. Group administrators must permit proactive bot
 messages for this fallback to succeed. A completed Codex Turn with a rejected
 Outbox record is not delivered. See [boundary acceptance](acceptance/mainline-closeout-20260909.md)
-for the actual probe scope and outstanding successful-delivery retest.
+for the original probe scope. After the operator enabled permission,
+[2026-09-10 acceptance](acceptance/qq-late-delivery-20260910.md) observed successful
+proactive fallback and a complete group result after 372 seconds.

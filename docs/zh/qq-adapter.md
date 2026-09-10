@@ -152,5 +152,6 @@ Delivery、Resume、Rate Limit 与 Duplicate/Reconciliation Behavior 仍未验�
 
 测试群返回过期锚点码 `40034005`，随后主动投递以 `40034105` 被权限拒绝。
 该回退成功需要群管理员允许机器人主动发言。Codex Turn 完成但 Outbox 被拒绝，
-不能称为已送达。实际探测范围及尚待成功投递复测见
-[边界验收](acceptance/mainline-closeout-20260909.md)。
+不能称为已送达。原始探测范围见[边界验收](acceptance/mainline-closeout-20260909.md)。
+操作者开启权限后，[2026-09-10 验收](acceptance/qq-late-delivery-20260910.md)已观察
+主动回退成功，且收到耗时 372 秒的完整群任务结果。

@@ -1,5 +1,9 @@
 # Mainline boundary acceptance — 2026-09-09
 
+Follow-up: [2026-09-10 QQ acceptance](qq-late-delivery-20260910.md) closes the
+proactive-permission block and adds real same-account private-stream/group
+interruption evidence. The observations below retain their original date.
+
 Scope: native macOS, native Linux and Linux Docker, continuing
 [mainline acceptance](mainline-20260909.md). Windows remains separate on
 `codex/windows-unattended`. This batch closes the scenarios below, but does not

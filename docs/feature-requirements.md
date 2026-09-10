@@ -60,9 +60,11 @@ interruption, oversized QQ delivery and Linux/Docker private QQ attachment
 downloads with matching digests. Target-host WhatsApp private/group downloads
 and persistent authentication reuse now also pass. The [boundary follow-up](acceptance/mainline-closeout-20260909.md)
 adds QQ group downloads, same-account WhatsApp interruption on all three runtimes,
-real process-loss recovery and isolated rollback/assembly rehearsals. QQ late
-group delivery is blocked by proactive permission; real C2C expiry/rate-limit
-rejection and other unobserved provider/visual gates remain open.
+real process-loss recovery and isolated rollback/assembly rehearsals.
+[2026-09-10 QQ acceptance](acceptance/qq-late-delivery-20260910.md) closes late group
+delivery after proactive permission was enabled and verifies private-stream
+interruption while that same account's group work continues. Real C2C expiry/
+rate-limit rejection and other unobserved provider boundaries remain open.
 
 ## FR-013 — Unified Bridge administration CLI
 
@@ -610,7 +612,10 @@ requirement blocked/deferred and explain the boundary before implementation.
   and successful deliberate continuation. Native Thread settings survived the
   worker restart. [Boundary evidence](acceptance/mainline-closeout-20260909.md)
   separates this from unobserved C2C expiry/rate-limit rejection and the QQ group
-  proactive-permission block.
+  proactive-permission block at that time. The [2026-09-10 follow-up](acceptance/qq-late-delivery-20260910.md)
+  now verifies successful expired-anchor proactive fallback, a received 372-second
+  group result, and independent interruption of an active private native stream.
+  These cases do not close the remaining C2C expiry/rate-limit/connection gates.
 - Local deployment: after verified backup and operator confirmation, explicit
   schema 9→10 migration completed; QQ and WhatsApp are ready and Dashboard is retained.
   The first live attempt exposed an incorrect zero remaining-length guard. Its

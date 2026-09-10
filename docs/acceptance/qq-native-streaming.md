@@ -66,3 +66,8 @@ accepted uncertainty notifications and deliberate continuation. It also records
 group-anchor expiry followed by proactive permission rejection. These cases
 supersede only their matching earlier gaps; real C2C expiry/rate-limit rejection
 and other unobserved connection/stream cases remain open.
+
+The [2026-09-10 follow-up](qq-late-delivery-20260910.md) passed late group delivery
+after enabling proactive permission, and real private native-stream interruption
+while that same account's group Turn continued to completion. C2C expiry/rate/
+connection boundaries above retain their remaining scope.
