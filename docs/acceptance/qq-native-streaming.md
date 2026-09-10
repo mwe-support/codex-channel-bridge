@@ -71,3 +71,8 @@ The [2026-09-10 follow-up](qq-late-delivery-20260910.md) passed late group deliv
 after enabling proactive permission, and real private native-stream interruption
 while that same account's group Turn continued to completion. C2C expiry/rate/
 connection boundaries above retain their remaining scope.
+
+[Further C2C testing](c2c-boundaries-20260910.md) records real 35-second container
+network recovery, a 330-second same-identity DONE, and scoped injected expiry/429
+fallback and retry persistence across SIGKILL. Old-anchor and bounded load probes
+were accepted, so actual C2C expiry/rate rejection remains unobserved.

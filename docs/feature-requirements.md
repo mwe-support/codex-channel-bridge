@@ -630,7 +630,12 @@ requirement blocked/deferred and explain the boundary before implementation.
   proactive-permission block at that time. The [2026-09-10 follow-up](acceptance/qq-late-delivery-20260910.md)
   now verifies successful expired-anchor proactive fallback, a received 372-second
   group result, and independent interruption of an active private native stream.
-  These cases do not close the remaining C2C expiry/rate-limit/connection gates.
+  [C2C boundary testing](acceptance/c2c-boundaries-20260910.md) then passed real
+  container-network recovery and a 330-second same-identity stream/DONE. Scoped
+  injected expiry/429 responses passed fallback, backoff and pending-Outbox
+  recovery after SIGKILL. Actual C2C expiry/rate rejection was not reproduced by
+  an 8,160-minute anchor or bounded 12-concurrent/31-sequential-send probes;
+  FR-006 remains awaiting acceptance for those real provider conditions.
 - Local deployment: after verified backup and operator confirmation, explicit
   schema 9→10 migration completed; QQ and WhatsApp are ready and Dashboard is retained.
   The first live attempt exposed an incorrect zero remaining-length guard. Its
