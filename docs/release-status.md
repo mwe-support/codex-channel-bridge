@@ -43,3 +43,8 @@ Linux and Linux Docker. Windows development is deferred to
 Merge the branch into `main` after Windows development/native acceptance and
 shared-platform regressions pass. Historical tagged evidence above remains
 unchanged; this scope decision neither declares Windows ready nor creates a release.
+
+Current mainline feature acceptance is complete under the scope recorded in the
+[requirements ledger](feature-requirements.md). QQ-owned quota/expiry policy
+observations do not block accepted Bridge response/recovery behavior. This does
+not complete release preparation, exact-tag checks or publication.

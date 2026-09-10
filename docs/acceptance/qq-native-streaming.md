@@ -76,3 +76,12 @@ connection boundaries above retain their remaining scope.
 network recovery, a 330-second same-identity DONE, and scoped injected expiry/429
 fallback and retry persistence across SIGKILL. Old-anchor and bounded load probes
 were accepted, so actual C2C expiry/rate rejection remains unobserved.
+
+## Current mainline acceptance scope
+
+QQ owns its rate/expiry thresholds and enforcement. The user's clarification
+makes Bridge-owned response handling and recovery the acceptance boundary.
+[The final boundary verdict](c2c-boundaries-20260910.md#cleanup-and-verdict) marks
+FR-006 complete for that scope while retaining actual and injected evidence
+separately. Earlier references to absent live C2C rejections as blocking gates
+are superseded; platform limits are not fixed or guaranteed by the Bridge.

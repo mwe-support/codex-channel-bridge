@@ -41,7 +41,7 @@ behavior. No separate issue database or requirements service is needed.
 | FR-003 | Independent conversations without a default concurrency cap | done | `0.2.0-rc.1` |
 | FR-004 | Dashboard configuration, Profile logs and restart controls | accepted | Next / unassigned |
 | FR-005 | Dashboard conversation management | accepted | Next / unassigned |
-| FR-006 | QQ private-chat native streaming | awaiting-acceptance | `0.2.0-rc.1` |
+| FR-006 | QQ private-chat native streaming | done (mainline targets) | `0.2.0-rc.1` |
 | FR-007 | Query current model and reasoning with bare commands | done | `0.2.0-rc.1` |
 | FR-008 | Channel Account administrator and global settings commands | deferred | unassigned |
 | FR-009 | QQ and WhatsApp native approval reliability | done | `0.2.0-rc.1` |
@@ -63,8 +63,10 @@ adds QQ group downloads, same-account WhatsApp interruption on all three runtime
 real process-loss recovery and isolated rollback/assembly rehearsals.
 [2026-09-10 QQ acceptance](acceptance/qq-late-delivery-20260910.md) closes late group
 delivery after proactive permission was enabled and verifies private-stream
-interruption while that same account's group work continues. Real C2C expiry/
-rate-limit rejection and other unobserved provider boundaries remain open.
+interruption while that same account's group work continues. The
+[C2C boundary record](acceptance/c2c-boundaries-20260910.md) completes Bridge-owned
+response/recovery acceptance. Unobserved provider thresholds or rejection
+conditions remain factual platform observations, not unfinished Bridge fixes.
 
 ## Current platform scope — 2026-09-10
 
@@ -76,8 +78,11 @@ these targets, and retains its existing code and evidence. Merge that branch int
 pass. FR-010–013 are `done` for the current mainline scope based on
 [three-platform acceptance](acceptance/mainline-20260909.md) and
 [boundary/rollback checks](acceptance/mainline-closeout-20260909.md).
-FR-006's outstanding provider evidence remains a current gate. Feature completion
-does not create a release or replace final immutable-tag checks.
+The user clarified that QQ defines its own rate/expiry rules. FR-006 is also
+`done` for Bridge-owned handling, backed by real success/recovery paths and
+explicitly labelled fault-injection tests. Producing a real QQ rejection is not
+a current mainline gate; its absence does not promise unlimited platform service.
+Feature completion does not create a release or replace final immutable-tag checks.
 
 ## FR-013 — Unified Bridge administration CLI
 
@@ -592,7 +597,7 @@ requirement blocked/deferred and explain the boundary before implementation.
 
 ## FR-006 — QQ private-chat native streaming
 
-- Updated: 2026-09-04. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Updated: 2026-09-10. Status: `done` for the current mainline scope; release: `0.2.0-rc.1`.
 - User reaffirmed the delivery contract: QQ private replies use Tencent's native
   C2C streaming endpoint; QQ groups and WhatsApp do not stream answer text and
   retain complete-result replies. FR-001's WhatsApp rollback does not override
@@ -610,8 +615,12 @@ requirement blocked/deferred and explain the boundary before implementation.
   before Turn completion and receives an accepted DONE frame. Persist the stream
   identity/sequence and reconcile terminal delivery with the existing Logical
   Result/outbox so successful streaming does not produce a second full reply.
-  Verify short/long tasks, expiry, rate limits, interruption, connection/process
-  loss, ambiguous frame outcomes and complete-result fallback without losing text.
+  Verify short/long tasks, interruption, connection/process loss, ambiguous frame
+  outcomes and complete-result fallback without losing text. Verify handling of
+  expired-anchor/rate-limit responses with controlled fault injection and real
+  subsequent delivery. QQ owns the actual thresholds and enforcement; record live
+  rejections when observed, without requiring a test account to trigger one or
+  inventing a fixed Bridge-side platform limit.
   Confirm QQ groups and WhatsApp retain non-streamed complete replies, and
   concurrent conversations cannot mix output or block one another.
 - Implemented in the working tree: phase-aware native answer deltas, QQ-only C2C
@@ -635,11 +644,15 @@ requirement blocked/deferred and explain the boundary before implementation.
   injected expiry/429 responses passed fallback, backoff and pending-Outbox
   recovery after SIGKILL. Actual C2C expiry/rate rejection was not reproduced by
   an 8,160-minute anchor or bounded 12-concurrent/31-sequential-send probes;
-  FR-006 remains awaiting acceptance for those real provider conditions.
+  those results remain platform observations. Following the user's ownership
+  clarification, they are not unresolved Bridge defects or blocking acceptance
+  criteria. FR-006 is complete for the tested Bridge behavior; actual platform
+  quota/expiry policies remain QQ-owned and unpromised.
 - Local deployment: after verified backup and operator confirmation, explicit
   schema 9→10 migration completed; QQ and WhatsApp are ready and Dashboard is retained.
   The first live attempt exposed an incorrect zero remaining-length guard. Its
   regression test and fix passed; the fresh real QQ run accepted 44 native frames
   including DONE, visibly grew before completion, and reused the same final receipt.
-  Short replies also passed. Complete the remaining boundary acceptance recorded
-  in the evidence before marking this requirement done or releasing it.
+  Short replies also passed. Subsequent boundary acceptance above completes the
+  current mainline feature scope; release preparation and exact-tag verification
+  remain separate.

@@ -102,8 +102,20 @@ and startup scripts were retained. The Mac test Profile remains ready.
 
 The exercised network-recovery, expiry-fallback and rate/restart mechanisms
 passed, with no runtime defect reproduced in those paths. **Real C2C expiry
-and rate-limit rejection remain unobserved.** FR-006 therefore remains
-`awaiting-acceptance`; injected errors are not substituted for those provider
-gates. The operator-local evidence keeps actual provider events, injected
-events, excluded attempts and normal-start verification separate. No credentials,
-raw provider identities or Channel/model bodies are included in this report.
+and rate-limit rejection remain unobserved.** A later read-only client check
+confirmed receipt of all 12 burst messages, all 31 sequential messages and both
+old-anchor replies; these probe SDK paths do not automatically retry. The rate
+probes exercised ordinary proactive messages, not sustained stream-frame load.
+
+The user clarified that QQ defines its own rate and expiry policies. Acceptance
+therefore checks Bridge-owned handling of provider results, durable recovery
+and complete delivery, not whether a test account can force QQ to reject a
+request. FR-006 is `done` for that tested mainline scope. Unobserved provider
+conditions remain observations and are not counted as passed rejection tests;
+no fixed or unlimited QQ quota/lifetime is promised. This supersedes the earlier
+classification of absent live rejections as a blocking Bridge gate.
+
+The operator-local evidence keeps actual provider events, injected events,
+excluded attempts and normal-start verification separate. No credentials, raw
+provider identities or Channel/model bodies are included in this report.
+Release preparation and final immutable-tag checks remain separate.

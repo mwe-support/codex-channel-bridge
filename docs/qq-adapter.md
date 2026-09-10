@@ -108,9 +108,11 @@ bubble or cause a duplicate. There is no provider cancellation/reconciliation
 promise. Oversized QQ results are segmented without splitting Unicode pairs or
 dropping text. No generation frame alone counts as final delivery.
 
-This is included in **`0.2.0-rc.1` / awaiting full acceptance**. Real
-private-chat incremental rendering and DONE passed;
-remaining boundary coverage is listed in the evidence below.
+This implementation is included in `0.2.0-rc.1`. Current mainline feature
+acceptance is complete for Bridge-owned streaming, response handling and
+recovery. QQ owns actual rate/expiry enforcement; unobserved platform conditions
+remain observations, not promised limits or retroactive exact-tag acceptance.
+See the [current boundary verdict](acceptance/c2c-boundaries-20260910.md#cleanup-and-verdict).
 See [migration requirements](migrations.md) and
 [acceptance evidence](acceptance/qq-native-streaming.md).
 
