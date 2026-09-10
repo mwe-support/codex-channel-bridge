@@ -45,10 +45,10 @@ behavior. No separate issue database or requirements service is needed.
 | FR-007 | Query current model and reasoning with bare commands | done | `0.2.0-rc.1` |
 | FR-008 | Channel Account administrator and global settings commands | deferred | unassigned |
 | FR-009 | QQ and WhatsApp native approval reliability | done | `0.2.0-rc.1` |
-| FR-010 | Automatic output-file delivery to the originating conversation | awaiting-acceptance | `0.2.0-rc.1` |
-| FR-011 | Independent delivery per Channel Account | awaiting-acceptance | Next / unassigned |
-| FR-012 | Codex compatibility from actual capabilities | awaiting-acceptance | Next / unassigned |
-| FR-013 | Unified Bridge administration CLI | awaiting-acceptance | Next / unassigned |
+| FR-010 | Automatic output-file delivery to the originating conversation | done (mainline targets) | `0.2.0-rc.1` |
+| FR-011 | Independent delivery per Channel Account | done (mainline targets) | Next / unassigned |
+| FR-012 | Codex compatibility from actual capabilities | done (mainline targets) | Next / unassigned |
+| FR-013 | Unified Bridge administration CLI | done (mainline targets) | Next / unassigned |
 
 P0 / P1 closeout was authorized on 2026-09-08. The deployment-storage work and
 remaining cross-platform evidence are tracked in the [execution record](acceptance/p0-p1-20260908.md).
@@ -66,15 +66,27 @@ delivery after proactive permission was enabled and verifies private-stream
 interruption while that same account's group work continues. Real C2C expiry/
 rate-limit rejection and other unobserved provider boundaries remain open.
 
+## Current platform scope — 2026-09-10
+
+The user moved Windows development to future work on `codex/windows-unattended`.
+Current mainline acceptance and release planning cover native macOS, native Linux
+and Linux Docker. Windows follow-up under FR-010–013 is `deferred`, does not block
+these targets, and retains its existing code and evidence. Merge that branch into
+`main` after Windows development/native acceptance and shared-platform regressions
+pass. FR-010–013 are `done` for the current mainline scope based on
+[three-platform acceptance](acceptance/mainline-20260909.md) and
+[boundary/rollback checks](acceptance/mainline-closeout-20260909.md).
+FR-006's outstanding provider evidence remains a current gate. Feature completion
+does not create a release or replace final immutable-tag checks.
+
 ## FR-013 — Unified Bridge administration CLI
 
-- Updated: 2026-09-08. Status: `awaiting-acceptance`; release: Next / unassigned.
-- Scope decision, 2026-09-09: Windows must operate before login and after
-  logoff. Subsequent unattended Windows work is deferred to
-  `codex/windows-unattended`, allowing unrelated macOS/Linux/Docker mainline
-  work to proceed. Existing Windows code and evidence remain; its readiness
-  and delivery claims are still gated on Windows acceptance. See the
-  [execution-options research](research/windows-execution-options-20260909.md).
+- Updated: 2026-09-10. Status: `done` for native macOS/Linux/Docker; release: Next / unassigned.
+- Scope decision, 2026-09-10: Windows development is deferred future work on
+  `codex/windows-unattended`, outside current mainline acceptance/release gates.
+  Complete its development and native acceptance before merging it into `main`,
+  with shared-platform regressions passing. Before-login/after-logoff operation
+  remains its requirement. See the [execution-options research](research/windows-execution-options-20260909.md).
 - Windows SCM follow-up (2026-09-09): explicit ACL success exit codes and
   native PowerShell child module-path isolation passed real Windows regression;
   the b40f69dd candidate passed 17 CLI/environment/platform/control checks.
@@ -159,14 +171,15 @@ rate-limit rejection and other unobserved provider boundaries remain open.
   privileged SCM/file-symlink gates remain separate.
 - The final snapshot passed 263 unit tests on macOS/Linux/Docker; the real
   aliased-Workspace Thread query now passes. See the [boundary evidence](acceptance/mainline-closeout-20260909.md).
-  Windows service acceptance remains in its separate branch before making Windows claims. No release
+  Mainline CLI acceptance is complete; deferred Windows service work follows the
+  scope above. No release
   tag has been assigned. See [upstream comparison](research/service-installation-cli-20260905.md).
 
 - [Completed checks and explicit remaining gates](acceptance/cli-20260908.md). The latest QQ busy rejection, failure delivery and positive reply after authorized credential reuse passed.
 
 ## FR-011 — Independent delivery per Channel Account
 
-- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: Next / unassigned.
+- Updated: 2026-09-10. Status: `done` for native macOS/Linux/Docker; release: Next / unassigned.
 - User authorized the ablation follow-up, revised AGENTS.md, and real QQ client
   acceptance using two credentials for multiple Profiles. Bridge-owned scheduling:
   reuse Outbox with account-scoped claims/sends, preserve leases, receipts and
@@ -183,14 +196,15 @@ rate-limit rejection and other unobserved provider boundaries remain open.
   reached terminal state with accepted final deliveries. Eligibility skipping,
   promoted-work approval, cross-Profile approval rejection and interruption
   isolation passed live. Original primary config/binding restored; secondary
-  disabled with data retained. Windows follow-up is partial, returning this entry to awaiting acceptance;
-  see the evidence for the two-file test correction and symlink/SCM prerequisites.
-  Candidate commits exist on the sync branch; no release.
+  disabled with data retained. The later final candidate passed 263 unit checks
+  on each mainline target. Windows test corrections and symlink/SCM prerequisites
+  now belong to its deferred branch; they no longer hold this mainline requirement
+  in awaiting acceptance. Candidate commits exist; no release.
 - [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
 
 ## FR-012 — Codex compatibility from actual capabilities
 
-- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: Next / unassigned.
+- Updated: 2026-09-10. Status: `done` for native macOS/Linux/Docker; release: Next / unassigned.
 - User explicitly rejected a fixed Codex CLI version because host updates are
   frequent. Codex remains administrator-supplied and is never updated by Bridge.
 - Remove the version floor and fixed-version/hash host-test assertions. Probe
@@ -207,10 +221,11 @@ rate-limit rejection and other unobserved provider boundaries remain open.
   capability failure boundaries and historical verification labels. macOS, native
   Linux and Linux Docker pass native contracts with actual Codex 0.153.4; real
   QQ multi-Profile regressions pass. Other version-label behavior uses synthetic
-  schema regressions, not a claim to have run every CLI version. Windows native contracts
-  passed, but the complete candidate awaits full rechecking after test corrections
-  and the permission prerequisites, returning this entry to awaiting acceptance.
-  No host installation change; candidate commits on the sync branch, no release.
+  schema regressions, not a claim to have run every CLI version. Final mainline
+  checks passed; Windows candidate rechecking and permission prerequisites are
+  deferred to its branch. This mainline requirement is complete without changing
+  the runtime's unverified labels for unrecorded executable combinations.
+  No host installation change; candidate commits exist, no release.
 - [Exact evidence and limits](acceptance/capability-and-admission-20260905.md).
 
 
@@ -237,7 +252,7 @@ rate-limit rejection and other unobserved provider boundaries remain open.
 
 ## FR-010 — Automatic output-file delivery
 
-- Updated: 2026-09-05. Status: `awaiting-acceptance`; release: `0.2.0-rc.1`.
+- Updated: 2026-09-10. Status: `done` for native macOS/Linux/Docker; release: `0.2.0-rc.1`.
 - Accepted: the user selected automatic model-mentioned file delivery, without a
   `/file` command. The first implementation recognizes local Markdown links in
   completed final answers, not arbitrary prose, examples, or Workspace scanning.
@@ -273,8 +288,8 @@ rate-limit rejection and other unobserved provider boundaries remain open.
   source/snapshot/Outbox/download digests. Isolated schema-11 rollback passed on
   macOS/Linux/Docker; scope and candidate differences are recorded in the
   [boundary follow-up](acceptance/mainline-closeout-20260909.md).
-- Remaining: Windows on its independent development branch and exact final-release
-  acceptance/publication. This does not publish a release. See
+- Mainline feature acceptance is complete. Windows is deferred to its independent
+  branch; exact final-release checks/publication remain release work. See
   [earlier acceptance evidence](acceptance/automatic-output-files.md) and
   [usage and exact limits](output-files.md).
 

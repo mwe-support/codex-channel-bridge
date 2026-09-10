@@ -556,21 +556,22 @@ Native macOS, native Linux, native Windows, and Linux Docker are first-class
 targets. Core domain behavior and acceptance tests must remain equivalent; put
 service-manager and filesystem differences behind platform-specific edges.
 
-From 2026-09-09, continue unattended native Windows implementation and acceptance
-on `codex/windows-unattended`; let unrelated macOS/Linux/Docker work proceed on
-the mainline. Windows must run before login and after logoff, so an interactive
-launcher is not a completed substitute. Preserve the existing Windows code and
-evidence, and keep Windows delivery claims gated on its own acceptance. Before
-changing that backend, read `docs/research/windows-execution-options-20260909.md`
-for the provisioning alternatives and the recorded branch scope.
+From 2026-09-10, treat Windows development as deferred future work on
+`codex/windows-unattended`. Current mainline acceptance and release planning
+cover native macOS, native Linux and Linux Docker; unfinished Windows work does
+not block them. Preserve existing Windows code and evidence. Merge the Windows
+branch back into `main` after its development and native acceptance are complete
+and shared macOS/Linux/Docker regressions pass. Windows must run before login
+and after logoff; an interactive launcher is not a completed substitute. Before
+resuming that backend, read `docs/research/windows-execution-options-20260909.md`
+for provisioning alternatives and `docs/feature-requirements.md` for its scope.
 
 Prioritize implementation and acceptance in the environments that can be
 verified now: native macOS first, then native Linux and Linux Docker. Validate
 native macOS on the local development machine. Validate both Linux targets on
 the remote host identified by the SSH alias `marvel-mini-pc`; local macOS
-emulation is not evidence for either Linux target. A real connected Windows
-host is now designated for native Windows implementation and acceptance after
-the other three targets. For every platform claim, run the relevant contract
+emulation is not evidence for either Linux target. The designated real Windows host is reserved for the deferred Windows branch
+when that work resumes. For every platform claim, run the relevant contract
 and lifecycle tests on the named target and retain the exact command result. A
 missing host dependency is an environment gap, not authorization for the Bridge
 or an agent to install or upgrade Codex.

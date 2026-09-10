@@ -40,10 +40,10 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 | FR-007 | 无参数命令查询当前模型与思考强度 | done（已完成） | `0.2.0-rc.1` |
 | FR-008 | Channel Account 管理员与全局设置命令 | deferred（延期） | unassigned |
 | FR-009 | QQ 与 WhatsApp 原生审批可靠性 | done（已完成） | `0.2.0-rc.1` |
-| FR-010 | 自动输出文件投递到原会话 | awaiting-acceptance（待验收） | `0.2.0-rc.1` |
-| FR-011 | 各 Channel Account 独立投递 | awaiting-acceptance（待验收） | Next / unassigned |
-| FR-012 | 按实际能力判断 Codex 兼容性 | awaiting-acceptance（待验收） | Next / unassigned |
-| FR-013 | 统一 Bridge 管理 CLI | awaiting-acceptance（待验收） | Next / unassigned |
+| FR-010 | 自动输出文件投递到原会话 | done（主线三平台） | `0.2.0-rc.1` |
+| FR-011 | 各 Channel Account 独立投递 | done（主线三平台） | Next / unassigned |
+| FR-012 | 按实际能力判断 Codex 兼容性 | done（主线三平台） | Next / unassigned |
+| FR-013 | 统一 Bridge 管理 CLI | done（主线三平台） | Next / unassigned |
 
 2026-09-08 已授权执行 P0 / P1 收口。部署持久存储与剩余跨平台证据记录在
 [执行记录](acceptance/p0-p1-20260908.md)中；各需求通过自身门槛前保持原状态。
@@ -57,12 +57,23 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 后的群聊延迟投递门槛，并验证同账号群任务期间私聊原生流的独立中断。真实 C2C
 过期/限流拒绝及其他尚未观察的提供商边界仍保留。
 
+## 当前平台范围 — 2026-09-10
+
+用户将 Windows 开发列为未来计划，在 `codex/windows-unattended` 独立推进。
+当前主线验收与发布规划覆盖原生 macOS、原生 Linux 和 Linux Docker；FR-010～013
+中的 Windows 后续工作为 `deferred`，不阻塞这三个目标，保留已有代码和证据。
+Windows 分支完成开发、真实 Windows 验收及共享三平台回归后，再合并回 `main`。
+依据[三平台验收](acceptance/mainline-20260909.md)及
+[边界/回滚检查](acceptance/mainline-closeout-20260909.md)，FR-010～013 按当前
+主线范围标为 `done`。FR-006 尚缺的提供商证据仍属于当前门槛。功能完成不代表
+已发布，也不替代最终不可变标签检查。
+
 ## FR-013 — 统一 Bridge 管理 CLI
 
-- 更新：2026-09-08。状态：`awaiting-acceptance`；版本：Next / unassigned。
-- 2026-09-09 范围决定：Windows 必须在登录前及注销后运行。后续无人值守 Windows
-  工作延后到 `codex/windows-unattended`，其他 macOS/Linux/Docker 主线工作继续。
-  保留已有 Windows 代码和证据，其就绪与交付声明仍须通过 Windows 验收。详见
+- 更新：2026-09-10。状态：主线 macOS/Linux/Docker `done`；版本：Next / unassigned。
+- 2026-09-10 范围决定：Windows 开发列为未来计划，在 `codex/windows-unattended`
+  独立推进，排除在当前主线验收/发布门槛之外。开发和真实 Windows 验收完成、共享
+  平台回归通过后，再合并到 `main`；仍要求登录前及注销后运行。详见
   [运行方案研究](research/windows-execution-options-20260909.md)。
 - Windows SCM 后续（2026-09-09）：ACL 成功退出码和原生 PowerShell 子进程模块
   路径隔离已通过真实 Windows 回归，b40f69dd 候选的 CLI/环境/平台/控制面共
@@ -123,13 +134,13 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
   提权 SCM、文件符号链接门槛仍是独立事项。
 - 最终快照在 macOS/Linux/Docker 各通过 263 项单元测试；真实 Workspace 别名
   Thread 查询现已通过，见[边界证据](acceptance/mainline-closeout-20260909.md)。
-  Windows 服务验收保留在独立分支，通过后才作出 Windows 交付声明。尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
+  主线 CLI 验收已完成，延期的 Windows 服务工作按上述范围推进。尚未分配发行标签。参见[上游对照研究](research/service-installation-cli-20260905.md)。
 
 - [已完成检查及明确的待验收项](acceptance/cli-20260908.md)。最新 QQ 忙碌拒绝、失败回传及授权复用凭证后的正向回复均已验证。
 
 ## FR-011 — 各 Channel Account 独立投递
 
-- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：Next / unassigned。
+- 更新：2026-09-10。状态：主线 macOS/Linux/Docker `done`；版本：Next / unassigned。
 - 用户授权落实消融结论、修订 AGENTS.md，并使用两个凭据通过真实 QQ 客户端进行
   多 Profile 验收。归属 Bridge 调度：复用 Outbox，按账户独立领取/发送，保留租约、
   回执与 Logical Result 分段顺序，不引入中央调度器或新 Schema。
@@ -141,13 +152,14 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 已实现并通过 macOS/原生 Linux 的 252 项单元测试、发布/平台检查及原生契约，
   Docker 原生契约通过。16 条带标记的真实 QQ 输入均进入终态，最终投递 accepted；
   队首跳过、晋升审批、跨 Profile 审批拒绝、中断隔离均实测通过。主配置/原绑定已恢复，
-  次 Profile 停用并保留数据。后续 Windows 候选验收为部分通过，状态回到待验收；两项测试文件修正及
-  符号链接/SCM 权限缺口见证据。候选已提交到同步分支，未发布。
+  次 Profile 停用并保留数据。后续最终候选在每个主线目标均通过 263 项单元检查。
+  Windows 测试修正及符号链接/SCM 前提现归延期分支，不再使本主线需求保持待验收。
+  候选已有提交，未发布。
 - [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
 
 ## FR-012 — 按实际能力判断 Codex 兼容性
 
-- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：Next / unassigned。
+- 更新：2026-09-10。状态：主线 macOS/Linux/Docker `done`；版本：Next / unassigned。
 - 用户明确要求不固定 Codex CLI 版本，以适应宿主频繁更新。Codex 仍由管理员提供，
   Bridge 不修改其安装。
 - 取消版本下限与宿主测试中的固定版本/摘要断言。探测生成的方法和真实初始化/模型
@@ -160,8 +172,9 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - 已取消版本门槛和固定版本/摘要契约断言，保留能力失败关闭与历史验证标记。
   macOS、原生 Linux、Linux Docker 均使用实际 Codex 0.153.4 通过原生契约；
   真实 QQ 多 Profile 回归通过。其他版本的标签行为由合成 Schema 回归验证，
-  不宣称已实测所有 CLI 版本。后续 Windows 原生契约通过，但完整候选仍待测试修正后的全量复验及权限前提；
-  状态回到待验收。未修改宿主安装；候选已提交到同步分支，未发布。
+  不宣称已实测所有 CLI 版本。最终主线检查已通过；Windows 候选复验及权限前提
+  延期到独立分支。本主线需求已完成，不改变未登记可执行组合的运行时 unverified
+  标签。未修改宿主安装，候选已有提交，未发布。
 - [准确证据与边界](acceptance/capability-and-admission-20260905.md)。
 
 
@@ -183,7 +196,7 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 
 ## FR-010 — 自动输出文件投递
 
-- 更新：2026-09-05。状态：`awaiting-acceptance`；版本：`0.2.0-rc.1`。
+- 更新：2026-09-10。状态：主线 macOS/Linux/Docker `done`；版本：`0.2.0-rc.1`。
 - 已接受：用户选择自动上传模型提及的文件，不要求 `/file` 命令。首版识别已完成
   最终回复中的本地 Markdown 文件链接，不解析任意说明文字、代码示例或扫描工作区。
   使用 Profile 显式启用开关，避免改变现有部署的文件外发行为。
@@ -209,8 +222,8 @@ Markdown 条目是需求进度的事实来源；架构以 ADR 为准，已发布
 - Linux/Docker QQ 群聊附件下载也已通过，18/19 字节文件的原件、快照、Outbox
   与下载摘要一致。macOS/Linux/Docker 隔离 schema-11 回滚通过，范围及候选差异
   记录在[边界补充验收](acceptance/mainline-closeout-20260909.md)。
-- 剩余：独立开发分支的 Windows 验收，以及最终正式候选的准确标签验收/发布。
-  本次不发布版本。参见
+- 主线功能验收已完成；Windows 延期到独立分支，最终准确标签检查/发布仍属于
+  发布工作。参见
   [早期验收证据](acceptance/automatic-output-files.md)与[使用说明及准确限制](output-files.md)。
 
 ## FR-008 — Channel Account 管理员与全局设置命令

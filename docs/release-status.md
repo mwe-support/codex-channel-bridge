@@ -34,3 +34,12 @@ acceptance. Details and content-free evidence are retained in
 [Stage 8 release-candidate acceptance](acceptance/release-candidate-stage-8.md),
 [Stage 9 native Windows application acceptance](acceptance/windows-stage-9.md),
 and the feature-specific records under `docs/acceptance/`.
+
+## Next platform scope — 2026-09-10
+
+Current mainline acceptance and release planning cover native macOS, native
+Linux and Linux Docker. Windows development is deferred to
+`codex/windows-unattended`; incomplete Windows work does not block these targets.
+Merge the branch into `main` after Windows development/native acceptance and
+shared-platform regressions pass. Historical tagged evidence above remains
+unchanged; this scope decision neither declares Windows ready nor creates a release.

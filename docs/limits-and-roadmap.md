@@ -42,11 +42,12 @@ New feature requests and their acceptance progress are tracked in the
 [Feature requirements](feature-requirements.md) ledger, separately from release
 availability.
 
-- Unattended native Windows service work continues separately on
-  `codex/windows-unattended`. Login-before-start alternatives do not meet the
-  user's requirement. Current readiness and lifecycle acceptance remain open;
-  historical WinSW and control-pipe evidence retain their original scope.
-  See [Windows execution options](research/windows-execution-options-20260909.md).
+- Windows development is deferred future work on `codex/windows-unattended`,
+  outside current macOS/Linux/Docker acceptance and release gates. Merge it into
+  `main` after development, native Windows acceptance and shared-platform
+  regressions pass. Before-login/after-logoff operation remains required;
+  historical WinSW/control-pipe evidence retains its original scope. See
+  [Windows execution options](research/windows-execution-options-20260909.md).
 - Exact-tag revalidation for the provider and Linux boundaries listed in
   [Release status](release-status.md).
 

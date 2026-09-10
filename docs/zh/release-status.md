@@ -32,3 +32,10 @@ title: 发布状态
 [Stage 8 候选发布验收](acceptance/release-candidate-stage-8.md)、
 [Stage 9 原生 Windows 应用层验收](acceptance/windows-stage-9.md)以及
 `docs/zh/acceptance/` 下的功能专项记录。
+
+## Next 平台范围 — 2026-09-10
+
+当前主线验收和发布规划覆盖原生 macOS、原生 Linux 与 Linux Docker。Windows
+开发延期到 `codex/windows-unattended`，其未完成工作不阻塞上述三平台。Windows
+开发、真实验收及共享平台回归通过后，再合并回 `main`。上文历史标签证据不变；
+本次范围决定不宣称 Windows 已就绪，也不创建新版本。
